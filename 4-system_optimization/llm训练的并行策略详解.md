@@ -93,7 +93,7 @@ $$\frac2{N-1}{\frac{K}{N}}$$
 2. 将 A 与每个设备上 B 中的每一列相乘，我们将得到 [AB0 AB1 AB2 ... ABn]；此时，每个设备只持有部分结果，例如设备(rank=0)持有 AB0；
 3. 最后，我们需要收集全部的结果，并沿列维串联张量。
 
-![tensor_parallelism_overview](../../images/llm_parallelism_overview/tensor_parallelism_overview.png)
+![tensor_parallelism_overview](../images/llm_parallelism_overview/tensor_parallelism_overview.png)
 
 典型的张量并行实现：Megatron-LM（1D）、Colossal-AI（2D、2.5D、3D）。
 
@@ -103,9 +103,9 @@ $$\frac2{N-1}{\frac{K}{N}}$$
 
 大模型分布式训练中的流水线并行的合适思想是，模型按层分割成若干块，每块都交给一个设备。在前向传递过程中，每个设备将中间的激活传递给下一个阶段。在后向传递过程中，每个设备将输入张量的梯度传回给前一个流水线阶段。这允许设备同时进行计算，并增加了训练的吞吐量。流水线并行训练的一个缺点是，会有一些设备参与计算的冒泡时间，导致计算资源的浪费。
 
-![pipeline_parallelism_overview2](../../images/llm_parallelism_overview/pipeline_parallelism_overview2.png)
+![pipeline_parallelism_overview2](../images/llm_parallelism_overview/pipeline_parallelism_overview2.png)
 
-![pipeline_parallelism_understand](../../images/llm_parallelism_overview/pipeline_parallelism_understand.png)
+![pipeline_parallelism_understand](../images/llm_parallelism_overview/pipeline_parallelism_understand.png)
 
 
 ## 参考资料
