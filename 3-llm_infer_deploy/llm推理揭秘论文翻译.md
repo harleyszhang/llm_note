@@ -63,32 +63,32 @@
 
 预填充阶段是 LLM 推理的初始步骤。在此阶段，模型将提示序列作为输入，并为 LLM 的每一层 Transformer 生成键值缓存（KV 缓存）。KV 缓存在存储和组织模型认为对后续生成 token 重要的信息方面起着至关重要的作用。**每个 Transformer 层都有其独特的 KV 缓存**，预填充过程为随后的解码阶段奠定了基础。
 
-**在预填充阶段，多头注意力（`MHA`）模块生成 `KV` 键值对并存储在 KV 缓存中**。设输入到 Transformer 层的输入为 $X_{pre}\in R^{n\times d}$，其中 $d$ 是隐藏维度，$n$ 是提示 token 序列的长度。`MHA` 模块的 $4$ 个线性层权重用 $W_q$，$W_k$，$W_v$ 和 $W_o$ 表示。查询、键和值（Q、K、V）的计算过程如下：
+**在预填充阶段，多头注意力（`MHA`）模块生成 `KV` 键值对并存储在 KV 缓存中**。设输入到 Transformer 层的输入为 $X_{pre}\in R^{s\times h}$，其中 $h$ 是隐藏维度，$s$ 是提示词 token 序列的长度。`MHA` 模块的 $4$ 个线性层权重用 $W_q$，$W_k$，$W_v$ 和 $W_o$ 表示。查询、键和值（Q、K、V）的计算过程如下：
 
 $$\text{Query}: Q_{pre}=X_{pre} * W_{q} \\
 \text{Key}: K_{pre}=X_{pre} * W_{k} \\
 \text{Value}: V_{pre}=X_{pre} * W_{v}$$
 
-生成的 $K_{pre}$ 和 $V_{pre}$ 被存储在 KV 缓存中。其余的 `MHA` 计算如下：
+生成的 $K_{pre}$ 和 $V_{pre}$ 被存储在 KV 缓存中，每个 transformer layer 都独立的存储 KV 键值对。其余的 `MHA` 计算如下：
 
-$$O_{pre }=\text{softmax}(\frac{Q_{pre } * K_{pre }^{T}}{\sqrt{d}}) * V_{pre } * W_{o}+X_{pre }$$
+$$O_{pre }=\text{softmax}(\frac{Q_{pre } * K_{pre }^{T}}{\sqrt{d_k}}) * V_{pre } * W_{o}+X_{pre }$$
+> $d_k$ 也写作 $h$ 或 $h$。
 
-MHA 的输出 $O_{pre }\in R^{n\times d}$ 将传递到 MLP。MLP 的输出作为下一层 Transformer 层的输入。
+MHA 的输出 $O_{pre }\in R^{s\times h}$ 将传递到 MLP。MLP 的输出作为下一层 Transformer 层的输入。
 
-解码阶段是 LLM 推理的关键部分。在这一阶段，模型使用预填充阶段生成的 **KV 缓存**，同时逐步添加新信息。目标是**逐步生成新的 token**，每个新 token 的生成都会参考之前生成的 token ，从而逐字逐句地完成文本输出。
+解码阶段是 LLM 推理的关键部分。在这一阶段，模型使用预填充阶段生成的 **KV 缓存**，同时逐步添加新信息。目标是**逐步迭代的生成新 token**，每个新 token 的生成都会参考之前生成的 token。
 
-
-**在解码阶段**，MHA 加载先前存储的 KV 缓存 $K_{cache}$ 和 $V_{cache}$。输入为 $X_{dec}\in R^{1\times d}$。新的键值对被计算并连接到现有缓存：
+**在解码阶段**，MHA 加载先前存储的 KV 缓存 $K_{cache}$ 和 $V_{cache}$。输入为 $X_{dec}\in R^{1\times h}$。新的键值对被计算并拼接到现有缓存：
 
 $$\text{Query}: Q_{dec}=X_{dec}*W_{q} \\
 \text{Key}: K_{cat }=[K_{cache }, X_{dec } * W_{k}] \\
 \text{Value}: V_{cat }=[V_{cache }, X_{dec } * W_{v}]$$
 
-这些新计算的 $X_{dec}\cdot W_{k}$ 和 $X_{dec}\cdot W_{v}$ 然后被附加到 $KV$ 缓存。MHA 中的其他计算如下进行：
+新计算的 $X_{dec}\cdot W_{k}$ 和 $X_{dec}\cdot W_{v}$ 紧接着被拼接到 $KV$ 缓存得到新的 $K_{cat}$、$V_{cat}$ 向量。MHA 中的剩下的计算如下进行：
 
 $$O_{dec}=\text{softmax}(\frac{Q_{dec}\cdot K_{cat}^{T}}{\sqrt{d}}) * V_{cat } * W_{o}+X_{dec}$$
 
-其中 MHA 的输出 $O_{dec}\in R^{1\times d}$ 被传递到 MLP。最后一个 Transformer 层的输出被发送到最终的预测层，以预测下一个 token 。
+其中 MHA 的输出 $O_{dec}\in R^{1\times h}$ 被传递到 MLP。最后一个 Transformer 层的输出被发送到最终的预测层，以预测下一个 token 。
 
 ### 2.2. Roofline 模型
 

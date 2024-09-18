@@ -1,7 +1,9 @@
-- [一 前言](#一-前言)
-	- [1.1 KV cache 优化原理](#11-kv-cache-优化原理)
+- [一 KV cache 原理](#一-kv-cache-原理)
+	- [1.1 背景知识](#11-背景知识)
+	- [1.2 kv cache 原理](#12-kv-cache-原理)
+	- [1.3 prefill 和 decode 阶段的 kv 计算过程的区别](#13-prefill-和-decode-阶段的-kv-计算过程的区别)
 - [二 模型参数量](#二-模型参数量)
-	- [2.1 CPU 内存使用估计](#21-cpu-内存使用估计)
+	- [2.1 CPU 内存使用量](#21-cpu-内存使用量)
 - [三 计算量分析](#三-计算量分析)
 	- [3.1 MHA 层计算量](#31-mha-层计算量)
 		- [3.1.1 prefill 阶段](#311-prefill-阶段)
@@ -15,7 +17,9 @@
 	- [4.3 显存占用计算的定性分析和定量结论](#43-显存占用计算的定性分析和定量结论)
 - [参考资料](#参考资料)
 
-## 一 前言
+## 一 KV cache 原理
+
+### 1.1 背景知识
 
 `chatgpt` 的火热引爆了 `llm`（大语言模型） 的研究和发展，`llm` 的**大**体现在两个方面：模型参数和训练数据规模，这进而带来了两个挑战：gpu 内存访问和计算效率。
 
@@ -43,7 +47,8 @@
 **在计算模型参数量/计算量之前，我们先定义好一些表示符号**：
 
 - $b$：批量大小 `batch_size`。
-- $s$：序列长度 `seq_len`，即输入 `prompt` 字符串的长度。
+- $s: 输入序列长度 `seq_len`，即输入 `prompt` 字符串的长度。
+- $o$: 输出 `tokens` 数量，用于计算 kv cache 的形状。
 - $h$: 隐藏层的维度，也叫 $d_{model}$,即序列中每个 `token` 的 `embedding` 向量的维度。**它定义了输入和输出的特征向量的大小，也是模型内部各个组件（特别是注意力机制和前馈网络）操作的主要向量维度**。
 - $V$：词表大小 `vocab_size`。也是每个 token 在做 embedding 前的 one-hot 向量维度。
 - $n$：模型中 decoder layers 层数，对应 hf 模型配置文件中的 num_hidden_layers。
@@ -61,13 +66,49 @@
 
 ![LlamaForCausalLM architecture](../images/transformer_params_flops/llama-model-params.png)
 
-### 1.1 KV cache 优化原理
+### 1.2 kv cache 原理
 
 **背景**：生成式模型的推理过程很有特点，**推理生成 `tokens` 的过程是迭代式的**。简单来说就是，用户给一个输入文本，模型会输出一个回答（长度为 $N$），但该过程中实际执行了 $N$ 次模型前向传播过程。即 `GPT` 类模型一次推理只输出一个 `token`，**当前轮输出的 token 与之前输入 tokens 拼接，并作为下一轮的输入 tokens**，反复多次直到遇到终止符 `EOS` 或生成的 `token` 数目达到设置的 `max_new_token` 才会停止。
 
 可以看出第 $i$ 轮输入数据只比第 $i+1$ 轮输入数据新增了一个 `token`，其他全部相同！因此第 $i+1$ 轮推理时必然包含了第 $i$ 轮的部分计算。`KV Cache` 优化的起因就在这里，**缓存当前轮可重复利用的计算结果**，下一轮计算时直接读取缓存结果，原理很简单，**本质就是用空间换时间**。
 
-另外，**每一层 decode layer 都需要缓存 $K$ 和 $V$，因为每层的 `attention` 运算是独立的，即第 $L$ 层的 $K_L$ 和 $V_L$ 是独立的、与其他层不同的**。如果不缓存每一层的 $K$ 和 $V$，在生成下一个 token 时，模型就需要重新计算之前所有 `token` 的 $K$ 和 $V$，这将导致大量冗余计算。通过缓存，避免了重复计算 $K$ 和 $V$，从而加速了生成过程。
+另外，**每一层 decode layer 都需要单独缓存 $K$ 和 $V$，因为每层的 `attention` 运算是独立的，即第 $L$ 层的 $K_L$ 和 $V_L$ 是独立的、与其他层不同的**。如果不缓存每一层的 $K$ 和 $V$，在生成下一个 token 时，模型就需要重新计算之前所有 `token` 的 $K$ 和 $V$，这将导致大量冗余计算。通过缓存，避免了重复计算 $K$ 和 $V$，从而加速了生成过程
+
+### 1.3 prefill 和 decode 阶段的 kv 计算过程的区别
+
+一个典型的自回归模型的生成式推理过程包含了两个阶段：
+
+1. **预填充阶段**（prefill phase）：输入一个 prompt 序列，为每个 transformer 层生成 key cache 和 value cache（KV cache）。
+2. **解码阶段**（decoding phase）：使用并更新 KV cache，一个接一个地生成词（**无并行性**），当前生成的词依赖于之前已经生成的词。该阶段的推理计算分两部分：**更新 KV cache 和计算 decoder layers 的输出**。
+
+这两个阶段的差别在于 $Q$ 的维度不同。在 `prefill` 阶段时，用户输入的所有 token 都需要参与运算，所以此时 $Q$ 的形状为 $[b, s, h]$。在第 `decode` 阶段时，只有新生成的 `token` 作为第二次迭代过程的输入，所以此时 $Q$ 的维度为 $[b, 1, h]$，即**只有新 token 作为 Q**。
+
+**在预填充阶段，多头注意力（`MHA`）模块生成 `KV` 键值对并存储在 KV 缓存中**。设输入到 Transformer 层的输入为 $X_{pre}\in R^{s\times h}$，其中 $h$ 是隐藏维度，$s$ 是提示词 token 序列的长度。`MHA` 模块的 $4$ 个线性层权重用 $W_q$，$W_k$，$W_v$ 和 $W_o$ 表示。查询、键和值（Q、K、V）的计算过程如下：
+
+$$\text{Query}: Q_{pre}=X_{pre} * W_{q} \\
+\text{Key}: K_{pre}=X_{pre} * W_{k} \\
+\text{Value}: V_{pre}=X_{pre} * W_{v}$$
+
+生成的 $K_{pre}$ 和 $V_{pre}$ 被存储在 KV 缓存中，每个 transformer layer 都独立的存储 KV 键值对。其余的 `MHA` 计算如下：
+
+$$O_{pre }=\text{softmax}(\frac{Q_{pre } * K_{pre }^{T}}{\sqrt{d_k}}) * V_{pre } * W_{o}+X_{pre }$$
+> $d_k$ 也写作 $h$ 或 $h$。
+
+MHA 的输出 $O_{pre }\in R^{s\times h}$ 将传递到 MLP。MLP 的输出作为下一层 Transformer 层的输入。
+
+解码阶段是 LLM 推理的关键部分。在这一阶段，模型使用预填充阶段生成的 **KV 缓存**，同时逐步添加新信息。目标是**逐步迭代的生成新 token**，每个新 token 的生成都会参考之前生成的 token。
+
+**在解码阶段**，MHA 加载先前存储的 KV 缓存 $K_{cache}$ 和 $V_{cache}$。输入为 $X_{dec}\in R^{1\times h}$。新的键值对被计算并拼接到现有缓存：
+
+$$\text{Query}: Q_{dec}=X_{dec}*W_{q} \\
+\text{Key}: K_{cat }=[K_{cache }, X_{dec } * W_{k}] \\
+\text{Value}: V_{cat }=[V_{cache }, X_{dec } * W_{v}]$$
+
+新计算的 $X_{dec}\cdot W_{k}$ 和 $X_{dec}\cdot W_{v}$ 紧接着被拼接到 $KV$ 缓存得到新的 $K_{cat}$、$V_{cat}$ 向量。MHA 中的剩下的计算如下进行：
+
+$$O_{dec}=\text{softmax}(\frac{Q_{dec}\cdot K_{cat}^{T}}{\sqrt{d}}) * V_{cat } * W_{o}+X_{dec}$$
+
+其中 MHA 的输出 $O_{dec}\in R^{1\times h}$ 被传递到 MLP。最后一个 Transformer 层的输出被发送到最终的预测层，以预测下一个 token 。
 
 ## 二 模型参数量
 
@@ -104,7 +145,7 @@ $$\frac{8nh^2}{12nh^2} = 2/3\cong 66\% \\
 
 ![gpt-like 模型（`opt`）的参数分布](../images/transformer_params_flops/opt-prams-dist.png)
 
-### 2.1 CPU 内存使用估计
+### 2.1 CPU 内存使用量
 
 1，模型参数内存如何计算？
 
@@ -123,7 +164,7 @@ $$\frac{8nh^2}{12nh^2} = 2/3\cong 66\% \\
 
 对于矩阵 $A\in\mathbb{R}^{1\times n}$，$B \in \mathbb{R}^{n\times 1}$，计算 $A\times B$ 需要进行 n 次乘法运算和 n 次加法运算，共计 2n 次浮点数运算，矩阵乘法操作对应的 FLOPs 为 $2n$。**对于矩阵 $A \in \mathbb{R}^{m\times n}$，$B\in\mathbb{R}^{n\times p}$，执行矩阵乘法操作 $A\times B$，对应 `FLOPs` 为 $2mnp$**。
 
-`Pytorch` 实现线性层的函数为 `nn.Linear(in_features, out_features, bias=True)`，其中线性层权重的的维度大小是 $[下一层的维数/out_features，前一层的维数/in_features]$，对应的计算公式为:
+`Pytorch` 实现线性层的函数为 `nn.Linear(in_features, out_features, bias=True)`，其中线性层权重的的维度大小是 $[下一层的维数/out_{features}，前一层的维数/in_{features}]$，对应的计算公式为:
 
 $$y = xW^T + \text{bias}$$
 
@@ -136,16 +177,6 @@ $$y = xW^T + \text{bias}$$
 
 ### 3.1 MHA 层计算量
 
-一个典型的自回归模型的生成式推理过程包含了两个阶段：
-
-1. **预填充阶段**（prefill phase）：输入一个 prompt 序列，为每个 transformer 层生成 key cache 和 value cache（KV cache）。因为 `QKV` 矩阵的计算过程是线性的，因此，对于同一个 `seq` 样本，每个 `token` 可以并行计算无时序依赖。简单来说就是，训练、推理的 prefill 阶段（输入 prompt 的计算）过程是**高度并行化的**。
-2. **解码阶段**（decoding phase）：使用并更新 KV cache，一个接一个地生成词（**无并行性**），当前生成的词依赖于之前已经生成的词。该阶段的推理计算分两部分：**更新 KV cache 和计算 decoder layers 的输出**。
-
-这两个阶段的差别在于 $Q$ 的维度不同。在第一个阶段时，用户输入的所有 token 都需要参与运算，所以此时 $Q$ 的形状为 $[b, s, h]$。在第二个阶段时，新生成的 token 作为第二次迭代过程的输入，所以此时 $Q$ 的维度为 $[b, 1, h]$，即**只有新 token 作为 Q**。
-
-> 为什么不缓存 Q ?
-> 这是由 decoder-only 的模型原理决定的。在每次迭代过程中，只有新生成 token 的 Q 需要参与运算（新生成 token 是由前文推理而出，所以其 Q 向量包含了前文信息），之前的 Q 无需再参与运算，所以每次迭代过程结束时就可以将 Q 丢弃。
-> 
 #### 3.1.1 prefill 阶段
 
 先分析 `MHA` 块的计算量：
@@ -160,65 +191,64 @@ $$y = xW^T + \text{bias}$$
 
 3, **多头拼接和线性映射**：所有注意力头输出拼接后通过线性映射，`concat` 不涉及数学运算，只涉及内存操作。矩阵乘法的输入和输出形状为: $[s,h] \times [h,h]\to [s,h]$，**attention 后的线性映射的 `FLOPs`: $2sh^2$**。
 
+**综上，prefill 阶段 `MHA` 块的 `FLOPs`: $6sh^2 + 4s^2h + 2sh^2 = 8sh^2 + 4s^2h$**
+
 #### 3.1.2 decode 阶段
 
-**在解码阶段**，MHA 加载先前存储的 KV 缓存 $K_{cache}$ 和 $V_{cache}$。输入为 $X_{dec}\in R^{1\times d}$。新的键值对被计算并连接到现有缓存：
-
-$$\text{Query}: Q_{dec}=X_{dec}*W_{q} \\
-\text{Key}: K_{cat }=[K_{cache }, X_{dec } * W_{k}] \\
-\text{Value}: V_{cat }=[V_{cache }, X_{dec } * W_{v}]$$
-
-这些新计算的 $X_{dec}\cdot W_{k}$ 和 $X_{dec}\cdot W_{v}$ 然后被附加到 $KV$ 缓存。MHA 中的其他计算如下进行：
-
-$$O_{dec}=\text{softmax}(\frac{Q_{dec}\cdot K_{cat}^{T}}{\sqrt{d}}) * V_{cat } * W_{o}+X_{dec}$$
-
-其中 MHA 的输出 $O_{dec}\in R^{1\times d}$ 被传递到 MLP。最后一个 Transformer 层的输出被发送到最终的预测层，以预测下一个 token 。
-
-1，计算 Q、K、V：3个矩阵乘法的输入和输出形状为: $[1,h] \times [h,h]\to [1,h]$，`FLOPs`: $3*2sh^2 = 6h^2$。
+1，计算 Q、K、V：3个矩阵乘法的输入和输出形状为: $[1,h] \times [h,h]\to [1,h]$，`FLOPs`: $3*2h^2 = 6h^2$。
 
 2，**Self-Attention 层**：
-- $QK^T$：矩阵乘法的输入输出形状为: $[1, h] \times [h, s+1]\to [1,s+1]$，`FLOPs`: $2h(s+1)$。
-- $\text{score}\cdot V$: 矩阵乘法的输入输出形状为: $[1, s+1] \times [s+1, h]\to [1, h]$，`FLOPs`: $2h(s+1)$。
+- $QK^T$：矩阵乘法的输入输出形状为: $[1, h] \times [h, s+o]\to [1,s+o]$，`FLOPs`: $2h(s+o)$。
+- $\text{score}\cdot V$: 矩阵乘法的输入输出形状为: $[1, s+o] \times [s+o, h]\to [1, h]$，`FLOPs`: $2h(s+o)$。
 
-**总结：上述两个公式，在实际代码中也常等效于: $2sh$**
+通过上述两个公式，可以看出随着输出 `token` 的增加，计算量也随之线性增加，这也是我们在 llm 推理时观察到的越到后生成 `token` 越慢的原因。
+> 在实际代码中，对于每一轮解码的 flops 上述公式有时等效于: $2sh$？
 
 3，输出线性映射层: 矩阵乘法 `matmul` 的输入输出形状为: $[1, h] \times [h, h]\to [1, h]$，`FLOPs`: $2h^2$。
 
-值得注意的是，出了 `MHA` 层的 `FLOPs` 计算需要区分 `prefill` 和 `decode` 阶段，其他层不需要区分。
+**综上，decode 阶段 `MHA` 层每一轮解码的 `FLOPs`: $6h^2 + 4(s+o)h + 2h^2= 8h^2 + 4(s+o)h$**。
+
+
 
 ### 3.2 FFN 层计算量
 
-`Feed-forward`（MLP/FFN）层的计算量分析。包含两个线性层，以及一个 `relu` 激活层（逐元素操作，flops 很小$=5\cdot 4h$，可忽略）。`MLP` 两个线性层的权重参数矩阵: $W_1 \in \mathbb{R}^{h\times 4h}$、$W_2 \in \mathbb{R}^{4h\times h}$，`MLP` 的输入矩阵: $\in \mathbb{R}^{s\times h}$。
+先分析 `prefill` 阶段 `Feed-forward`（MLP/FFN）层的计算量分析。包含两个线性层，以及一个 `relu` 激活层（逐元素操作，flops 很小$=5\cdot 4h$，可忽略）。`MLP` 两个线性层的权重参数矩阵: $W_1 \in \mathbb{R}^{h\times 4h}$、$W_2 \in \mathbb{R}^{4h\times h}$，`MLP` 的输入矩阵: $\in \mathbb{R}^{s\times h}$。
 
 1. 第一个线性层，线性层对应矩阵乘法的输入和输出形状为 $[s,h] \times [h,4h]\to[s,4h]$，`FLOPs` 为 $8sh^2$
 2. 第二个线性层，矩阵乘法的输入和输出形状为 矩阵乘法的输入和输出形状为 $[s,4h] \times [4h, h]\to [s,h]$，`FLOPs` 为 $8sh^2$
 
-因此，`FFN` 层的 `FLOPs`: $2*8sh^2 = 16sh^2$
+**因此，`prefill` 阶段 `FFN` 层的 `FLOPs`: $2*8sh^2 = 16sh^2$**。
+
+值得注意的是，除了 `MHA` 层的 `FLOPs` 计算公式区分 `prefill` 和 `decode` 阶段，其他层只需要将 `prefill` 阶段的计算公式中的 $s$ 设置为 $1$。即对于 `decode` 阶段的 `FFN` 块的 `FLOPs = 16h^2`
 
 ### 3.3 模型总计算量
 
 除了 `MHA`、`MLP` 块的计算量之外：
 
-1. `Embedding` 层只是一个查找表，没有进行显式的乘法运算，因此严格来说，Embedding 层本身不会产生 `FLOPs`，但可以通过其输出维度来推导其他层的 `FLOPs`。
-2. `LayerNorm` 操作是**逐元素**进行的，因此不存在通用的公式来。`LayerNorm` 层的两个权重都是一个长度为 $h$ 的向量，`FLOPs` 可以预估为: $2h$，但**通常忽略不计**。
-3. 最后的输出层（线性层）的**将隐藏向量映射为词表大小，得到每个 token 对应的 logits 向量**。线性层的权重矩阵为：$W_{last} \in \mathbb{R}^{h\times V}$，矩阵乘法的输入和输出形状为: $[s, h] \times [h, V] -> [s, V]$。`FLOPs`: $2shV$。
+- `Embedding` 层只是一个查找表，没有进行显式的乘法运算，因此严格来说，Embedding 层本身不会产生 `FLOPs`，但可以通过其输出维度来推导其他层的 `FLOPs`。
+- `LayerNorm` 操作是**逐元素**进行的，因此不存在通用的公式来。`LayerNorm` 层的两个权重都是一个长度为 $h$ 的向量，`FLOPs` 可以预估为: $2h$，但**通常忽略不计**。
+- 最后的输出层（线性层）的**将隐藏向量映射为词表大小，得到每个 token 对应的 logits 向量**。线性层的权重矩阵为：$W_{last} \in \mathbb{R}^{h\times V}$，矩阵乘法的输入和输出形状为: $[s, h] \times [h, V] -> [s, V]$。`FLOPs`: $2shV$。
 
-将前面分析的计算量相加，得到每个 `decoder block/layer` 的计算量大约为: $(6sh^2 + 2sh^2 + 16sh^2) + 4hs^2 = 24sh^2 + 4s^2h$
+1，`prefill` 阶段总的计算量：
 
-**最后，对于一个 $n$ 层的自回归模型，输入数据形状为 $[b, s]$ 的情况下，一次训练/推理迭代的计算量**:
+将前面分析的计算量相加，得到每个 `decoder block/layer` 的计算量大约为: $8sh^2 + 4s^2 + 16sh^2$。**最后，对于一个 $n$ 层的自回归模型，输入数据形状为 $[b, s]$ 的情况下，一次训练/推理 `prefill` 阶段的计算量为**:
 
-$$n\times (24bsh^2 + 4bs^2h) + 2bshV = 24nbsh^2 + 4nbs^2h + 2bshV$$
+$$n\times b\times (8sh^2 + 4s^2h + 16sh^2) + 2bshV) = 24nbsh^2 + 4nbs^2h + 2bshV$$
+
+2，`decode` 阶段总的计算量：
+
+$$nb\times (8h^2 + 4(s+o)h + 16h^2) + 2bhV = 24nbh^2 + 4nb(s+o)h + 2bshV$$
 
 > 忽略了向量-向量（甚至向量-标量）运算，这些运算的因子是 $h$ 远小于 $h^2$，因此可以忽略。
 
 #### 3.3.1 计算量定性和定量结论
 
-**当隐藏维度 $h$ 比较大，且远大于序列长度 $s$ 时，则可以忽略一次项，计算量 `FLOPs` 可以近似为 $24nbsh^2$，模型参数量为 $12nh^2$**。
+**当隐藏维度 $h$ 比较大，且远大于序列长度 $s$ 时，则可以忽略一次项，`prefill` 和 `decode` 的计算量 `FLOPs` 都可以近似为 $bs24nh^2$，模型参数量为 $12nh^2$**。
 
-因为，输入的 `tokens` 总数为 $bs$（即上下文总长度），即对于一个 `token` 存在等式: $\frac{24nh^2}{12nh^2} = 2$。所以，我们可以近似认为：**在一次前向传播中，对于每个 `token`，每个模型参数，需要进行 $2$ 次浮点数运算，即一次乘法法运算和一次加法运算**。
+因为，输入的 `tokens` 总数为 $bs$（即上下文总长度），即对于一个 `token` 存在等式: $\frac{24nh^2}{12nh^2} = 2$。所以，我们可以近似认为：**在一次前向传播中，对于每个 `token` 和 每个模型参数，需要进行 $2$ 次浮点数运算，即一次乘法法运算和一次加法运算**。
 > 实际会有不到 `2%` 的误差，主要是因为我们忽略了一些小算子的计算量。
 
-一次迭代训练包含了前向传递和后向传递，后向传递的计算量是前向传递的 `2` 倍。因此，前向传递 + 后向传递的系数 $=1 + 2 = 3$ 。**即一次迭代训练中，对于每个 token，每个模型参数，需要进行 $6$ 次浮点数运算**。
+一次迭代训练包含了前向传递和后向传递，后向传递的计算量是前向传递的 `2` 倍。因此，前向传递 + 后向传递的系数 $=1 + 2 = 3$ 。**即一次迭代训练中，对于每个 token 和 每个模型参数，需要进行 $6$ 次浮点数运算**。
 
 有了上述训练和推理过程中计算量与参数量关系的结论。接下来，我们就可以估计一次迭代训练 `GPT3-13B` 所需要的计算量。对于 GPT3，每个 token，每个参数进行了 $6$ 次浮点数运算，再乘以参数量和总 `tokens`数就得到了总的计算量。GPT3 的模型参数量为 12850M，训练数据量 300B tokens。
 
@@ -230,7 +260,7 @@ $$6 \times 12850 \times 10^6 \times 300 \times 10^9 = 2.313 \times 10^{22}$$
 > 估算训练一个 transformer 模型所需的算力成本的公式可参考文章[Transformer 估算 101](https://mp.weixin.qq.com/s/MFgTUDAOODgMDb59eZC9Cw)。本章主要参考 [Transformer Inference Arithmetic](https://kipp.ly/blog/transformer-inference-arithmetic/) 以及 [分析transformer模型的参数量、计算量、中间激活、KV cache](https://zhuanlan.zhihu.com/p/624740065)。
 
 这个表总结了常见大型语言模型（LLM）的**参数数量、序列长度、批次大小、隐藏层大小、层数和每次前向推理的浮点操作数总量（FLOPs）**，`FLOPs` 以 T（万亿）为单位。
-| Model           | Parameters | Sequence Length | Batch Size | Hidden Size | Number of Layers | FLOPs (per forward pass)         |
+| Model           | Parameters | Sequence Length | Batch Size | Hidden Size | Number of Layers | FLOPs (prefill)         |
 |-----------------|------------|-----------------|------------|-------------|------------------|----------------------------------|
 | GPT-3 (175B)    | 175B       | 2048            | 8          | 12288       | 96               | ~7.0 × 10³ T FLOPs                |
 | GPT-3 (13B)     | 13B        | 2048            | 8          | 4096        | 40               | ~4.4 × 10² T FLOPs                |
@@ -295,19 +325,18 @@ $$\text{memory\_intermediate} = 8bsh$$
 
 `LLM` 推理优化中 `kv cache` 是常见的方法，本质是用空间换时间。假设输入序列的长度为 $s$ ，输出序列的长度为 $o$，decoder layers 数目为 $n$，以 `float16` 来保存 `KV cache`，那么 `KV cache` 的峰值显存占用计算公式为:
 
-$$\text{memory\_kv-cache} = b(s+o)h*n * 2*2 = 4nbh(s+o)$$
+$$\text{memory\_kv-cache} = b(s+o)h*n * 2*2 = 4nhb(s+o)$$
 
-上式，第一个 `2` 表示 K/V cache，第二个 `2`表示 float16 占 2 个 bytes。
+上式，第一个 `2` 表示 K/V cache，第二个 `2`表示 float16 占 2 个 bytes。**每个 token 的 kv 缓冲大小 $ = 4nh$，单位为字节 `byte`**。
 
-4，最后，通过前面的分析可知，**模型推理阶段总的显存消耗计算公式如下**:
+综上分析可知，llm 推理时，gpu 显存占用主要是：模型权重和 kv cahce，**总显存消耗计算如下**:
 
 $$\begin{aligned}\text{inference\_memory} &\simeq [n(12h^2 + 13h) + Vh]*2 + 8bsh + 4bnh(s+o) \\
 &\simeq 1.2 \cdot 24nh^2 + 4bnh(s+o)\end{aligned}$$
-> 当 $h$ 较大时，忽律掉一次项，模型推理时，中间激活最大不会超过模型权重参数内存的 20%。
+> 模型推理时，中间激活最大不会超过模型权重参数内存的 20%。当 $h$ 较大时，忽律掉一次项。
 
-`kv cache` 显存和批次大小 $b$ 以及序列长度 $s$ 成正比。值得注意的是，虽然 $b$ 和 $s$ 的增加会带来输入输出和中间激活显存的线性增加，但**在 < 某个阈值时，推理阶段显存占大头的是模型权重**。
+中间激活和 `kv cache` 显存和批次大小 $b$ 以及序列长度 $s$ 成正比，**在 bs > 某个阈值时，占推理显存大头的是 kv cache**。以 llama13b 为例分析，权重参数占用 26GB，当 b = 64, s = 512 时，输出序列长度 o = 512, kv cache 显存占用 = $4nhb(s+o) = 42,949,672,960\ bytes \simeq 42GB$，是模型参数显存的 1.6 倍。
 
-因此，**llm 推理时，gpu 显存消耗主要分为：模型权重和 kv cahce，而每个 token 的 kv 缓冲大小 $ = 4nh$，单位为字节 byte**。
 > `b` 的增加能带来近乎线性的 `throughput` 增加，llm 服务模块的调度策略就是动态调整批次大小，并尽可能让它最大。
 
 
