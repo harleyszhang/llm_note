@@ -1,13 +1,10 @@
-- [一 decode 阶段推理 latency 估算](#一-decode-阶段推理-latency-估算)
-  - [1.1 decode latency 估算](#11-decode-latency-估算)
-  - [1.2 批次大小对性能影响的分析](#12-批次大小对性能影响的分析)
-    - [1.2.1 批次大小对性能影响的实验](#121-批次大小对性能影响的实验)
-- [二 LLM 并发支持估算](#二-llm-并发支持估算)
+- [一 decode latency 估算](#一-decode-latency-估算)
+- [二 理论 latency 和实际 latency 的差距](#二-理论-latency-和实际-latency-的差距)
+- [三 批次大小对性能影响的分析](#三-批次大小对性能影响的分析)
+  - [3.1 批次大小对性能影响的实验](#31-批次大小对性能影响的实验)
 - [参考资料](#参考资料)
 
-## 一 decode 阶段推理 latency 估算
-
-### 1.1 decode latency 估算
+## 一 decode latency 估算
 
 考虑基于 roofline 模型和的 llm decode 阶段的 latency 分析，对于小 `batch` 的模型推理，单个 token 的推理 `latency` 可能受限于 gpu 的内存带宽，即内存读取时间 > 计算时间；对于大 `batch`，单个 token 的推理 `latency` 受限于 gpu 的算力，即内存读取时间 > 计算时间。
 
@@ -19,7 +16,7 @@
 $$
 \begin{align}
 \text{compute} = \frac{2\cdot P}{N\cdot A_{bm}} \nonumber \\
-\text{comms}  = 2\cdot 4\cdot n\cdot 8us \nonumber \\
+\text{comms}  = 4\cdot n\cdot 8us \nonumber \\
 \end{align}
 $$
 
@@ -35,6 +32,7 @@ $$
 
 - $N$ 是 GPU 数目
 - $n$ 是 transformer layers 数目
+- $s$ 输入序列长度
 - $h$ embedding 向量的大小，也作 $d_{model}$
 - $A_c$ 是 GPU 之间通信带宽，即卡间带宽
 - $A_{bm}$ 是 GPU 内存带宽
@@ -42,7 +40,19 @@ $$
 - $P$ 表示模型(`float16`)参数量
 - $B$ 是 `batch size`
 
-> 这里的 $2P$ 表示我们需要执行 $2P$ 次运算
+> 这里的 $2P$ 表示我们需要执行 $2P$ 次运算。
+
+3，`prefille` 阶段一般都是计算受限，`prefill latency` 的理论计算公式（也可复用前面 decode latency）：
+
+$$\begin{aligned}
+\text{compute} = Bs\cdot \frac{2\cdot P}{N\cdot A_{f}} = \frac{s \cdot \text{decode latency}}{A_f/A_{bm}} \\
+\text{comms}  = Bs\cdot \frac{2\cdot 4\cdot n_{layers}\cdot h}{A_c}
+\end{aligned}
+$$
+
+另外，对于明显计算受限 `MLP` 层其推理计算时间:
+
+$$\text{flops time} = \frac{16h^2s}{N\cdot A_f}$$
 
 举例说明，260B 模型（$n = 80, h=16484$）运行在 16张 A100 卡上。对于小批次，生成每个 token 的时间为 22 毫秒：
 $$
@@ -60,12 +70,38 @@ $$
 $$
 对于自回归模型的推理来说就是，**固定 seq_len**， 如果 seq_len * bs < ops:byte ratio * gpu_num，即**小 `batch_size` 范围 的 latency 不明显增加的**。
 
+## 二 理论 latency 和实际 latency 的差距
 
-### 1.2 批次大小对性能影响的分析
+**decode latency 的理论预估和实际差别**：
 
-通过《英伟达 GPU 性能分析指导》文档可知：算术强度通俗理解就是计算量除以访存量后的值，表示此模型/网络层在计算过程中，每 Byte 内存交换到底用于进行多少次浮点运算，单位是 FLOPs/Byte。即模型计算强度越大，其内存使用效率越高，因此应该尽可能让算法/网络层的算术强度高于 gpu 的 ops:byte ratio，这样才能充分利用 gpu 的算力。
+使用 2 个 gpu 运行 13b 的大语言模型，使用 FasterTransformer 框架进行推理，其使用量内核融合并提供了张量并行方法。130 亿参数的模型有 40 层，40 个头，每个头的维度为 128，总维度大小为 5120。[这里](https://docs.google.com/presentation/d/17PMhlxB3hZYBLqf2mych9CL8kyyssIEvJHOscpqTo1k/edit#slide=id.g120cbed70ac_0_0)有一些性能剖析的截图。
 
-对于 llm 的 `decode` 阶段，模型的算术强度 = $\frac{B\cdot2\cdot P}{2\cdot P} = B(批量大小)$，**即模型的算术强度和批量大小近乎成正比关系**。
+开始测试的设置是上下文长度 512，批次大小 1（内存受限），输出 10 个 token。对于 2 个 GPU 的小批次每生成一个 token，我们预估耗时 $8.4$ 毫秒，通信耗时约为 1 毫秒。如果使用 1 个 GPU，时间预估为 $16.8$ 毫秒（计算公式：$2\cdot 13 \cdot40\cdot5120^2/1.555e12 = 16.8 \text{ms}$），没有通信开销。在实际 llm 的实际推理中：
+
+**1 个 GPU 的 decode latency 实际结果是 22.0 毫秒，表明我们预测值达到了 76% 的准确性**。这个差距可以解释，因为部分时间用于中间激活，并且机器也没有达到理论上 100% 的内存带宽。根据模型的维度，性能剖析显示我们最多只能使用大约 90% 的带宽。因此，将预估时间调整为 18.5 毫秒，再加上中间激活（约 2.2 毫秒），总耗时为 20.7 毫秒！剩余的 1.4 毫秒可以归因于子毫秒级的操作，如 token 嵌入、top-(k|p) 操作、低于 90% 的带宽使用率，甚至是内核启动时间，但总体来说，1 个 gpu 的预估时间很接近 FasterTransformer 框架的实际推理 decode latency。
+
+2 个 GPU 的实际结果为 13.5 毫秒，差距较大，只有 62% 的准确性。我们需要检查内存带宽的下降，因为**较小的张量通常无法完全利用带宽**，2 个 GPU 并行的带宽利用率只有 87%，所以预估时间调整为 9.6 ms。中间激活时间和 1 个 GPU 类似（约 2.4 ms），总耗时为 12 ms。剩余的 1.5 毫秒可以归因于通信，在性能剖析中，每层通信耗时约 40-50 微秒，总通信时间为 1.7 毫秒，到此，理论预估 latency 和实际 latency 的差距（8.4/0.87 + 2.4 + 1.5 = 13.5）完全解释清楚了。
+
+总结：无论是 1/2 个 GPU，中间激活耗时都比预估要高一些（感兴趣的可以利用 nvidia 工具做实验，或者参考别人提供的[性能剖析结果](https://docs.google.com/presentation/d/17PMhlxB3hZYBLqf2mych9CL8kyyssIEvJHOscpqTo1k/edit#slide=id.g120cbed70ac_0_0)）。另外，基准测试中推理的总时间结果是，1 个 GPU 推理: 180.86 ms（prefill time: 45.45ms），2 个 GPU 推理：283.60 ms（prefill time: 63.17 ms）。
+
+**prefill latency 的理论预估和实际差别**：
+
+prefill latency 的理论计算复用前面 decode latency 计算公式的话，其理论结果为：
+$$\text{prefill latency} = \frac{s \cdot \text{decode latency}}{A_f/A_{bm}}$$
+
+前面 decode latency 的分析可知，内存带宽利用率肯定不足 90%，因此 $A_f/A_{bm} = 312e12/(1.5e12*0.9) = 231$。对于 1 个 GPU 设置，实际 decode latency 为 22 ms ，则 $22*(512/231) = 48 ms$，计算结果和实际结果 63 ms 不符。对于 2 个 GPU，计算得出 $13.5*(512/231) = 30 ms$，和实际结果 63.17ms 差距更大。
+
+对于 1 个 GPU，部分时间差异可能来自 kv 存储。查看性能剖析，存储 kv 每层大约耗时 18 us，总计 0.7 ms，还有一些内存清零操作耗时 0.2 ms，加起来为 0.9 ms。另外，主要的是 flops 时间差异：
+- 预估 MLP 乘法的 flops 时间（这是受 flops 限制的！）为 $12\times 5120^2\times 512/312e12 = 344us$。而实际最低时间是 476 微秒，说明我们只达到了理论 flops 的 72%。
+- 对于注意力投影层，理论预估时间为 $2\times 5120^2\times 512/312e12 = 86 us$ ，而性能剖析中最低时间是 159 微秒，仅为 54%。这非常糟糕！但好像也符合现实，参见这篇论文的图 14，$512\times 4000\times 4000$ 张量的计算效率不到 $150\text{TFLOPs/s}$。
+
+综上分析：**实际测试的 prefill/decode latency 和公式理论预估 latency 的差距主要来自：中间激活、线性层的计算效率低于 90%、内存带宽利用率低于 90%** 和其他次要因素如 token 嵌入、top-(k|p) 操作和内核启动时间。且对于小 `batch` decode 阶段会出现明显的内存带宽利用率不足，prefill 阶段会出现明显的算力利用率不足。
+
+## 三 批次大小对性能影响的分析
+
+通过《英伟达 GPU 性能分析指导》文档可知：算术强度通俗理解就是计算量除以访存量后的值，表示此模型/网络层在计算过程中，每 Byte 内存交换到底用于进行多少次浮点运算，单位是 FLOPs/Byte（**每字节交换的 flops**）。即模型计算强度越大，其内存使用效率越高，因此应该尽可能让算法/网络层的算术强度高于 gpu 的 ops:byte ratio，这样才能充分利用 gpu 的算力。
+
+对于 `llm` 的 `decode` 阶段，模型的算术强度 = $\frac{B\cdot2\cdot P}{2\cdot P} = B(批量大小)$，**即模型的算术强度和批量大小近乎成正比关系**。
 
 假设我们使用 A100 GPU，它每秒可以执行 $312 \times 10^{12}$ 次浮点运算（flops），并且内存带宽为每秒 $1.5 \times 10^{12}$ 字节，即 A100 的操作强度为 $A_f/A_{bw}  = 208$。对于 llm 的 decode 阶段，只要批量大小大于 208，则推理处于计算受限，计算效率更高。
 
@@ -83,7 +119,7 @@ $$
 
 这是我们 A100 GPU 的每字节通信 flops 值。我们希望上述表格最后一行的值大于硬件的每字节 flops 计算值，这样可以确保系统保持在计算（flops）受限状态（这里先假设内存带宽不是限制因素）。对于 $d_{model} > 1024$ 的模型运行在 A100 上来说，我们的推理是安全高效的！但对于维度为 512 的情况，情况就有些不理想了。
 
-####  1.2.1 批次大小对性能影响的实验
+### 3.1 批次大小对性能影响的实验
 
 batch_size、内存带宽限制 vs 计算限制对 Latency 会有什么影响呢？
 
@@ -99,29 +135,6 @@ batch_size、内存带宽限制 vs 计算限制对 Latency 会有什么影响呢
 ![token latency](../images/transformer_latency/every_token_latency.png)
 ![token latency](../images/transformer_latency/every_token_latency2.png)
 
-## 二 LLM 并发支持估算
-
-以集群上的单节点 `8` 卡 `V100` 机器运行 `llama-13b` 模型为例，估算极端情况下聊天系统同时服务 10000 人并发所需要的节点数量。这里的**极端情况是指每个请求的输入长度为 512、输出长度为 1536（即上下文长度为 2048）且没有 Latency 要求**。
-> LLaMA 系列模型配置文件中 "max_sequence_length": 2048, 即代表预训练的 LLaMA 模型的最大 Context Window 只有 `2048`。
-
-k、v cache 优化中对于每个 `token` 需要存储的字节数为 $4nh^2$
-
-1，**对于 llama-13b 模型而言， 其推理时，每个 token 大约消耗 `1MB` 的显存**（其实是 kv cache 占用的缓冲），对于输入输出上下文长度（512+1536）和为 2048 的请求，其每个请求需要的显存是 2GB。这里对每个请求所需要显存的估算是没有计算推理中间结果所消耗显存（其比较小，可忽略），另外不同框架支持张量并行所需要的额外显存也各不相同，这里暂时也忽略不计。
-
-- 在模型权重为 `float16` 的情况下，支持的理论 batch 上限为 （32*8-24.6）/ 2 = 115.7。
-- 在模型权重为 `int8` 的情况下，支持的理论 batch 上限为 （32*8-24.6/2）/ 2 = 121.85。（deepspeed 框架不支持 llama 模型的 int8 量化）
-
-以上是理论值即上限值，float16  权重的实际 batch 数量会小于 115.7，目前的 deepspeed 框架运行模型推理时实测 `batch` 数量只可以达到  $50$ 左右。
-
-10000/50 = 200 (台 8 卡 V100 服务器)。
-
-实际场景中的并发请求具有稀疏性，不可能每个请求都是 `2048` 这么长的上下文长度，因此实际上 200 台 8 卡 V100 服务器能服务的并发请求数目应该远多于 10000，可能是几倍。
-
-2，**对于 llama-65b 模型而言，其推理时，每个 token 大约消耗 `2.5MB` 的显存**，因此，极限情况下每个请求需要的显存是 5GB。
-- 在模型权重为 float16 的情况下，支持的理论 batch 上限为 （32*8 - 121.6）/ 5 = 26.88。
-- 在模型权重为 int8 的情况下，支持的理论 batch 上限为 （32*8 - 121.6/2）/ 5 = 39.04。（deepspeed 框架不支持 llama 模型的 int8 量化）
-
-另外，如果输入能量化为 int8 数据类型，理论上支持的 batch 数量会翻倍。
-
 ## 参考资料
+- [Transformer Inference Arithmetic](https://kipp.ly/transformer-inference-arithmetic/)
 - [LLM Inference Unveiled: Survey and Roofline Model Insights](https://arxiv.org/pdf/2402.16363)
