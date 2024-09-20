@@ -370,11 +370,11 @@ xFormers [Lefaudeux et al., 2022] 提供了各种融合内核，以提高变换�
 
 在使用大语言模型（LLM）生成响应时，每次输入和输出 `token` 的数量可能会发生变化。用户的输入提示长度可能不一样，从而影响预填充阶段的序列长度。此外，解码阶段随着 token 的生成，序列长度也会逐渐增加。这意味着**激活的形状不像在普通神经网络中那样固定**。**如何在张量大小变化时有效管理内存是一个挑战**。`PagedAttention` [Kwon et al., 2023] 通过将 KV 缓存分块来高效处理。每个序列的 KV 缓存被分成多个块，每个块包含固定数量 token 的键和值。为了管理这些块，使用表将序列的逻辑块映射到 GPU 内存中的物理块，这类似于 CPU 中的虚拟内存系统。
 
-<img src="../images/llm_inference_unveiled_paper/figure17.png" width="60%" alt="在典型的计算机架构中，内存系统由不同类型的内存空间组成。">
+<img src="../images/llm_inference_unveiled_paper/figure17.png" width="60%" alt="在典型的计算机架构中，内存系统由不同类型的内存空间组成">
 
 当 GPU 内存有限且网络规模过大时，可能需要将网络存储在其他内存空间中，称为工作负载卸载。如图 17 所示，计算机系统包含多种内存空间，如 CPU 的 DDR、GPU 的 GDDR/HBM 和硬盘，这些内存空间的访问带宽各不相同。
 
-<img src="../images/llm_inference_unveiled_paper/figure18.png" width="60%" alt="Roofline model for different offload settings。">
+<img src="../images/llm_inference_unveiled_paper/figure18.png" width="60%" alt="Roofline model for different offload settings">
 
 如图 18 显示，当数据卸载到 CPU 的 DDR 上并在需要时转移到 GPU 进行计算时，效果优于在 CPU 上计算。**当批量大小足够大时，算术强度显著提高，GPU 能够充分利用其计算能力，从而实现良好的性能**。`DeepSpeed-inference`[Aminabadi et al., 2022] 引入了 `ZeRO-Inference`，将大模型的权重卸载到 CPU 内存中，这在大批量处理时表现良好，因为较大的批量需求提高了计算负荷，使得计算延迟与模型权重提取延迟重叠，从而提升了整体效率。Huggingface Accelerate [HuggingFace, 2022] 也可以将某些模块迁移到 CPU 或硬盘，以应对 GPU 空间不足的问题。FlexGen [Sheng et al., 2023] 提供了一种探索不同计算卸载方式的方法，考虑了 GPU、CPU 和硬盘的硬件资源限制。FlexGen 采用基于线性规划的搜索算法来找到最佳的吞吐量策略。Alizadeh et al. [2023] 利用闪存内存容量大于 DRAM 的优势，通过将模型参数存储在闪存中并在需要时转移到 DRAM 来高效执行推理。
 
