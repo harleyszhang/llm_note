@@ -163,7 +163,7 @@ $$\frac{8nh^2}{12nh^2} = 2/3\cong 66\% \\
 
 ## 三 计算量分析
 
-`FLOPs`：floating point operations 指的是浮点运算次数，**理解为计算量**，可以用来衡量算法/模型时间的复杂度。
+`FLOPs`：floating point operations 指的是浮点运算次数，一般特指乘加运算次数，**理解为计算量**，可以用来衡量算法/模型时间的复杂度。
 
 对于矩阵 $A\in\mathbb{R}^{1\times n}$ 和 $B \in \mathbb{R}^{n\times 1}$ 的矩阵乘法的 FLOPs 为 $2n$；**对于矩阵 $A \in \mathbb{R}^{m\times n}$ 和 $B\in\mathbb{R}^{n\times p}$ 的矩阵乘法的 `FLOPs` 为 $2mnp$**。
 
