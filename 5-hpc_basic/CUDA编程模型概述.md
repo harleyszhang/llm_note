@@ -10,6 +10,10 @@
     - [2.3.1 用 CPU 计时器计时](#231-用-cpu-计时器计时)
     - [2.3.2 用 nvprof 工具计时](#232-用-nvprof-工具计时)
     - [2.3.3 GPU 的理论最大性能](#233-gpu-的理论最大性能)
+- [三 设备管理](#三-设备管理)
+  - [3.1 使用运行时 API 查询 GPU 信息](#31-使用运行时-api-查询-gpu-信息)
+  - [3.2 使用 nvidia-smi 查询 GPU 信息](#32-使用-nvidia-smi-查询-gpu-信息)
+  - [3.3 在运行时设置设备](#33-在运行时设置设备)
 - [参考资料](#参考资料)
 
 ## 一 CUDA 编程模型概述
@@ -513,6 +517,100 @@ nvvp profile.nvprof
 $$\frac{\text{算力}}{\text{内存带宽}} = \frac{4.58\ TFLOPS}{320\ GB/s} = 13.6$$
 
 也就是 13.6个指令：1个字节。对于 Tesla K10 而言，如果你的应用程序每访问一个字节所产生的指令数多于 13.6，那么你的应用程序受算法性能限制，GPU 将被充分利用；反之则受访存限制，GPU 没有被充分应用。
+
+## 三 设备管理
+
+### 3.1 使用运行时 API 查询 GPU 信息
+
+可以使用以下函数查询关于 GPU 设备的所有信息：
+```bash
+cudaError t cudaGetDeviceProperties(cudaDeviceProp* prop, int device);
+```
+
+`cudaDeviceProp` 结构体包含了 CUDA 设备的属性信息，可以通过该[网址](https://docs.nvidia.com/cuda/cuda-runtime-api/structcudaDeviceProp.html)查看其内容。以下是一些关键成员及其意义：
+- name: 设备的名称（字符串）。
+- `totalGlobalMem`: 设备的全局内存总量（以字节为单位）。
+- sharedMemPerBlock: 每个线程块的共享内存大小（以字节为单位）。
+- regsPerBlock: 每个线程块的寄存器数量。
+- warpSize: 每个 warp 的线程数量（通常为 32）。
+- maxThreadsPerBlock: 每个线程块的最大线程数。
+- maxThreadsDim[3]: 每个线程块在 3 个维度（x, y, z）上的最大线程数。
+- maxGridSize[3]: 网格在 3 个维度（x, y, z）上的最大尺寸。
+- clockRate: 核心时钟频率（以千赫兹为单位）。
+- totalConstMem: 设备的常量内存大小（以字节为单位）。
+- `multiProcessorCount`: 多处理器的数量（SM 数量）。
+- `computeCapability`:` 计算能力，包含 major 和 minor 版本号。
+
+实例代码如下所示：
+
+```cpp
+#include <stdio.h>
+#include <cuda_runtime.h>
+
+int main() {
+    int deviceCount;
+    cudaGetDeviceCount(&deviceCount);
+
+    for (int device = 0; device < deviceCount; device++) {
+        cudaDeviceProp prop;
+        cudaGetDeviceProperties(&prop, device);
+
+        printf("Device %d: %s\n", device, prop.name);
+        printf("  Total Global Memory: %lu bytes\n", prop.totalGlobalMem);
+        printf("  Shared Memory Per Block: %lu bytes\n", prop.sharedMemPerBlock);
+        printf("  Registers Per Block: %d\n", prop.regsPerBlock);
+        printf("  Warp Size: %d\n", prop.warpSize);
+        printf("  Max Threads Per Block: %d\n", prop.maxThreadsPerBlock);
+        printf("  Max Threads Dimension: (%d, %d, %d)\n",
+               prop.maxThreadsDim[0], prop.maxThreadsDim[1], prop.maxThreadsDim[2]);
+        printf("  Max Grid Size: (%d, %d, %d)\n",
+               prop.maxGridSize[0], prop.maxGridSize[1], prop.maxGridSize[2]);
+        printf("  Clock Rate: %d kHz\n", prop.clockRate);
+        printf("  Total Constant Memory: %lu bytes\n", prop.totalConstMem);
+        printf("  Multi-Processor Count: %d\n", prop.multiProcessorCount);
+        printf("  Compute Capability: %d.%d\n", prop.major, prop.minor);
+    }
+
+    return 0;
+}
+```
+
+编译运行代码后输出结果如下所示：
+```bash
+Device 0: GeForce GTX 1080
+  Total Global Memory: 8589934592 bytes
+  Shared Memory Per Block: 49152 bytes
+  Registers Per Block: 65536
+  Warp Size: 32
+  Max Threads Per Block: 1024
+  Max Threads Dimension: (1024, 1024, 64)
+  Max Grid Size: (2147483647, 65535, 65535)
+  Clock Rate: 1733000 kHz
+  Total Constant Memory: 65536 bytes
+  Multi-Processor Count: 20
+  Compute Capability: 6.1
+```
+
+### 3.2 使用 nvidia-smi 查询 GPU 信息
+
+使用 nvidia-smi 工具的常用命令:
+
+```bash
+# 1, 持续监控 GPU 使用情况（每秒更新一次）
+nvidia-smi -l 1 
+# 2, 以 CSV 格式输出 GPU 的索引、名称、驱动程序版本、总内存和已用内存的信息，方便进一步处理或分析
+nvidia-smi --query-gpu=index,name,driver_version,memory.total,memory.used --format=csv
+# 3, 显示所有 GPU 的进程信息
+nvidia-smi pmon -s um
+```
+
+### 3.3 在运行时设置设备
+
+对于于一个有 N 个 GPU 的系统，nvidia-smi 从 0 到 N―1 标记设备 ID。使用环境变量 `CUDA_VISIBLE_DEVICES`，就可以在运行时指定所选的GPU 且无须更改应用程序。
+
+例如，设置运行时环境变量 `CUDA_VISIBLE_DEVICES=2`。nvidia 驱动程序会屏蔽其他GPU，这时设备 2 作为设备 0 出现在应用程序中。
+
+也可以使用CUDA_VISIBLE_DEVICES指定多个设备。例如，如 `CUDA_VISIBLE_DEVICES=2，3`，在运行时，nvidia 驱动程序将只使用 ID 为 2 和 3 的设备，并且会将设备 ID 分别映射为 0 和 1。
 
 ## 参考资料
 
