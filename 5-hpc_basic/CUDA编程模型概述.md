@@ -249,7 +249,7 @@ int main(void) {
     hello<<<blocks,threadsperblock>>>(); 
     /* wait until all threads finish their job */
     cudaDeviceSynchronize();
-    print("Welcom comeback to cpu!\n");
+    printf("Welcom comeback to cpu!\n");
 
     return 0;
 }

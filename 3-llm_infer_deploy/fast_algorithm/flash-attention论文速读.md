@@ -1,3 +1,24 @@
+- [1，介绍](#1介绍)
+- [2，背景](#2背景)
+  - [2.1，硬件性能](#21硬件性能)
+  - [2.2，标准 attention 实现](#22标准-attention-实现)
+- [3，FlashAttention: Algorithm, Analysis, and Extensions](#3flashattention-algorithm-analysis-and-extensions)
+  - [3.1，An Efficient Attention Algorithm With Tiling and Recomputation](#31an-efficient-attention-algorithm-with-tiling-and-recomputation)
+  - [3.2，Analysis: IO Complexity of FlashAttentio](#32analysis-io-complexity-of-flashattentio)
+  - [3.3，Extension: Block-Sparse FlashAttention](#33extension-block-sparse-flashattention)
+- [4，实验](#4实验)
+  - [4.1，使用 FlashAttention 的更快模型](#41使用-flashattention-的更快模型)
+  - [4.2，使用长序列的更好模型](#42使用长序列的更好模型)
+  - [4.3，基准注意力](#43基准注意力)
+- [5，局限性和未来方向](#5局限性和未来方向)
+- [A，相关工作](#a相关工作)
+- [B，算法细节](#b算法细节)
+  - [B.1，内存高效的前向传播](#b1内存高效的前向传播)
+  - [B.2，内存高效的反向传播](#b2内存高效的反向传播)
+  - [B.3 FlashAttention: 前向传播](#b3-flashattention-前向传播)
+- [C，证明](#c证明)
+
+
 ## 1，介绍
 
 Transformer 模型目前已经成为自然语言处理和图像分类等领域中使用最广泛的神经网络架构。虽然 Transformer 模型已经变得越来越大和深，但是处理更长的上下文依然还是有困难，最主要的原因是其核心模块-自注意力机制的时间和内存复杂度是序列长度的二次方。一个重要的问题是，让注意力更快、内存效率更高是否可以帮助 Transformer 模型解决长序列的运行时和内存挑战。
@@ -40,11 +61,10 @@ Transformer 模型目前已经成为自然语言处理和图像分类等领域�
 ### 2.1，硬件性能
 
 1. **GPU 内存层次结构**。（如图1左侧所示）包括多种不同大小和速度的内存形式，较小的内存速度更快。以A100 GPU为例，它具有40-80GB的高带宽内存（HBM），**带宽为 1.5-2.0 TB/s**，并且每个 108 个流式多处理器都有 192KB 的芯片上SRAM，其带宽约为19TB/s [44, 45]。芯片上的SRAM比HBM快一个数量级，但在大小上要小得多。由于计算相对于内存速度更快[61, 62, 63]，操作越来越受到内存（HBM）访问的限制。因此，利用快速的SRAM变得更加重要。
-2. **执行模型（**Execution Model）。GPU有大量线程来执行操作（称为内核）。每个内核将输入从HBM加载到寄存器和SRAM中，进行计算，然后将输出写入HBM。
+2. **执行模型**（Execution Model）。GPU 有大量线程来执行操作（称为内核）。每个内核将输入从 HBM 加载到寄存器和 SRAM 中，进行计算，然后将输出写入HBM。
 3. **性能特征**（Performance characteristics.）。根据计算和内存访问的平衡，操作可以被分类为**计算受限或内存受限**。这通常通过**算术强度**[85] 来衡量，即每字节内存访问的算术操作数。
-
-- **计算受限**：操作所需的时间取决于有多少算术操作，而访问 HBM 的时间要小得多。典型的示例包括具有**大内部维度的矩阵乘法**和具有大量通道的**卷积操作**。
-- **内存受限**：操作所需的时间取决于内存访问的次数，而在计算方面所花费的时间要小得多。示例包括大多数其他操作：逐元素操作（例如激活函数 activation、丢弃操作 dropout）以及规约操作（例如求和  sum、softmax、批归一化 batch norm、层归一化 layer norm）。
+   - **计算受限**：操作所需的时间取决于有多少算术操作，而访问 HBM 的时间要小得多。典型的示例包括具有**大内部维度的矩阵乘法**和具有大量通道的**卷积操作**。
+   - **内存受限**：操作所需的时间取决于内存访问的次数，而在计算方面所花费的时间要小得多。示例包括大多数其他操作：逐元素操作（例如激活函数 activation、丢弃操作 dropout）以及规约操作（例如求和  sum、softmax、批归一化 batch norm、层归一化 layer norm）。
 
 **内核融合**。**加速内存受限操作的最常见方法是内核融合**：如果对相同输入应用了多个操作，那么可以从 HBM 加载一次输入，而不是每个操作都加载多次。编译器可以自动融合许多逐元素操作[53, 65, 75]。然而，在模型训练的背景下，中间值仍然需要写入HBM以供反向传播保存，降低了朴素内核融合的效果。
 
@@ -72,7 +92,7 @@ $$S = QK^T \in R^{N\times N}, P = softmax(S) \in R^{N\times N}, O = PV\in R^{N\t
 
 我们使用两种技术（**tiling，recomputation**）来克服在 sub-quadratic HBM 访问中计算精确注意力的技术挑战。我们在算法 1中描述了这两种技术。主要思想就是将 $Q,K,V$ 矩阵划分成块，从慢速 HBM 加载到快速 SRAM 中，然后分别计算这些块的注意力输出，最后，将每个块的输出按正确的归一化因子缩放之后相加，我们最终得到了正确的结果。
 
-**1，Tiling.** 我们**按块计算注意力。**Softmax 将 K 的列耦合在一起，因此我们使用缩放 [51, 60, 66] 来分解大的 softmax。为了数值稳定性，向量 $x\in R^B$ 的 softmax 结果计算过程如下：
+**1，Tiling.** 我们**按块计算注意力**。Softmax 将 K 的列耦合在一起，因此我们使用缩放 [51, 60, 66] 来分解大的 softmax。为了数值稳定性，向量 $x\in R^B$ 的 softmax 结果计算过程如下：
 
 $$m(x) := \underset{i}{max} \; x_i, \ f(x) := [e^{x_1 - m(x)} ... e^{x_B - m(x)}], \ell(x) := \sum_i f(x)_i, softmax(x) := \frac{f(x)}{\ell(x)} .$$
 
