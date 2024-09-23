@@ -6,6 +6,9 @@
 - [2. 向量相加](#2-向量相加)
 - [3. 理解内核运行的机制](#3-理解内核运行的机制)
 - [3. 融合 Softmax](#3-融合-softmax)
+  - [简单 softmax 内核实现](#简单-softmax-内核实现)
+  - [优化版 softmax 内核](#优化版-softmax-内核)
+- [参考资料](#参考资料)
 
 `Triton` 是一种用于并行编程的语言和编译器，它旨在提供一个基于 Python 的编程环境，帮助高效编写自定义的深度神经网络（DNN）计算核，并在现代 GPU 硬件上以最大吞吐量运行。
 
@@ -170,6 +173,9 @@ grid = lambda META: (triton.cdiv(N, META['BLOCK_SIZE']),)
 vector_add_kernel[grid](X, Y, Z, N, BLOCK_SIZE=1024) # 调用 Triton 内核，传递参数。
 ```
 
+从程序理解 BLOCK_SIZE 和 gird：
+- BLOCK_SIZE 似乎是一次加载的内存/元素的数量
+- grid 是程序实例数量（并行执行的内核个数）
 2，再看内核定义函数 `vector_add_kernel`，其函数原型如下所示。
 
 ```python
@@ -329,41 +335,64 @@ naive_softmax 函数实现了行级（row-wise）的 softmax 计算，通过以�
 
 注意，代码中注释提到的数据访问量，计算 `y = naive_softmax(x)` $x\in R^{M\times N}$.总读取：5MN + 2M 个元素，总写入：8MN + 2M 个元素，总数据（内存）访问量（MAC） = 7MN + 4M。
 
-上述实现明显不够搞笑，MAC 过大，显然不够高效；因此我们更希望使用一个自定义的“融合”内核，仅对 X 进行一次读取，并在芯片上完成所有所需的计算。这样只需要读取和写回字节数，理论上可以达到大约 $4 = (8MN + 4M) / 2MN$ 倍的加速效果（即，）。虽然 “torch.jit.script” 标志旨在自动实现这种“内核融合”，但它依然存在一些不足（后面分析）。
+#### 简单 softmax 内核实现
+上述实现明显不够搞笑，MAC 过大，显然不够高效；因此我们更希望使用一个自定义的“融合”内核，仅对 X 进行一次读取，并在芯片上完成所有所需的计算。这样只需要一次读取和写回字节数，理论上可以达到大约 $4 = (8MN + 4M) / 2MN$ 倍的加速效果（即，）。虽然 “torch.jit.script” 标志旨在自动实现这种“内核融合”，但它依然存在一些不足（后面分析）。
 
-1，参考前面的向量相加的例子，实现的 softmax 内核及内核调用函数如下所示:
+那么问题来了，和前面处理一维向量不同，二维矩阵数据如何读取和加载呢？办法是让  triton 程序在**给定步幅大小**的情况下迭代每一行。参考前面的向量相加的例子，实现的 softmax 内核及内核调用函数如下所示:
 
 ```python
 @triton.jit
-def triton_softmax(X_ptr, Y_ptr, M, N, BLOCK_SIZE):
-    pid = tl.program_id(0)                        # 获取当前块的 ID
-    block_start = pid * BLOCK_SIZE                # 计算当前块的起始索引
-    offsets = tl.arange(0, BLOCK_SIZE)            # 生成当前块的线程偏移量
-    idx = block_start + offsets                   # 计算每个线程负责的索引
-    mask = idx < M                                # 创建掩码，防止越界
+def softmax_kernel(input_ptr, output_ptr, input_row_stride, 
+                output_row_stride, n_cols, BLOCK_SIZE:: tl.constexpr):
     
-    # 加载行数据
-    x_row = tl.load(X_ptr + idx*N, mask = mask)   # 假设行连续存储
-    x_max = tl.max(x_row)
-    x_shifted = x_row - x_max
-    exp_x = tl.exp(x_shifted)
-    sum_x = tl.sum(exp_x)
-    
-    softmax_ret = exp_x / sum_x
-    tl.store(Y_ptr + idx * N, softmax_ret, mask=mask)
+    row_idx = tl.program_id(0) # 一个块处理一行元素，idx 表示第几行，每行之间的处理是并行的
+    row_start_ptr = input_ptr + row_idx * input_row_stride # # 步幅表示我们需要增加指针多少才能前进 1 行
+    col_offsets = tl.arange( 0 , BLOCK_SIZE) # 块大小是大于 n_cols 的下一个 2 的幂，因此我们可以将每一行放在一个块中
+    input_ptrs = row_start_ptr + col_offsets 
+    # 将行加载到 SRAM 中，使用掩码，因为 BLOCK_SIZE 可能大于 n_cols
+    row = tl.load(input_ptrs, mask=col_offsets < n_cols）# 
 
-def softmax_triton(X):
-    M, N = X.shape
-    Y = torch.empty_like(X[:,])
-    
-    grid = lambda META: (triton.cdiv(M, META['BLOCK_SIZE']),)
-    triton_softmax[grid](X, Y, M, N, BLOCK_SIZE=1024)
-    return Y
+    # Load the row into SRAM, using a mask since BLOCK_SIZE may be > than n_cols
+    # Subtract maximum for numerical stability
+    row_minus_max = row - tl.max(row, axis=0)
+    numerator = tl.exp(row_minus_max)
+    denominator = tl.sum(numerator, axis=0)
+    softmax_output = numerator / denominator
+
+    # 将结果行数据写入到指定地址范围中
+    out_row_ptr = output_ptr + row_idx * output_row_stride
+    output_ptrs = out_row_ptr + col_offsets
+    tl.store(output_ptrs, softmax_output, mask=col_offsets < n_cols)
+
+def softmax(x):
+    n_rows, n_cols = x.shape
+    y = torch.empty_like(x)
+    BLOCK_SIZE = triton.next_power_of_2(n_cols)
+    grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']),)
+
+    # 增加每行分配的 warp 数量（num_warps）
+    num_warps = 4
+    if BLOCK_SIZE >= 2048:
+        num_warps = 8
+    if BLOCK_SIZE >= 4096:
+        num_wraps = 16
+
+    softmax_kernel[grid](x, 
+        y, 
+        x.stride(0), 
+        y.stride(0), 
+        n_cols, 
+        num_warps=num_warps,
+        BLOCK_SIZE = BLOCK_SIZE)
+
+    return y
 ```
 
-这里实现的是逐行的 softmax 操作，所以让每个线程负责处理一整行的 softmax 计算，即处理连续的数据块，而不是让每个线程将处理一个单独的元素。这里的内核配置是一维的，和上一节向量相加的内核配置类似，但这样的内核不是最优性能的。
+这里实现的是逐行的 softmax 操作，所以让**每个块负责处理一整行的 softmax 计算**。
 
-2，**优化后的 “Softmax” 内核**的运行方式如下：每个程序会按程序数量为步幅，加载输入矩阵 X 的一组行，对其进行归一化处理后，将结果写回输出矩阵 Y。
+#### 优化版 softmax 内核
+
+**优化后的 “Softmax” 内核**的运行方式如下：每个程序会按程序数量为步幅，加载输入矩阵 X 的一组行，对其进行归一化处理后，将结果写回输出矩阵 Y。
 
 需要注意的是，“Triton” 有一个重要限制：每个块的元素数量必须是 2 的幂次方。因此，如果要处理任意形状的输入矩阵，我们需要在内部对每一行进行“填充”，并确保内存操作的正确性。
 
@@ -429,7 +458,7 @@ def softmax(x):
     # increasing the number of warps (`num_warps`) over which each row is distributed.
     # You will see in the next tutorial how to auto-tune this value in a more natural
     # way so you don't have to come up with manual heuristics yourself.
-    num_warps = 8
+    num_warps = 8 # 预设为 8
 
     # Number of software piepling stages.
     num_stages = 4 if SIZE_SMEM > 200000 else 2 # 根据共享内存大小决定流水线阶段数。更多的阶段可以提高内核吞吐量，但会增加复杂性。
@@ -440,19 +469,17 @@ def softmax(x):
     # pre-compile kernel to get register usage and compute thread occupancy.
     kernel, num_programs = kernels.get(BLOCK_SIZE, (None, 0))
     if kernel is None:
+        # 通过 softmax_kernel.warmup 和 kernel._init_handles() 获取内核对寄存器和共享内存的需求
         kernel = softmax_kernel.warmup(y, x, x.stride(0), y.stride(0), n_rows, n_cols, BLOCK_SIZE=BLOCK_SIZE,
                                        num_stages=num_stages, num_warps=num_warps, grid=(1, ))
         kernel._init_handles()
-        n_regs = kernel.n_regs
-        size_smem = kernel.metadata.shared
+        n_regs = kernel.n_regs # 内核所需寄存器数量
+        size_smem = kernel.metadata.shared # 内核所需共享内存大小
         if is_hip():
-            # NUM_REGS represents the number of regular purpose registers. On CDNA architectures this is half of all registers available.
-            # However, this is not always the case. In most cases all registers can be used as regular purpose registers.
-            # ISA SECTION (3.6.4 for CDNA3)
-            # VGPRs are allocated out of two pools: regular VGPRs and accumulation VGPRs. Accumulation VGPRs are used
-            # with matrix VALU instructions, and can also be loaded directly from memory. A wave may have up to 512 total
-            # VGPRs, 256 of each type. When a wave has fewer than 512 total VGPRs, the number of each type is flexible - it is
-            # not required to be equal numbers of both types.
+        # `“NUM_REGS”` 表示通用寄存器的数量。在 `“CDNA”` 架构中，其等于所有可用寄存器`“NUM_GPRS”` 的一半。但也并不总是这样，在大多数情况下，所有寄存器都可以用作通用寄存器。
+
+        # `ISA` 部分（“CDNA3” 的 3.6.4 节）
+        # “VGPR”（矢量通用寄存器）分配来自两个池：通用 VGPR 和累积 VGPR。累积 VGPR 用于矩阵 “VALU” 指令，也可以直接从内存加载。一个波（`wave`）最多可以拥有 512 个 VGPR，总数为 512，其中每种类型最多 256 个。当一个波使用少于 512 个 VGPR 时，每种类型的数量是灵活的——不需要两种类型的数量相等。
             if is_cdna():
                 NUM_GPRS = NUM_REGS * 2
 
@@ -484,9 +511,33 @@ def softmax(x):
     return y
 ```
 
-`“NUM_REGS”` 表示通用寄存器的数量。在 `“CDNA”` 架构中，其等于所有可用寄存器`“NUM_GPRS”` 的一半。但也并不总是这样，在大多数情况下，所有寄存器都可以用作通用寄存器。
+调用内核的函数代码主要就是在计算 `num_programs`（程序数量），也是前面说的 grid（blocks数量）。这里没有使用 num_programs = elements / block_size（公式简化了下没有用向上取整），是因为直接这样设置**会忽略了 GPU 的寄存器和共享内存限制，而导致部分 SM 上程序数量不足**。而设置 num_programs = occupancy × SM 数量，是为了动态调整程序数量以适应不同硬件资源和内核需求，以最大化资源利用率和隐藏延迟。
 
-`ISA` 部分（“CDNA3” 的 3.6.4 节）
-“VGPR”（矢量通用寄存器）分配来自两个池：通用 VGPR 和累积 VGPR。累积 VGPR 用于矩阵 “VALU” 指令，也可以直接从内存加载。一个波（`wave`）最多可以拥有 512 个 VGPR，总数为 512，其中每种类型最多 256 个。当一个波使用少于 512 个 VGPR 时，每种类型的数量是灵活的——不需要两种类型的数量相等。
+值的注意的是，occupancy 的计算有不同 API 和不同计算方式。上述代码是基于寄存器和共享内存的资源限制，**计算每个 SM 上最多可同时运行的程序数量（SM 中驻留的块数目）**。
 
-**`“MAX_NUM_THREADS”` 表示每个多处理器（SM）中驻留线程的最大数量**，将其除以 `“WARP_SIZE”`，得到的是在一个 CU（多处理器）上**并行执行的最大波（wave）数**。
+对于 CUDA/NVIDIA 架构，**基于寄存器的限制**，一个线程需要使用 n_regs 寄存器，则所有程序数量使用 num_warps * WARP_SIZE * n_regs 个寄存器，而一个 SM 支持最多 NUM_REGS 个寄存器，则一个 SM 支持最多 `NUM_REGS // (n_regs * WARP_SIZE * num_warps` 个程序实例。
+```python
+# 这里 occupancy 表示每个 SM 上可以同时运行的程序数量
+occupancy = NUM_REGS // (n_regs * WARP_SIZE * num_warps)
+```
+
+再考虑共享内存限制，每个内核程序 shi li需要 size_smem 共享内存，则一个 SM 支持最多 `SIZE_SMEM // size_smem` 个程序实例（块）。
+
+```python
+# 确保共享内存的使用不会超出每个 SM 的最大容量。
+occupancy = min(occupancy, SIZE_SMEM // size_smem)
+```
+
+softmax 函数中关键的代码是内核预编译与缓存部分，关键变量解释：
+- NUM_SM：GPU 上的 SM（Streaming Multiprocessor，流多处理器）数量。
+- NUM_REGS: 每个 SM 的最大寄存器数量。
+- NUM_GPRS: 在 HIP（AMD GPU）架构下的寄存器数量。
+- SIZE_SMEM: 每个 SM 的最大共享内存大小（单位：字节）。
+- WARP_SIZE: 每个 warp（一个 warp 包含 32 个线程）的线程数，通常为 32。
+- n_regs: 内核每个线程需要使用的寄存器数量。
+- size_smem: 内核每个程序需要使用的共享内存大小。
+- num_warps: 每个程序（程序指的是一个内核实例）使用的 warps 数量（grid/32）。
+
+### 参考资料
+
+- [Understanding the Triton Tutorials Part 1](https://isamu-website.medium.com/understanding-the-triton-tutorials-part-1-6191b59ba4c)
