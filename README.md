@@ -26,5 +26,8 @@ LLM notes, including model inference, transformer model structure, and lightllm 
 
 ## 参考资料
 
+- [CUDA and Applications to Task-based Programming](https://cuda-tutorial.github.io/)
 - [transformer inference arithmetic](https://kipp.ly/transformer-inference-arithmetic/)
 - [LLM Inference Unveiled: Survey and Roofline Model Insights](https://arxiv.org/pdf/2402.16363)
+- [CUDATutorial](https://github.com/RussWong/CUDATutorial/tree/main)
+- [NVIDIA CUDA Knowledge Base](https://github.com/rshipley160/learn-cuda/wiki)

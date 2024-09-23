@@ -184,7 +184,7 @@ $$y = xW^T + \text{bias}$$
 
 先分析 `MHA` 块的计算量：
 
-1, **计算 Q、K、V**：对输入矩阵做线性变换，输入 `tokens` 序列的 **`embedding` 向量**的形状为 $[s, h]$，做线性变换的权重矩阵 $W_Q$、$W_K$、$W_V$ $\in \mathbb{R}^{h\times h}$，矩阵乘法的输入和输出形状为: $[s,h] \times [h,h]\to [s,h]$，`FLOPs`: $3* 2sh^2 = 6h^2s$。
+1, **计算 Q、K、V**：对输入矩阵做线性变换，输入 `tokens` 序列的 **`embedding` 向量**的形状为 $[s, h]$，做线性变换的权重矩阵 $W_Q$、$W_K$、$W_V$ $\in \mathbb{R}^{h\times h}$，矩阵乘法的输入和输出形状为: $[s,h] \times [h,h]\to [s,h]$，`FLOPs`: $3* 2sh^2 = 6sh^2$。
 
 2, **Self-Attention 层**，`MHA` 包含 `heads` 数目的 `Self-Attention` 层，这里直接分析所有 `Self-Attention` 层的 `FLOPs`:
 - **$QK^T$ 打分计算**：每个头需要计算 Query 和 Key 的点积，所有头的 $QK^T$ 矩阵乘法的输入和输出形状为: $[s,h] \times [h,s]\to [s,s]$，`FLOPs`: $2s^2h$。
