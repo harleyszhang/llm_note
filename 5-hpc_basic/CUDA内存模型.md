@@ -415,4 +415,6 @@ GPU 中的内存带宽简单理解就是 **`SM` 访问设备内存的速度**。
 
 ## 参考资料
 
-《CUDA C 编程权威指南》
+- 《CUDA C 编程权威指南》
+- [CUDA C++ Programming Guide](https://docs.nvidia.com/cuda/pdf/CUDA_C_Programming_Guide.pdf)
+- 《CUDA 编程：基础与实践_樊哲勇》
