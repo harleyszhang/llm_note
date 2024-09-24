@@ -310,18 +310,14 @@ def naive_softmax(x):
 
     We subtract the maximum element in order to avoid overflows. Softmax is invariant to
     this shift.
-    """
-    # read  MN elements ; write M  elements
-    x_max = x.max(dim=1)[0]
-    # read MN + M elements ; write MN elements
-    z = x - x_max[:, None]
-    # read  MN elements ; write MN elements
-    numerator = torch.exp(z)
-    # read  MN elements ; write M  elements
-    denominator = numerator.sum(dim=1)
-    # read MN + M elements ; write MN elements
-    ret = numerator / denominator[:, None]
     # in total: read 5MN + 2M elements ; wrote 3MN + 2M elements
+    """
+    x_max = x.max(dim=1)[0] # read  MN elements ; write M  elements
+    z = x - x_max[:, None] # read MN + M elements ; write MN elements
+    numerator = torch.exp(z) # read  MN elements ; write MN elements
+    denominator = numerator.sum(dim=1) # read  MN elements ; write M  elements
+    ret = numerator / denominator[:, None]  # read MN + M elements ; write MN elements
+    
     return ret
 ```
 
@@ -349,11 +345,9 @@ def softmax_kernel(input_ptr, output_ptr, input_row_stride,
     row_start_ptr = input_ptr + row_idx * input_row_stride # # 步幅表示我们需要增加指针多少才能前进 1 行
     col_offsets = tl.arange( 0 , BLOCK_SIZE) # 块大小是大于 n_cols 的下一个 2 的幂，因此我们可以将每一行放在一个块中
     input_ptrs = row_start_ptr + col_offsets 
-    # 将行加载到 SRAM 中，使用掩码，因为 BLOCK_SIZE 可能大于 n_cols
-    row = tl.load(input_ptrs, mask=col_offsets < n_cols）# 
 
-    # Load the row into SRAM, using a mask since BLOCK_SIZE may be > than n_cols
-    # Subtract maximum for numerical stability
+    row = tl.load(input_ptrs, mask=col_offsets < n_cols）# using a mask since BLOCK_SIZE may be > than n_cols
+
     row_minus_max = row - tl.max(row, axis=0)
     numerator = tl.exp(row_minus_max)
     denominator = tl.sum(numerator, axis=0)
@@ -368,7 +362,7 @@ def softmax(x):
     n_rows, n_cols = x.shape
     y = torch.empty_like(x)
     BLOCK_SIZE = triton.next_power_of_2(n_cols)
-    grid = lambda meta: (triton.cdiv(n_elements, meta['BLOCK_SIZE']),)
+    # grid = lambda meta: (triton.cdiv(n_rows*n_cols, meta['BLOCK_SIZE']),)
 
     # 增加每行分配的 warp 数量（num_warps）
     num_warps = 4
@@ -377,7 +371,7 @@ def softmax(x):
     if BLOCK_SIZE >= 4096:
         num_wraps = 16
 
-    softmax_kernel[grid](x, 
+    softmax_kernel[n_rows](x, 
         y, 
         x.stride(0), 
         y.stride(0), 
@@ -398,35 +392,32 @@ def softmax(x):
 
 ```python
 @triton.jit
-def softmax_kernel(output_ptr, input_ptr, input_row_stride, output_row_stride, n_rows, n_cols, BLOCK_SIZE: tl.constexpr,
-                   num_stages: tl.constexpr):
-    # starting row of the program
-    row_start = tl.program_id(0)
+def softmax_kernel(input_ptr, output_ptr, input_row_stride, 
+                output_row_stride, n_rows, n_cols, BLOCK_SIZE:: tl.constexpr):
+    
+    row_start = tl.program_id(0) # 一个块处理一行元素，idx 表示第几行，每行之间的处理是并行的
     row_step = tl.num_programs(0)
-    for row_idx in tl.range(row_start, n_rows, row_step, num_stages=num_stages):
-        # The stride represents how much we need to increase the pointer to advance 1 row
-        row_start_ptr = input_ptr + row_idx * input_row_stride
-        # The block size is the next power of two greater than n_cols, so we can fit each row in a single block
-        col_offsets = tl.arange(0, BLOCK_SIZE)
-        input_ptrs = row_start_ptr + col_offsets
-        # Load the row into SRAM, using a mask since BLOCK_SIZE may be > than n_cols
-        mask = col_offsets < n_cols
-        row = tl.load(input_ptrs, mask=mask, other=-float('inf'))
-        # Subtract maximum for numerical stability
+    for row_idx in tl.range(row_start, n_rows, row_step,num_stages=num_stages):
+        row_start_ptr = row_idx + row_idx * input_row_stride # 行步幅表示我们需要增加指针多少才能前进 1 行
+        col_offsets = tl.arange( 0 , BLOCK_SIZE) # 块大小是大于 n_cols 的下一个 2 的幂，因此我们可以将每一行放在一个块中
+        input_ptrs = row_start_ptr + col_offsets 
+
+        row = tl.load(input_ptrs, mask=col_offsets < n_cols, other=-float('inf')）# using a mask since BLOCK_SIZE may be > than n_cols
+
         row_minus_max = row - tl.max(row, axis=0)
-        # Note that exponentiation in Triton is fast but approximate (i.e., think __expf in CUDA)
         numerator = tl.exp(row_minus_max)
         denominator = tl.sum(numerator, axis=0)
         softmax_output = numerator / denominator
-        # Write back output to DRAM
-        output_row_start_ptr = output_ptr + row_idx * output_row_stride
-        output_ptrs = output_row_start_ptr + col_offsets
-        tl.store(output_ptrs, softmax_output, mask=mask)
+
+        # 将结果行数据写入到指定地址范围中
+        out_row_start_ptr = output_ptr + row_idx * output_row_stride
+        output_ptrs = out_row_start_ptr + col_offsets
+        tl.store(output_ptrs, softmax_output, mask=col_offsets < n_cols)
 ```
 
 1，为什么列偏移用 tl.arange(0, BLOCK_SIZE) 而不是 tl.arange(0, n_cols)?
 
-Softmax 内核中，每个程序（线程块）负责处理输入矩阵的一行，而 BLOCK_SIZE 决定了每行数据中每个程序一次性处理的列数。之所以使用 BLOCK_SIZE 而不是 N，是因为实际案例中矩阵列数千奇百怪，使用 BLOCK_SIZE（ 2 的幂例如 32、64、128 等），可以确保内存访问的对齐（GPU 的内存访问通常对齐到特定的边界（如 32 字节）），减少内存访问的开销，提高带宽利用率。
+Softmax 内核中，每个程序（线程块）负责处理输入矩阵的一行，而 BLOCK_SIZE 决定了每行数据中每个程序一次性处理的列数。之所以使用 BLOCK_SIZE 而不是 N，是因为实际案例中矩阵列数千奇百怪，使用 `BLOCK_SIZE= triton.next_power_of_2(n_cols)`（ 2 的幂例如 32、64、128 等），可以确保内存访问的对齐（GPU 的内存访问通常对齐到特定的边界（如 32 字节）），减少内存访问的开销，提高带宽利用率。
 
 2，为什么需要 for 循环？
 
@@ -501,8 +492,8 @@ def softmax(x):
 
     # Create a number of persistent programs.
     kernel[(num_programs, 1, 1)](
-        y,
         x,
+        y,
         x.stride(0),
         y.stride(0),
         n_rows,
