@@ -155,9 +155,77 @@ if __name__ == "__main__":
 
 ### 2. 矩阵乘法 kernel
 
-#### 2.1 指针算法
-获取矩阵 A 和 B 字块的 python 切片代码如下所示：
-- 获取矩阵 A 的子块：A[m:m+block_size_m, k:k+block_size_k]：
+#### 2.1 block 的计算顺序
+
+对于矩阵乘法 $A*B=C$，$A$ 的大小是 $M \times K$, $B$ 是 $K\times N$，$C$ 的大小是 $M\times N$, 分块矩阵优化的思路是每次只算出 $C$ 的一部分，假设每次"循环"算的大小是 $\text{BLOCK\_SIZE\_M} \times \text{BLOCK\_SIZE\_N}$ , 那么总共要 "循环" $\frac{M}{BLOCK\_SIZE\_M} \times \frac{N}{BLOCK\_SIZE\_N}$ 次。
+
+循环次数（也是 grid 大小，kernel 程序实例数，block 数目）确定了，但是按照什么样的顺序来循环（读区数据的顺序和范围）是有不同选择的，不同的选择会影响 kernel 的内存访问效率。
+
+<img src="../images/triton_tutorials1/super_grouping.png" width="70%" alt="超级分组">
+
+上图中每个黄色小块的大小是 `BLOCK_SIZE_M x BLOCK_SIZE_N`, 也就是一个  `block`。图分别展示了矩阵乘法 kernel 的两种循环方式：
+1. 上面一种叫做 `row-major ordering`（行优先顺序）, 就是最直接的按照行的模型一个block一个block 地往下进行。对应的需要将 90 个块加载到 SRAM 中才能计算出前 9 个输出块。
+2. 下面的叫做 `grouped ordering`, 这种思路不常见, 基本思路是先做 9 个 block, 形成一个大点的 super-block, 然后再进行到下一个 super-block。这种方法只需加载 54 个 block，就能得到前 9 个输出块，数据的 reuse 做得好。
+
+看懂图的黄色小块过程，再来看代码就容易点，说简单点，代码大部分就是为了一个目的：当我们从 `0` 到 `80` 逐渐增加 `pid` 的时候，按照 `grouped ordering` 的顺序处理黄色小块。即
+```bash
+for pid in range(80):
+    load_memory(pid_m, pid_n) # (pid_m, pid_n) 是黄色小块的坐标
+```
+上述伪代码的真正 triton 实现如下所示:
+
+```python
+# Program ID
+pid = tl.program_id(axis=0) 
+num_pid_m = tl.cdiv(M, BLOCK_SIZE_M) 
+num_pid_n = tl.cdiv(N, BLOCK_SIZE_N) 
+
+num_pid_in_group = GROUP_SIZE_M * num_pid_n
+group_id = pid // num_pid_in_group 
+first_pid_m = group_id * GROUP_SIZE_M
+group_size_m = min(num_pid_m - first_pid_m, GROUP_SIZE_M) 
+
+pid_m = first_pid_m + ((pid % num_pid_in_group) % group_size_m)
+pid_n = (pid % num_pid_in_group) // group_size_m
+```
+
+<img src="../images/triton_tutorials1/grouped_ordering.png" width="70%" alt="超级分组遍历顺序">
+
+代码变量意义拆解：
+- `num_pid_in_group`: 表示这个红色框 (高是 GROUP_SIZE_M , 宽是 num_pid_n) 里总共有多少黄色小块，一个红色框就是一个 group。
+- `group_id` 当前的这次 "循环"，是在第几个红色框里。
+- `first_pid_m` 当前所在的 group 中的第一个黄色小块, 它在全局中是第几个黄色小块 (在 `m` 维度上)。
+- `group_size_m`：重复算一遍 group_size_m 是因为最后一个 group 可能占不满, 会小一点。
+
+最后两行就得到，当前这轮循环是处理（pid_m, pid_n）位置的黄色小块。
+```python
+pid_m = first_pid_m + (pid % group_size_m)
+pid_n = (pid % num_pid_in_group) // group_size_m
+```
+
+- 第一行保证 `pid_m` 一定是小于 first_pid_m + group_size_m 的。
+- 第二行保证 `pid_n` 一定是**按列**从左到右遍历的, 也就是 n 这个维度是 0, 0, 0（第0列）, 1, 1, 1, 2, 2, 2, ... 这样来的。
+
+如果是上面提到的第一种 `row-major ordering` 的方式, 那么 pid_m 和 pid_n 的计算方式是:
+```python
+pid_m = pid // num_pid_n
+pid_m = pid % num_pid_n
+```
+
+遍历顺序也是图中黄色小块中的黑色数字，这种方式虽然遍历顺序简单，但是计算同样数量的黄色小块，需要的处理的黄色小块明显更多，内存读取不高效。
+
+#### 2.2 block 元素的地址计算
+
+kernel 函数每次调用都会对应一个 `pid`，前面的内容就是讲怎么找到当前这个 `pid` 对应 `C` 中的哪个 block (黄色小块)。具体到 block 内部，这里假设我们要计算 C 中的第一个 block, block-0，计算这个 block 需要的 A 和 B 矩阵中的 9 个 block。
+
+<img src="../images/triton_tutorials1/grouped_ordering2.png" width="70%" alt="计算 block0">
+
+**block-0 计算的过程本质上就是分块矩阵的计算过程**，从 A 中取第一行 9 个 block 的第一个，从 B 取第一列9个 block 的第一个，相乘并累加到 accumulator 中, 直到 9 个 block 做完, 就得到了 C 中的第一个 block。
+
+可以看出，即使在 pid 内部也是需要循环的，循环的次数是 9，K 维度上块数 = `tl.cdiv(K, BLOCK_SIZE_K)`。
+
+每个 block 中都有很多 elements，如何找到这些 elements 的 pointers_list 呢？Python 代码逻辑很简单，直接切片就可以得到：
+- 获取矩阵 A 的子块：A[m:m+block_size_m, k:k+block_size_k]
 - 获取矩阵 B 的子块：B[k:k+block_size_k, n:n+block_size_n] 
 
 对于行优先存储的二维张量 `X`，元素 `X[i, j]` 的内存位置为：`&X[i, j] = X + i*stride_xi + j*stride_xj`。因此，矩阵 A 的指针块 `[m : m+BLOCK_SIZE_M, k : k+BLOCK_SIZE_K]` 和矩阵 B 的指针块 `[k : k+BLOCK_SIZE_K, n : n+BLOCK_SIZE_N]` 可以用以下伪代码表示：
@@ -166,7 +234,6 @@ if __name__ == "__main__":
 &A[m : m+BLOCK_SIZE_M, k:k+BLOCK_SIZE_K] =  a_ptr + (m : m+BLOCK_SIZE_M)[:, None]*A.stride(0) + (k : k+BLOCK_SIZE_K)[None, :]*A.stride(1);
 &B[k : k+BLOCK_SIZE_K, n:n+BLOCK_SIZE_N] =  b_ptr + (k : k+BLOCK_SIZE_K)[:, None]*B.stride(0) + (n : n+BLOCK_SIZE_N)[None, :]*B.stride(1);
 ```
-
 上述伪代码第一行相当于通过 `a_ptr + row_offset + col_offset` 计算出矩阵 A 子块中每个元素的内存地址。拆解分析第一行伪代码：
 - `a_ptr`: 矩阵 A 在内存中的基地址，即第一个元素地址
 - `(m : m+BLOCK_SIZE_M)[:, None] * A.stride(0)`: 表示切片后将一维数组转为二维列向量（形状为 [BLOCK_SIZE_M, 1]）），再乘以行偏移，最终得到**子块行的内存偏移量**。
@@ -174,65 +241,84 @@ if __name__ == "__main__":
 
 > A.stride(0)：行步幅，通常等于列数（每行有多少元素）。A.stride(1)：列步幅，通常为1，因为行主序中，列元素是连续存储的。
 
-意味着 A 和 B 矩阵块的指针可以在 Triton 中通过如下代码初始化（即，k=0）。值得注意的是，我们还需要使用额外的取模操作来处理 M 不是 BLOCK_SIZE_M 的倍数，或 N 不是 BLOCK_SIZE_N 的倍数的情况。在这种情况下，我们可以用无用的值填充数据，不会影响最终结果。对于 K 维度的处理，我们稍后将通过掩码加载的方式来解决。
+因为通过 `a_ptr + row_offset + col_offset` 可以计算出矩阵 A 子块中每个元素的内存地址。所以，Trion 中计算 element 的 pointer 代码如下所示：
 ```python
-# offs_an 是一个长度为BLOCK_SIZE_M的一维张量，表示当前块在矩阵A中的具体行索引。
+# 额外的取模操作来处理 M 不是 BLOCK_SIZE_M 的倍数，或 N 不是 BLOCK_SIZE_N 的倍数的情况。
 offs_am = (pid_m * BLOCK_SIZE_M + tl.range(BLOCK_SIZE_M)) % M
-#  offs_bn 是一个长度为BLOCK_SIZE_N的一维张量，表示当前块在列方向上的每一列在矩阵B中的具体列索引。
 offs_bn = (pid_n * BLOCK_SIZE_N + tl.range(BLOCK_SIZE_N)) % N
-# 表示当前块在K维度上的每一个偏移量。
-offs_k = tl.arange(0, BLOCK_SIZE_K)
-a_ptrs = a_ptr + (offs_am[:, None] * stride_am + offs_k[None, :] * stride_ak)
-b_ptrs = b_ptr + (offs_k[:, None] * stride_bk+ offs_bn[None, :] * stride_bn)
-# 移动到下一个K维度的块时，需要在内存中跳过 BLOCK_SIZE_K 列。
-a_ptrs += BLOCK_SIZE_K * stride_ak # stride_ak: 矩阵A在K维度（列方向）的步幅。
-b_ptrs + BLOCK_SIZE_K * stride_bk # stride_bk: 矩阵B在K维度（行方向）的步幅。
+offs_k = tl.range(BLOCK_SIZE_K)
+a_ptrs = a_ptr + (offs_am[:, None] * stride_am + offs_k * stride_ak)
+b_ptrs = b_ptr + (offs_k[:,None] * stride_bk + offs_k * stride_bk)
 ```
 
-#### 2.2 L2 cache 优化
+offs_am 和 offs_k 分别是 A 矩阵 9 个 block 中第一个 block 中, 每个 element 在整个 A 矩阵中的 **m 维度的 index 和 k 维度的 index**，都是 list 类型。
 
-如上所述，每个程序实例计算 C 的一个 [BLOCK_SIZE_M, BLOCK_SIZE_N] 块。值得注意的是，这些块的计算顺序对程序的 L2 缓存命中率有很大影响，简单的行优先顺序可能并不理想。
+有了 m 维度 和 k 维度的 index, 就可以让它们各自和 m 维度 和 k 维度的 stride 相乘, 然后和 a_ptr 相加, 就可以得到 A 矩阵 9 个 block 中第一个 block 中所有 elements 的地址（指针）。
 ```python
-pid = tl.program_id(axis=0)
-grid_n = tl.cdiv(N, BLOCK_SIZE_N)
-pid_m = pid // grid_n
-pid_n = pid % grid_n
+a_ptrs = a_ptr + (offs_am[:, None] * stride_am + offs_k * stride_ak)
 ```
 
-优化方法：在切换到下一列之前，将线程块按 GROUP_M 行进行“超级分组”。
+#### 2.3 子块的矩阵乘法
+
 ```python
-# Program ID
-pid = tl.program_id(axis=0) # 获取当前程序的全局ID。
-
-num_pid_m = tl.cdiv(M, BLOCK_SIZE_M) # 行块数，在M（行）方向上需要多少个程序ID
-num_pid_n = tl.cdiv(N, BLOCK_SIZE_N) # 列块数
-
-# 每个超级分组中包含的程序数量。举例，num_pid_in_group = 2 * 4 = 8（每组包含2行块和4列块，总共8个程序）
-num_pid_in_group = GROUP_SIZE_M * num_pid_n
-group_id = pid // num_pid_in_group # 当前程序所属的超级分组ID。pid=0到pid=7属于group_id=0
-# 当前超级分组中，第一个程序在行方向上的块ID。组id * 组在行方向上的程序数量
-first_pid_m = group_id * GROUP_SIZE_M  # 计算每组的起始行ID
-
-# 如果总块数num_pid_m不是GROUP_SIZE_M的整数倍，最后一个组可能包含较少的块。使用 min 确保不会超出总块数。
-group_size_m = min(num_pid_m - first_pid_m, GROUP_SIZE_M) # 当前组在行方向上的实际块数。
-pid_m = first_pid_m + ((pid % num_pid_in_group) % group_size_m) # 程序在行方向上的绝对块ID。
-pid_n = (pid % num_pid_in_group) // group_size_m # 程序在列方向上的块ID
+# -----------------------------------------------------------
+# Iterate to compute a block of the C matrix.
+# We accumulate into a `[BLOCK_SIZE_M, BLOCK_SIZE_N]` block
+# of fp32 values for higher accuracy.
+# `accumulator` will be converted back to fp16 after the loop.
+accumulator = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
+for k in range(0, tl.cdiv(K, BLOCK_SIZE_K)):
+    a = tl.load(a_ptrs, mask = offs_k[None, :] < K - k * BLOCK_SIZE_K, other=0.0)
+    b = tl.load(b_ptrs, mask = offs_k[None, :] < K - k * BLOCK_SIZE_K, other=0.0)
+    #  We accumulate along the K dimension.
+    accumulator += tl.dot(a, b)
+    # Advance the ptrs to the next K block.
+    a_ptrs += BLOCK_SIZE_K * stride_ak
+    b_ptrs += BLOCK_SIZE_K * stride_bk
 ```
 
-总体思路是这样的：
+首先，创建一个 accumulator，然后根据 pointers 来 load A block 中的 elements。
 
-1. 获取线程 ID。
-2. 计算 M×K 矩阵的行块数和 K×N 矩阵的列块数。
-3. 将列块数乘以变量 GROUP_SIZE_M，得到跨越 GROUP_SIZE_M 行的总块数。如果对此感到困惑，可以参考上面的示意图！例如，GROUP_SIZE_M=3 行，num_pid_n=列数=9，因此 num_pid_in_group=27。
-4. 通过将线程 ID 除以上述值，得到当前计算的组 ID。这告诉我们线程位于哪个行组。
-5. 将当前组 ID 乘以 GROUP_SIZE_M，得到当前组的起始行偏移量。这将 group_id 转换为我们将开始的行块位置。
-6. 检查是否到达末尾，确定组的大小，即行块数。如果是最后一组，我们需要取模处理。
-7. 对于正在加载的行 ID，我们使用在步骤 5 中计算的行块偏移量，加上 (pid % group_size_m)，以获取组内所需的行。这意味着每次 pid 更新，我们都会切换到不同的行。
-8. 最后，计算列 ID，公式为 (pid % num_pid_in_group) // group_size_m。简单来说，我们将线程 ID 除以 GROUP_SIZE_M 行中的块数，然后再除以 GROUP_SIZE_M。因此，在计算该列与 GROUP_SIZE_M 行的点积时，程序的 GROUP_SIZE_M 次更新中，我们使用相同的行。
+```python
+a = tl.load(a_ptrs, mask = offs_k[None, :] < K - k * BLOCK_SIZE_K, other=0.0)
+```
+这里 mask 的设置很重要，因为很多时候 K 可能不能被 BLOCK_SIZE_K 整除, 到每一行最后一个 block 的时候, 实际大小是不足 BLOCK_SIZE_K 的。所以我们在 load 时候, 需要把这块考虑进去。
 
-举个例子理解，在下面的矩阵乘法中，每个矩阵被分为 9×9 个块。如果我们按照行优先顺序来计算输出，我们需要将 90 个块加载到 SRAM 中才能计算出前 9 个输出块；但如果采用分组顺序，我们只需要加载 54 个块。
+另外，上述代码，很明显发现，真正涉及到数学计算的代码只有一行。
 
-<img src="../images/triton_tutorials1/super_grouping.png" width="70%" alt="超级分组">
+```python
+accumulator += tl.dot(a, b)
+```
+
+换言之，triton kernel 几乎所有的代码都是在做好 elements 的分块，这也是写好 kernel 代码的关键-**如何分块**。
+
+#### 2.4 算子融合
+
+`leaky_relu` 激活函数如下:
+```python
+# We can fuse `leaky_relu` by providing it as an `ACTIVATION` meta-parameter in `_matmul`.
+@triton.jit
+def leaky_relu(x):
+    x = x + 1
+    return tl.where(x >= 0, x, 0.01 * x)
+```
+
+Kernel Fuse 的好在于可以只用 load 一次数据, 然后在这个数据上面进行多种计算, 这样就把本来需要多次 load 的时间省下来了。
+```python
+ # You can fuse arbitrary activation functions here
+# while the accumulator is still in FP32!
+if ACTIVATION == "leaky_relu":
+    accumulator = leaky_relu(accumulator)
+c = accumulator.to(tl.float16)
+
+# -----------------------------------------------------------
+# Write back the block of the output matrix C with masks.
+offs_cm = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)
+offs_cn = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)
+c_ptrs = c_ptr + stride_cm * offs_cm[:, None] + stride_cn * offs_cn[None, :]
+c_mask = (offs_cm[:, None] < M) & (offs_cn[None, :] < N)
+tl.store(c_ptrs, c, mask=c_mask)
+```
 
 最终，完整矩阵乘法 kernel 及其调用函数代码如下:
 
@@ -368,3 +454,17 @@ def matmul(a, b, activation=""):
     )
     return c
 ```
+
+### 3. Triton 编程和 CUDA 编程的相同及不同
+
+1，Triton 和 CUDA 编程的大体结构都是一样的. 无非 定义kernel function --> 确定 kernel function "循环" 执行多少次 --> 调用 kernel function. 而且, 为了可行性, Triton 把 CUDA 中 pointer 的概念引入到 python 里面. 
+
+2，Triton 相对于 CUDA 做了一些简化. 比如, Triton 里面, kernel function 处理数据的量级是 block, 所以在确定 "循环次数" 的时候也是确定有多少这样的 block。CUDA 里面, kernel function 处理的对象是一个个的 scalar, 在确定 "循环次数" 的时候也是要看有多少这样的 scalar。而且 CUDA 中的 "循环次数" 是有分级的, 分别为 thread, thread block, thread grid。多个 thread 构成一个 thread block, 多个 thread block 构成一个 thread grid。而这三个级别中, 可以保证的是同一个 thread block (CTA) 中不同 thread 之间有共享的 shared memory 因为他们是可以同步和通信的 (而这又是由 GPU 硬件决定的)。
+
+3，Triton 里面我们有 pid = tl.program_id(axis=0) 来定位当前是第几次"循环", CUDA 里面, 这个要复杂一些, 有这么几个变量: threadIdx.x, threadIdx.y, threadIdx.z 分别代表当前 thread 在其所在的 thread block 的 xyz 坐标。blockIdx.x, blockIdx.x,  blockIdx.x  分别代表当前 thread block 在其所在的 thread grid 的 xyz 坐标。blockDim.x, blockDim.x,  blockDim.x  分别代表当前 thread block 在 xyz 维度分别有多少个 threadgridDim.x, gridDim.x,  gridDim.x  分别代表当前 thread grid 在 xyz 维度分别有多少个 thread block 可以看到 CUDA 更加细致些, 直接到 thread 级别, 而 Triton 的思路是, 反正最后都是要一个 block 一个 block 处理的, 所以就把编程接口的级别订到了 block。
+
+## 参考资料
+
+- https://arxiv.org/pdf/2204.03826
+- [Matrix Multiplication](https://triton-lang.org/main/getting-started/tutorials/03-matrix-multiplication.html)
+- [知乎-如何入门 OpenAI Triton 编程?](https://www.zhihu.com/question/622685131?login=from_csdn)

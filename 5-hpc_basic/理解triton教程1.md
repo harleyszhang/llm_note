@@ -4,6 +4,7 @@
   - [网格、块和内核](#网格块和内核)
   - [cuda 执行模型](#cuda-执行模型)
 - [2. 向量相加](#2-向量相加)
+  - [2.1 `BLOCK_SIZE`、`gird` 和 `program_id` 意义](#21-block_sizegird-和-program_id-意义)
 - [3. 理解内核运行的机制](#3-理解内核运行的机制)
 - [3. 融合 Softmax](#3-融合-softmax)
   - [简单 softmax 内核实现](#简单-softmax-内核实现)
@@ -149,7 +150,7 @@ if __name__ == "__main__":
     print(f"PyTorch 向量加法时间: {pytorch_time * 1000:.2f} ms")
 ```
 
-总的来说，代码分为三个部分，依次是：
+总的来说，triton 代码分为三个部分，依次是：
 1. 内核定义
 2. 内核调用
 3. main 主函数
@@ -172,10 +173,6 @@ grid = lambda META: (triton.cdiv(N, META['BLOCK_SIZE']),)
 # XYZ 参数分别代表输入和输出张量的数据地址，N 代表元素数量，BLOCK_SIZE 代表块大小
 vector_add_kernel[grid](X, Y, Z, N, BLOCK_SIZE=1024) # 调用 Triton 内核，传递参数。
 ```
-
-从程序理解 BLOCK_SIZE 和 gird：
-- BLOCK_SIZE 似乎是一次加载的内存/元素的数量
-- grid 是程序实例数量（并行执行的内核个数）
 2，再看内核定义函数 `vector_add_kernel`，其函数原型如下所示。
 
 ```python
@@ -199,7 +196,7 @@ def vector_add_kernel(X_ptr, Y_ptr, Z_ptr, N, BLOCK_SIZE: tl.constexpr):
     tl.store(Z_ptr + idx, z, mask=mask)  
 ```
 
-内核中的 `pid`、`block_start`、`offsets` 和 `idx` 这四个概念，只有正确理解了这四个（三个）概念，才能写出正确、高效的内核代码。
+只有正确理解内核中的 `pid`、`block_start`、`offsets` 和 `idx` 这四个概念，才能写出正确、高效的内核代码。
 
 1. `pid`（Program ID）: 当前块（Block）的唯一标识符，代表块在整个网格（Grid）中的位置（第几个块）。`pid = tl.program_id(0)`。
 2. `block_start`: 当前块在全局数据中的起始位置索引，用于确保每个块处理的数据范围不重叠且覆盖整个数据集。`block_start = pid * BLOCK_SIZE`。
@@ -228,6 +225,10 @@ tl.store(Z_ptr + idx, z, mask=mask)           # 存储结果到 Z
 ```
 
 3，最后就是 main 函数了，主要是：初始化张量、GPU 预热、执行 Triton 向量加法并记录时间、执行 PyTorch 向量加法并记录时间和验证结果并输出时间。这里的代码没什么好讲的，都是 pytorch 代码，记住下这个流程即可。
+
+#### 2.1 `BLOCK_SIZE`、`gird` 和 `program_id` 意义
+
+`kernel` 实际**要被重复执行很多次的**, 每次执行处理输入的一部分，直到所有输入处理完。但 kernel 里面没有上述过程 `for` 循环，原因是这些不同数据部分的处理实际是**并行执行的**。`program_id` 则是虚拟的 `for`“循环”里面的 `index` (第几次循环)，axis=0 , 是说这个"循环"只有一层，axis=1 则说明"循环"有两层，以此类推。而 `grid` 的意义就是用来说明**虚拟“循环”有多少层，每层执行多少次**。最后，`BLOCK_SIZE` 则是用来说明每次“循环”（每次内核执行）加载的内存/元素的数量。
 
 ### 3. 理解内核运行的机制
 
