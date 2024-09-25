@@ -244,9 +244,9 @@ kernel 函数每次调用都会对应一个 `pid`，前面的内容就是讲怎�
 因为通过 `a_ptr + row_offset + col_offset` 可以计算出矩阵 A 子块中每个元素的内存地址。所以，Trion 中计算 element 的 pointer 代码如下所示：
 ```python
 # 额外的取模操作来处理 M 不是 BLOCK_SIZE_M 的倍数，或 N 不是 BLOCK_SIZE_N 的倍数的情况。
-offs_am = (pid_m * BLOCK_SIZE_M + tl.range(BLOCK_SIZE_M)) % M
-offs_bn = (pid_n * BLOCK_SIZE_N + tl.range(BLOCK_SIZE_N)) % N
-offs_k = tl.range(BLOCK_SIZE_K)
+offs_am = (pid_m * BLOCK_SIZE_M + tl.arange(BLOCK_SIZE_M)) % M
+offs_bn = (pid_n * BLOCK_SIZE_N + tl.arange(BLOCK_SIZE_N)) % N
+offs_k = tl.arange(BLOCK_SIZE_K)
 a_ptrs = a_ptr + (offs_am[:, None] * stride_am + offs_k * stride_ak)
 b_ptrs = b_ptr + (offs_k[:,None] * stride_bk + offs_k * stride_bk)
 ```
