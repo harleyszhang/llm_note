@@ -5,10 +5,10 @@
 - [二 模型参数量](#二-模型参数量)
 	- [2.1 CPU 内存使用量](#21-cpu-内存使用量)
 - [三 计算量分析](#三-计算量分析)
-	- [3.1 MHA 层计算量](#31-mha-层计算量)
+	- [3.1 MHA(Attention) 层计算量](#31-mhaattention-层计算量)
 		- [3.1.1 prefill 阶段](#311-prefill-阶段)
 		- [3.1.2 decode 阶段](#312-decode-阶段)
-	- [3.2 FFN 层计算量](#32-ffn-层计算量)
+	- [3.2 MLP 层计算量](#32-mlp-层计算量)
 	- [3.3 模型总计算量](#33-模型总计算量)
 		- [3.3.1 计算量定性和定量结论](#331-计算量定性和定量结论)
 - [四 显存占用量分析](#四-显存占用量分析)
@@ -178,7 +178,7 @@ $$y = xW^T + \text{bias}$$
 
 对于 transformer 模型来说，其计算量**主要**来自 `MHA` 层和 `FFN` 层中的矩阵乘法运算。先考虑 `batch_size = 1` 和 输入序列长度为 $s$ 的情况。
 
-### 3.1 MHA 层计算量
+### 3.1 MHA(Attention) 层计算量
 
 #### 3.1.1 prefill 阶段
 
@@ -211,14 +211,14 @@ $$y = xW^T + \text{bias}$$
 
 **综上，decode 阶段 `MHA` 层每一轮解码的 `FLOPs`: $6h^2 + 4(s+o)h + 2h^2= 8h^2 + 4(s+o)h$**。
 
-### 3.2 FFN 层计算量
+### 3.2 MLP 层计算量
 
 先分析 `prefill` 阶段 `Feed-forward`（MLP/FFN）层的计算量分析。包含两个线性层，以及一个 `relu` 激活层（逐元素操作，flops 很小$=5\cdot 4h$，可忽略）。`MLP` 两个线性层的权重参数矩阵: $W_1 \in \mathbb{R}^{h\times 4h}$、$W_2 \in \mathbb{R}^{4h\times h}$，`MLP` 的输入矩阵: $\in \mathbb{R}^{s\times h}$。
 
 1. 第一个线性层，线性层对应矩阵乘法的输入和输出形状为 $[s,h] \times [h,4h]\to[s,4h]$，`FLOPs` 为 $8sh^2$
 2. 第二个线性层，矩阵乘法的输入和输出形状为 矩阵乘法的输入和输出形状为 $[s,4h] \times [4h, h]\to [s,h]$，`FLOPs` 为 $8sh^2$
 
-**因此，`prefill` 阶段 `FFN` 层的 `FLOPs`: $2*8sh^2 = 16h^2s$**。
+**因此，`prefill` 阶段 `FFN` 层的 `FLOPs`: $2*8sh^2 = 16sh^2$**。
 
 值得注意的是，除了 `MHA` 层的 `FLOPs` 计算公式区分 `prefill` 和 `decode` 阶段，其他层只需要将 `prefill` 阶段的计算公式中的 $s$ 设置为 $1$。即对于 `decode` 阶段的 `FFN` 块的 `FLOPs = 16h^2`
 
@@ -230,11 +230,11 @@ $$y = xW^T + \text{bias}$$
 - `LayerNorm` 操作是**逐元素**进行的，因此不存在通用的公式来。`LayerNorm` 层的两个权重都是一个长度为 $h$ 的向量，`FLOPs` 可以预估为: $2h$，但**通常忽略不计**。
 - 最后的输出层（线性层）的**将隐藏向量映射为词表大小，得到每个 token 对应的 logits 向量**。线性层的权重矩阵为：$W_{last} \in \mathbb{R}^{h\times V}$，矩阵乘法的输入和输出形状为: $[s, h] \times [h, V] -> [s, V]$。`FLOPs`: $2shV$。
 
-综上分析可知，$n$ 层 `decoder block/layer` 的总计算量大约为: $n(8h^2s + 4hs^2 + 16h^2s) = 24nh^2s + 4hs^2$。而在输入数据形状为 $[b, s]$ 的情况下，一次训练/推理：
+综上分析可知，$n$ 层 `decoder block/layer` 的总计算量大约为: $n(8sh^2 + 4s^2h + 16sh^2) = 24nh^2s + 4nhs^2$。而在输入数据形状为 $[b, s]$ 的情况下，一次训练/推理：
 
 1，`prefill` 阶段总的计算量：
 
-$$b\times (24nh^2s + 4hs^2) + 2bshV) = 24nh^2*bs + 4nhbs^2 + 2bshV$$
+$$b\times (24nh^2s + 4nhs^2) + 2bshV) = 24nh^2*bs + 4nhbs^2 + 2bshV$$
 
 2，`decode` 阶段每轮的计算量：
 
