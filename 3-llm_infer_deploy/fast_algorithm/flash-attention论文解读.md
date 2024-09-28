@@ -75,7 +75,7 @@ $$\text{S = QK}^\text{T} \in \mathbb{R}^{N\times N},\quad \text{P = softmax(S)} 
 
 这里的 softmax 是按行应用的。
 
-标准的注意力实现会将矩阵 $\text{S}$ 和 $\text{P} 写入到 HBM，这需要 $O(N^2)$ 的内存。通常情况下，N 和 d 相对较大（例如，对于GPT2，N = 1024，d = 64）。我们在算法 0 中描述了标准的注意力实现。由于一些或大多数操作是内存受限的（例如 softmax），大量的内存访问会导致墙钟时间（wall-clock time）变慢。
+标准的注意力实现会将矩阵 $\text{S}$ 和 $\text{P}$ 写入到 HBM，这需要 $O(N^2)$ 的内存。通常情况下，N 和 d 相对较大（例如，对于GPT2，N = 1024，d = 64）。我们在算法 0 中描述了标准的注意力实现。由于一些或大多数操作是内存受限的（例如 softmax），大量的内存访问会导致墙钟时间（wall-clock time）变慢。
 
 这个问题在应用于注意力矩阵的其他逐元素操作时会加剧，例如应用于 S 的掩码 mask 或应用于 P 的丢弃 dropout 操作。因此，已经有很多尝试将多个逐元素操作融合在一起，比如将掩码与 softmax 融合在一起[77]。
 
@@ -103,7 +103,7 @@ m(x)=m\left(\left[x^{(1)}\ x^{(2)}\right]\right)=\max \left(m\left(x^{(1)}\right
 \ell(x)=\ell\left(\left[x^{(1)}\ x^{(2)}\right]\right)=e^{m\left(x^{(1)}\right)-m(x)} \ell\left(x^{(1)}\right)+e^{m\left(x^{(2)}\right)-m(x)} \ell\left(x^{(2)}\right), \quad \operatorname{softmax}(x)=\frac{f(x)}{\ell(x)}
 \end{array}$$
 
-上述公式意义总结就是，正常 `Softmax` 需要对**完整的**$QK^T$ 结果矩阵（图上虚线部分正方形）沿着 `Inner Loop` 维度进行归一化；Softmax 需要全局的 max 和 sum 结果才能 scale 每一个元素；但是这里，我们借助 `Online Softmax` 技术，实现了按块块计算 softmax。
+上述公式意义总结就是，正常 `Softmax` 需要对**完整的**$QK^T$ 结果矩阵（图上虚线部分正方形）沿着 `Inner Loop` 维度进行归一化；`Softmax` 需要全局的 max 和 sum 结果才能 scale 每一个元素；但是这里，我们**借助 `Online Softmax` 技术，实现了按块块计算 `Softmax`**。
 
 即如果我们**计算一些额外的统计信息** $(m(x), \ell(x))$，我们**可以逐块计算 `Softmax`**。我们将输入的 $Q、K、V$ 拆分为多个块（参见算法 1 第 3 行），计算 Softmax 以及相应的额外统计信息（参见算法 1 第 10 行），并最终结合这些结果（参见算法 1 第 12 行）。
 
