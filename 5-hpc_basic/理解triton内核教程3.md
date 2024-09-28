@@ -10,8 +10,13 @@ LN 作用是减少了不同特征之间的依赖关系，可以使得模型训�
 * `BN`: 对于每个特征维度，计算它在整个批次中的均值和标准差，然后对该特征进行归一化。
 * `LN`: 对每个样本单独计算其所有特征的均值和标准差，然后在该样本内进行归一化。
 
-<img src="../images/transformer_paper/bn_ln.png" width="40%" alt="BN 和 LN 的区别">
-<img src="../images/triton_tutorials3/BN_LN_GN.png" width="100%" alt="BN 和 LN 的区别">
+<!-- <img src="../images/transformer_paper/bn_ln.png" width="40%" alt="BN 和 LN 的区别">
+<img src="../images/triton_tutorials3/BN_LN_GN.png" width="100%" alt="BN 和 LN 的区别"> -->
+
+<div style="display: flex; justify-content: space-around;">
+    <img src="../images/transformer_paper/bn_ln.png" width="40%" alt="BN 和 LN 的区别">
+    <img src="../images/triton_tutorials3/BN_LN_GN.png" width="100%" alt="BN 和 LN 的区别">
+</div>
 
 `Layer Norm` 操作具体来说，它接受一个**向量** $\boldsymbol{x}$ 作为输入，输出一个与之形状相同的向量 $\boldsymbol{y}$。归一化通过对 $\boldsymbol{x}$ 减去均值并除以标准差来实现。完成归一化后，再应用具有可学习参数 $\boldsymbol{\gamma}$（权重）和 $\boldsymbol{\beta}$（偏置）的线性变换。前向传播过程可以表示如下：
 $$y = \frac{x - E[x]}{\sqrt{(Var(x) + \epsilon)}} * w + b$$

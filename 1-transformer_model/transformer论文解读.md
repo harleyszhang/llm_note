@@ -56,7 +56,7 @@ CosineSimilarity = sum(x[i]*y[i])/(sqrt(sum(x[i]*x[i]))*sqrt(sum(y[i]*y[i])))。
 
 实际中，为了方便计算，会同时对一组查询（queries）计算注意力函数，将 q、k、v 都是构建成矩阵 $Q$、$K$、$V$（ 维度相等），涉及到两个矩阵乘法。
 
-作者提出的注意力机制算法跟之前的 Dot-Product Attentio 相比就是单纯多了 Scaled，除以 $\sqrt{d_k}$ 是为了防止梯度过小不利模型训练。
+作者提出的注意力机制算法跟之前的 Dot-Product Attention 相比就是单纯多了 Scaled，除以 $\sqrt{d_k}$ 是为了防止梯度过小不利模型训练。
 
 另外 decoder 模块的 attention  多了一个 `Mask`，实际是第 $t$ 时刻的 $q$ 只能看前面阶段的对应的 $(k, v)$ 对，计算当中表现就是对于 $q_t$ 和 $k_t$ 及其之后的那些权重值都替换成一个极大的负数，这样经过 `softmax` 后（做指数 $e^{w_t}$），对应位置的 $v$ 就变成了 0。 
 

@@ -180,6 +180,7 @@ $$y = xW^T + \text{bias}$$
 
 ### 3.1 MHA(Attention) 层计算量
 
+对于 Attention 层，输入输出矩阵 `QKVO` 大小一模一样，形状都是 $[s,h]$。
 #### 3.1.1 prefill 阶段
 
 先分析 `MHA` 块的计算量：
@@ -239,7 +240,7 @@ $$b\times (24nh^2s + 4nhs^2) + 2bshV) = 24nh^2*bs + 4nhbs^2 + 2bshV$$
 2，`decode` 阶段每轮的计算量：
 
 $$b\times (8nh^2 + 4nh(s+o) + 16nh^2) + 2bhV = 2 4nh^2*b + 4nhb(s+o) + 2bshV$$
-> 关于 llm flops 的估算，其实还有一个很简单的方法，就是**直接估算每个 token 的 flops 且只分析 qkv和输出层的矩阵计算，以及 mlp 层的矩阵计算**，这种分析过程更简单，可以直接得到每个 token 的对应的计算量为 $6nh^2 + 2nh^2 + 16nh^2 = 24nh^2$。
+> 关于 llm flops 的估算，其实还有一个很简单的方法，就是**直接估算每个 token 的 flops 且只分析 qkv和输出层的矩阵计算，以及 mlp 层的矩阵计算**，这种分析过程更简单，可以直接得到每个 token 的对应的计算量为 $8nh^2 + 16nh^2 = 24nh^2$。
 
 #### 3.3.1 计算量定性和定量结论
 
