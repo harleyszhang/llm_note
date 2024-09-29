@@ -17,6 +17,7 @@
   - [B.2 内存高效的反向传播](#b2-内存高效的反向传播)
   - [B.3 FlashAttention: 前向传播](#b3-flashattention-前向传播)
 - [C. 证明](#c-证明)
+- [参考资料](#参考资料)
 
 
 ## 1. 介绍
@@ -158,11 +159,11 @@ S\bigodot 1_{\tilde{M}} = S_{kl} \quad \tilde{M}_{kl} = 1 \\ \nonumber
 ## 4，实验
 
 ### 4.1 使用 FlashAttention 的更快模型
-
+略
 ### 4.2 使用长序列的更好模型
-
+略
 ### 4.3 基准注意力
-
+略
 ## 5. 局限性和未来方向
 
 1. **编译为 CUDA**。我们当前构建 IO 感知的注意力（FlashAttnetion）实现的方法需要为每个新的注意力实现编写一个新的 CUDA 内核。 这需要使用比 PyTorch 低得多的语言编写注意力算法，并且需要大量的工程工作。 实现也可能无法跨 GPU 架构转移。 这些限制表明需要一种方法来支持用高级语言（例如 PyTorch）编写注意力算法，并编译为 CUDA 中的 IO 感知实现，类似于图像处理中的 Halide 等工作 [70]。
@@ -172,9 +173,7 @@ S\bigodot 1_{\tilde{M}} = S_{kl} \quad \tilde{M}_{kl} = 1 \\ \nonumber
 3. **多 GPU IO 感知方法**。 我们的 IO 感知注意力实现在单个 GPU 上计算注意力的常数范围内是最佳的。 然而，注意力计算可以跨多个 GPU 并行[72]。 使用多个 GPU 为 IO 分析增加了一个额外的层 - 考虑 GPU 之间的数据传输。 我们希望我们的工作能够激发未来在这个方向上的研究工作。
 
 ## A. 相关工作
-
-
-
+略
 ## B. 算法细节
 
 我们首先推导了注意力的前向和反向传播，并展示它们可以以一种内存高效的方式进行计算（需要额外的内存与序列长度呈线性关系，而不是二次关系）。尽管它们减少了所需的额外内存量，但从根本上来说，它们仍然会产生二次的 HBM 访问，导致执行速度较慢。我们描述了 `FlashAttention` 算法，用于在 `GPU` 上实现前向传递和反向传递，减少了 `HBM` 访问，从而既提高了运行时速度，又减小了内存占用。
@@ -185,7 +184,7 @@ S\bigodot 1_{\tilde{M}} = S_{kl} \quad \tilde{M}_{kl} = 1 \\ \nonumber
 
 给定输入 $Q,K,V \in R^{N\times d}$，目标是计算注意力输出 $O \in R^{N\times d}$: 
 
-$$S = QK^T \in R^{N\times N}, P = softmax(S) \in R^{N\times N}, O = PV\in R^{N\times d}$$。
+$$S = QK^T \in R^{N\times N}, P = \text{softmax}(S) \in R^{N\times N}, O = PV\in R^{N\times d}$$。
 
 假设 $q_i$ 和 $k_j$ 是 $Q$ 和 $K$ 矩阵的第 $i$ 和第 $j$ 列。定义 `softmax` 的归一化常数如下:
 
@@ -322,4 +321,7 @@ $$O(\frac{N^2}{B_r\times B_c}B_rB_cd) = O(N^2d)$$
 
 就所需的额外内存而言，我们发现我们需要 $O(N)$ 内存来存储统计数据 $(\ell, m)$。
 
+## 参考资料
 
+- [FlashAttention: Fast and Memory-Efficient Exact Attention with IO-Awareness](https://arxiv.org/abs/2205.14135)
+- [大模型训练加速之FlashAttention系列：爆款工作背后的产品观](https://zhuanlan.zhihu.com/p/664061672)
