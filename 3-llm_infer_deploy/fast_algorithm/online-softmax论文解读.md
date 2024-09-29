@@ -79,7 +79,7 @@ $\text{算法 3 带在线归一化计算的安全 Softmax} \\
 **定理 1**：算法 3 的第 1-6 行计算 $m_n = \max_{k=1}^{n} x_k$ 和 $d_n = \sum_{j=1}^{n} e^{x_j - m_n}$。
 
 证明：我们将通过数学归纳法进行证明。
-$
+
 - *基础情况*：当  $n = 1$
     $m_1 \leftarrow x_1 \\
         \quad\;\; = max_{k=1}^1x_k\qquad\qquad\qquad\qquad\; \text{根据算法 3 第 4 行}$
