@@ -142,10 +142,11 @@ flash attention 算法实现步骤如下图所示。
 
 给定输入 $Q,K,V \in R^{N\times d}$ 和掩码矩阵（mask matrix）$\tilde{m}\in {0,1}^{N\times N}$，想要计算:
 
-$$S = QK^T \in R^{N\times N}, P = softmax(S\bigodot 1_{\tilde{m}}) \in \mathbb{R}^{N\times N}, O = PV\in \mathbb{R}^{N\times d}$$
-$$\left\{\begin{matrix}
+$$S = QK^T \in R^{N\times N}, P = softmax(S\bigodot 1_{\tilde{m}}) \in \mathbb{R}^{N\times N}, O = PV\in \mathbb{R}^{N\times d} \\
+\left\{\begin{matrix}
 S\bigodot 1_{\tilde{M}} = S_{kl} \quad \tilde{M}_{kl} = 1 \\ \nonumber
 -\infty \quad M_{kl} = 0 \end{matrix}\right.$$
+
 我们要求 $\tilde{M}$ 具有块形式：对于某些块大小 $B_r，B_c$，对于所有的 $k, l$，都有 $\tilde{M}_{kl} = M_{ij}$，其中 $i = \left \lfloor k/B_r \right \rfloor, j = \left \lfloor l/B_c \right \rfloor$，对于某些 $M\in {0, 1}^{N/B_r\times N/B_c}$。
 
 给定预定义的块稀疏掩码矩阵 $M\in {0, 1}^{N/B_r\times N/B_c}$，我们可以轻松地调整算法1，只计算注意力矩阵的非零块。该算法与算法 1 相同，只是我们会跳过零块部分。我们在附录B中的算法5中重现了算法描述。我们还分析了块稀疏 FlashAttention 的 IO 复杂性。
@@ -184,7 +185,7 @@ S\bigodot 1_{\tilde{M}} = S_{kl} \quad \tilde{M}_{kl} = 1 \\ \nonumber
 
 给定输入 $Q,K,V \in R^{N\times d}$，目标是计算注意力输出 $O \in R^{N\times d}$: 
 
-$$S = QK^T \in R^{N\times N}, P = \text{softmax}(S) \in R^{N\times N}, O = PV\in R^{N\times d}$$。
+$$S = QK^T \in R^{N\times N}, P = \text{softmax}(S) \in R^{N\times N}, O = PV\in R^{N\times d}$$
 
 假设 $q_i$ 和 $k_j$ 是 $Q$ 和 $K$ 矩阵的第 $i$ 和第 $j$ 列。定义 `softmax` 的归一化常数如下:
 
