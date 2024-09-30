@@ -16,6 +16,7 @@
 	- [4.2 推理过程中显存占用量计算](#42-推理过程中显存占用量计算)
 	- [4.3 显存占用计算的定性分析和定量结论](#43-显存占用计算的定性分析和定量结论)
 	- [4.4 LLM 并发支持估算](#44-llm-并发支持估算)
+- [结论](#结论)
 - [参考资料](#参考资料)
 
 ## 一 KV cache 原理
@@ -244,7 +245,9 @@ $$b\times (8nh^2 + 4nh(s+o) + 16nh^2) + 2bhV = 2 4nh^2*b + 4nhb(s+o) + 2bshV$$
 
 #### 3.3.1 计算量定性和定量结论
 
-**当隐藏维度 $h$ 比较大，且远大于序列长度 $s$ 时，则可以忽略一次项，`prefill` 阶段的计算量 `FLOPs` 可以近似为 $24nh^2*bs$，`decode` 阶段每轮 `forward` 的计算量为 $24nh^2*b$，模型参数量为 $12nh^2$**；
+**当隐藏维度 $h$ 比较大，且远大于序列长度 $s$ 时，则可以忽略一次项**：
+1. `prefill` 阶段的计算量 `FLOPs` 可以近似为 $24nh^2*bs$。
+2. `decode` 阶段每轮 `forward` 的计算量为 $24nh^2*b$，模型参数量为 $12nh^2$；
 > 每个 token 对应的计算量为 $24nh^2$。
 
 因为，输入的 `tokens` 总数为 $bs$（即上下文总长度），即对于一个 `token` 存在等式: $\frac{24nh^2}{12nh^2} = 2$。所以，我们可以近似认为：**在一次前向传播中，对于每个 `token` 和 每个模型参数，需要进行 $2$ 次浮点数运算，即一次乘法法运算和一次加法运算**。
@@ -268,7 +271,7 @@ $$6 \times 12850 \times 10^6 \times 300 \times 10^9 = 2.313 \times 10^{22}$$
 | GPT-3 (13B)     | 13B        | 2048            | 8          | 4096        | 40               | ~4.4 × 10² T FLOPs                |
 | BERT-Large      | 345M       | 512             | 8          | 1024        | 24               | ~2.4 × 10¹ T FLOPs                |
 | T5-11B          | 11B        | 512             | 8          | 1024        | 24               | ~1.4 × 10² T FLOPs                |
-| LLaMA-13B       | 13B        | 2048            | 8          | 4096        | 40               | ~4.4 × 10² T FLOPs                |
+| LLaMA-13B       | 13B        | 2048            | 8          | 5120        | 40               | ~4.4 × 10² T FLOPs                |
 | PaLM-540B       | 540B       | 2048            | 8          | 16384       | 96               | ~6.7 × 10⁴ T FLOPs                |
 | ChatGPT (GPT-4) | 175B       | 2048            | 8          | 12288       | 96               | ~7.0 × 10³ T FLOPs                |
 
@@ -298,7 +301,7 @@ total_memory = memory_modal + 2 * memory_activations + memory_optimizer
 
 深度学习模型推理任务中，占用 GPU 显存的主要包括三个部分：**模型权重、输入输出以及中间激活结果**。（该结论来源[论文](https://www.usenix.org/conference/osdi20/presentation/gujarati)）因此，LLM 显存占用可分为 3 部分：
 
-1，存储模型权重参数所需的显存计算公式（`params` 是模型参数量）：
+1，存储模型权重参数所需的显存计算公式（`params` 是模型参数量，参数类型为 `fp16`）：
 
 $$\text{memory\_model} = \text{params} * 2 = [n(12h^2 + 4h) + Vh] * 2$$
 
@@ -327,14 +330,14 @@ $$\text{memory\_intermediate} = 8bsh$$
 
 `LLM` 推理优化中 `kv cache` 是常见的方法，本质是用空间换时间。假设输入序列的长度为 $s$ ，输出序列的长度为 $o$，decoder layers 数目为 $n$，以 `float16` 来保存 `KV cache`，那么 `KV cache` 的峰值显存占用计算公式为:
 
-$$\text{memory\_kv-cache} = b(s+o)h*n * 2*2 = 4nhb(s+o)$$
+$$\text{memory\_kv-cache} = 2*2*nh*b(s+o) = 4nh*b(s+o)$$
 
 上式，第一个 `2` 表示 K/V cache，第二个 `2`表示 float16 占 2 个 bytes。**每个 token 的 kv 缓冲大小 $ = 4nh$，单位为字节 `byte`**。
 
 综上分析可知，llm 推理时，gpu 显存占用主要是：模型权重和 kv cahce，**总显存消耗计算如下**:
 
-$$\begin{aligned}\text{inference\_memory} &\simeq [n(12h^2 + 13h) + Vh]*2 + 8bsh + 4bnh(s+o) \\
-&\simeq 1.2 \cdot 24nh^2 + 4bnh(s+o)\end{aligned}$$
+$$\begin{aligned}\text{inference\_memory} &\simeq [n(12h^2 + 13h) + Vh]*2 + 8bsh + 4nhb(s+o) \\
+&\simeq 1.2 \cdot 24nh^2 + 4nhb(s+o)\end{aligned}$$
 > 模型推理时，中间激活最大不会超过模型权重参数内存的 20%。当 $h$ 较大时，忽律掉一次项。
 
 中间激活和 `kv cache` 显存和批次大小 $b$ 以及序列长度 $s$ 成正比，**在 bs > 某个阈值时，占推理显存大头的是 kv cache**。以 llama13b 为例分析，权重参数占用 26GB，当 b = 64, s = 512 时，输出序列长度 o = 512, kv cache 显存占用 = $4nhb(s+o) = 42,949,672,960\ bytes \simeq 42GB$，是模型参数显存的 1.6 倍。
@@ -351,7 +354,7 @@ $$\begin{aligned}\text{inference\_memory} &\simeq [n(12h^2 + 13h) + Vh]*2 + 8bsh
 
 ### 4.4 LLM 并发支持估算
 
-以集群上的单节点 `8` 卡 `V100` 机器运行 `llama-13b` 模型为例，估算极端情况下聊天系统同时服务 10000 人并发所需要的节点数量。这里的**极端情况是指每个请求的输入长度为 512、输出长度为 1536（即上下文长度为 2048）且没有 Latency 要求**。
+以集群上的单节点 `8` 卡 `V100` 机器运行 `llama-13b` 模型为例，估算极端情况下聊天系统同时服务 10000 人并发所需要的节点数量。这里的**极端情况是指每个请求的输入长度为 512、输出长度为 1536（即上下文长度为 2048）且没有 latency 要求**。
 > LLaMA 系列模型配置文件中 "max_sequence_length": 2048, 即代表预训练的 LLaMA 模型的最大 Context Window 只有 `2048`。
 
 结合前面的显存分析章节可知，k、v cache 优化中对于每个 `token` 需要存储的字节数为 $4nh^2$
@@ -367,11 +370,27 @@ $$\begin{aligned}\text{inference\_memory} &\simeq [n(12h^2 + 13h) + Vh]*2 + 8bsh
 
 实际场景中的并发请求具有稀疏性，不可能每个请求都是 `2048` 这么长的上下文长度，因此实际上 200 台 8 卡 V100 服务器能服务的并发请求数目应该远多于 10000，可能是几倍。
 
-2，**对于 llama-65b 模型而言，其推理时，每个 token 大约消耗 `2.5MB` 的显存**，因此，极限情况下每个请求需要的显存是 5GB。
+2，**对于 llama-65b 模型而言，其推理时，每个 token 大约消耗 `2.5MB`（估算的 $4nh = 4*80*8192 / (1024*1024) = 2.5 \text{MB}$）的显存**，因此，极限情况下每个请求需要的显存是 5GB。
 - 在模型权重为 float16 的情况下，支持的理论 batch 上限为 （32*8 - 121.6）/ 5 = 26.88。
 - 在模型权重为 int8 的情况下，支持的理论 batch 上限为 （32*8 - 121.6/2）/ 5 = 39.04。（deepspeed 框架不支持 llama 模型的 int8 量化）
 
 另外，如果输入能量化为 int8 数据类型，理论上支持的 batch 数量会翻倍。
+
+## 结论
+
+对于典型自回归 `llm`，假设 decoder layers 层数为 $n$，隐藏层大小（Embedding 向量维度）为 $h$，输入输入数据形状为 $[b,s]$。当隐藏维度 $h$ 比较大，且远大于序列长度 $s$ 时，则参数量和计算量的估算都可以忽略一次项，则有以下关于参数量、计算量和显存占用计算分析结论。
+
+**一些定性结论：**
+1. 参数量和输入序列长度无关。$\text{Parmas} = 12nh^2$。
+2. 每个 `token` 对应的 $\text{Flops} = 24nh^2$，计算量随序列长度呈线性增长。其中 $\text{Prefill flops} = 24nh^2*bs$；$\text{Decode flops} = 24nh^2*b$。
+3. 每个 `token` 消耗的 $ \text{memory} = 4nh$，`kv cache` 显存占用量随（输入 + 输出序列长度）以及批量大小 `batch_size` 呈线性增长。kv cache 显存占用量，即 $\text{memory\_kv-cache} = b(s+o)h*n * 2*2 = 4nh*b(s+o)$，单位为字节 `byte`。
+
+**定量结论（近似估算）：**
+1. 一次迭代训练中，对于每个 token 和 每个模型参数，需要进行 6 次浮点数运算。
+2. 随着模型变大，`MLP` 和 `Attention` 层参数量占比越来越大，最后分别接近 `66%` 和 `33%`。
+3. 有[文档](https://github.com/ray-project/llm-numbers#1-mb-gpu-memory-required-for-1-token-of-output-with-a-13b-parameter-model)指出，`13B` 的 `LLM` 推理时，每个 `token` 大约消耗 `1MB` 的显存。
+
+
 
 ## 参考资料
 
