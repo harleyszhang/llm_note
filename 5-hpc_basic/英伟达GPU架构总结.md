@@ -7,6 +7,7 @@
   - [2.1，Volta 架构主要特性](#21volta-架构主要特性)
   - [2.2，Volta GV100 GPU 硬件结构](#22volta-gv100-gpu-硬件结构)
   - [2.3，Volta SM 硬件结构](#23volta-sm-硬件结构)
+    - [2.3.1，Volta 和 Pascal 在内存层次的比较](#231volta-和-pascal-在内存层次的比较)
   - [2.4，Volta Tensor 核心](#24volta-tensor-核心)
   - [2.5，NVIDIA TESLA V100 芯片](#25nvidia-tesla-v100-芯片)
 - [三，Turing 架构](#三turing-架构)
@@ -152,7 +153,12 @@ Volta 多进程服务 (MPS) 是 `Volta GV100` 架构的一项新功能，可为 
 
 Volta GV100 流式多处理器(SM)架构如下图像所示：
 
-![Volta GV100 流式多处理器(SM)架构](../images/nvidia_gpu/Volta_sm.png)
+<!-- ![Volta GV100 流式多处理器(SM)架构](../images/nvidia_gpu/Volta_sm.png) -->
+<img src="../images/nvidia_gpu/Volta_sm.png" width="70%" alt="Volta GV100 流式多处理器(SM)架构">
+
+#### 2.3.1，Volta 和 Pascal 在内存层次的比较
+
+<img src="../images/nvidia_gpu/memory_hierarchy_v100_a100.png" width="70%" alt="Volta 和 Pascal 在内存层次的比较">
 
 ### 2.4，Volta Tensor 核心
 
@@ -262,7 +268,8 @@ Turing TU102 GPU 的内部结构图如下所示。
 Turing 架构采用全新 SM 设计。每个 TPC 均包含两个 SM，每个 SM 共有 64 个 FP32 核心和 64 个 INT32 核心。**相比之下，Pascal GP10x GPU 的每个 TPC 仅有一个 SM，且每个 SM 只含 128 个 FP32 核心**。
 
 Turing TU102/TU104/TU106 流式多元处理器 (`SM`)结构图如下所示：
-<img src="../images/nvidia_gpu/turing_sm.png" width="75%" alt="Turing SM 结构图">
+<!-- <img src="../images/nvidia_gpu/turing_sm.png" width="75%" alt="Turing SM 结构图"> -->
+<img src="../images/nvidia_gpu/turing_sm.png" width="50%" alt="Turing SM 结构图">
 
 ### 3.4，基于 TURING GPU 架构的专业训练卡对比-RTX 6000 卡
 
@@ -309,25 +316,25 @@ Pascal Tesla P4 专业推理卡和 Turing Tesla T4 专业推理卡的规格对�
 
 NVIDIA Tensor Core 技术在 NVIDIA Volta™ 架构中是首次引入，Ampere 架构和前面相比，引入了 Tensor Float 32 (`TF32`) 和浮点 64 (`FP64`)精度类型。TF32 数据类型的工作方式与 FP32 一样，无需更改任何代码即可为 AI 提供高达 20 倍的加速。
 
-![ampere Tensor Cores 的性能提升情况对比](../images/nvidia_gpu/ampere-tensor-cores-chart-2c50-d@2x.jpeg)
+<img src="../images/nvidia_gpu/ampere-tensor-cores-chart-2c50-d@2x.jpeg" width="60%" height="100%" alt="Ampere Tensor Cores 的性能提升情况对比">
 
 **3，结构稀疏性**
 
 Tensor Core 可为稀疏模型提供**高达 2 倍的性能提升**，GPU 支持稀疏性，不仅有利于 AI 模型推理，也有利于训练。
 
-![Structural Sparsity](../images/nvidia_gpu/Sparse-Tensor-Core-Quad-White.png)
+<img src="../images/nvidia_gpu/Sparse-Tensor-Core-Quad-White.png" width="60%" height="100%" alt="Structural Sparsity">
 
 **4，第三代 NVLink**
 
 NVIDIA Ampere 架构中的第三代 NVIDIA® NVLink® 将 GPU 到 GPU 的直接带宽增加了一倍，达到每秒 600 GB (GB/s)，几乎是 PCIe Gen4 的 10 倍。
 
-![Ampere 第三代 NVLink](../images/nvidia_gpu/ampere-nvlink-nvswitch-2c50-d@2x.jpeg)
+<img src="../images/nvidia_gpu/ampere-nvlink-nvswitch-2c50-d@2x.jpeg" width="60%" height="100%" alt="Ampere 第三代 NVLink">
 
 **5，多实例 GPU (MIG)**
 
 多实例 GPU (MIG) 是 A100 和 A30 GPU 支持的一项功能，允许工作负载共享 GPU。 借助 MIG，每个 GPU 都可以划分为多个 GPU 实例，通过它们自己的高带宽内存、缓存和计算核心在硬件级别完全隔离和保护。
 
-![Ampere 多实例 GPU](../images/nvidia_gpu/ampere-multi-instance-gpu-diagram-2c50-d@2x.jpeg)
+<img src="../images/nvidia_gpu/ampere-multi-instance-gpu-diagram-2c50-d@2x.jpeg" width="60%" height="100%" alt="Ampere 多实例 GPU">
 
 ### 4.2，Ampere GA100 GPU 硬件结构
 
@@ -355,7 +362,7 @@ NVIDIA Ampere 架构中的第三代 NVIDIA® NVLink® 将 GPU 到 GPU 的直接�
 
 新的 A100 SM 显著提升了性能，在 Volta 和 Turing SM 架构的特性基础上新增了许多功能。`A100 SM` 的硬件结构如下图示：
 
-![A100 SM 的硬件结构](../images/nvidia_gpu/a100_sm.png)
+<img src="../images/nvidia_gpu/a100_sm.png" width="55%" height="100%" alt="A100 SM 的硬件结构">
 
 **A100 SM 结构的关键特性总结如下**:
 
@@ -364,12 +371,12 @@ NVIDIA Ampere 架构中的第三代 NVIDIA® NVLink® 将 GPU 到 GPU 的直接�
    - 新的 Tensor Core 的稀疏性**支持细粒度稀疏性**，与标准 Tensor Cores 相比，性能提升高达 1 倍。
    - BF16/FP32 混合精度 Tensor Core 运算能以与 FP16/FP32 混合精度相同的速率运行。
    - 等等。
-1. **192 KB 组合共享内存和 L1 数据缓存，是 V100 的 1.5（192/128）倍**。
-2. 新的异步复制指令将数据直接从全局内存加载到共享内存中，可选择绕过 L1 缓存，并且无需使用中间寄存器文件 (RF)。
-3. 新的基于共享内存的屏障单元（异步屏障）用于新的异步复制指令。
-4. L2 缓存管理和驻留控制的新说明。
-5. CUDA 合作组支持的新扭曲级减少指令。
-6. 许多可编程性改进以降低软件复杂性。
+2. **192 KB 组合共享内存和 L1 数据缓存，是 V100 的 1.5（192/128）倍**。
+3. 新的异步复制指令将数据直接从全局内存加载到共享内存中，可选择绕过 L1 缓存，并且无需使用中间寄存器文件 (RF)。
+4. 新的基于共享内存的屏障单元（异步屏障）用于新的异步复制指令。
+5. L2 缓存管理和驻留控制的新说明。
+6. CUDA 合作组支持的新扭曲级减少指令。
+7. 许多可编程性改进以降低软件复杂性。
 
 下图为 V100 和 A100 FP16/FP32/FP64/INT8 Tensor Core 计算对比示意图。
 
@@ -393,7 +400,7 @@ A100 提供了高达 `80GB` 的 GPU 显存和 `2TB/s` 的显存带宽，主要�
 
 更加详细的规格如下图所示:
 
-<img src="../images/nvidia_gpu/a100_format.png" width="60%" alt="NVIDIA®Tesla®A100规格">
+<img src="../images/nvidia_gpu/a100_format.png" width="50%" alt="NVIDIA®Tesla®A100规格">
 
 NVIDIA A100 GPU 的突破性创新点：
 1. **基于 NVIDIA AMPERE 架构**
@@ -475,7 +482,7 @@ Hopper 新的第四代 Tensor Core、Tensor 内存加速器以及许多其他新
 
 GH100 流式多处理器 (SM)架构如下图所示:
 
-![GH100 流式多处理器 (SM)架构](../images/nvidia_gpu/hopper_sm_architecture.png)
+<img src="../images/nvidia_gpu/hopper_sm_architecture.png" width="65%" alt="GH100 流式多处理器 (SM)架构">
 
 ### 5.4，H100 Tensor Core 架构
 
@@ -497,7 +504,7 @@ NVIDIA H100 GPU 是用于 `HPC`（高性能计算）的**专业卡**，基于 NV
 
 另外，NVIDIA H100 是第一款完全异步 GPU。H100 扩展了 A100 跨所有地址空间的全局到共享异步传输，并增加了对张量内存存取模式的支持。它使应用能够构建端到端的异步流水线，将数据移入和移出芯片，在完成计算同时完全隐藏数据搬运。
 
-![新 SXM5 模块上的 NVIDIA H100 GPU](../images/nvidia_gpu/H100_hardware.png)
+<img src="../images/nvidia_gpu/H100_hardware.png" width="50%" alt="新 SXM5 模块上的 NVIDIA H100 GPU">
 
 H100 提供了高达 `80GB` 的 GPU 显存和 `3.35TB/s`（H100 SXM）的显存带宽，主要规格如下如下表所示。
 
@@ -510,13 +517,14 @@ H100 提供了高达 `80GB` 的 GPU 显存和 `3.35TB/s`（H100 SXM）的显存�
 
 更加详细的规格如下图所示:
 
-![H100 产品规格](../images/nvidia_gpu/H100_format.png)
+<!-- ![H100 产品规格](../images/nvidia_gpu/H100_format.png) -->
+<img src="../images/nvidia_gpu/H100_format.png" width="60%" alt="H100 产品规格">
 
 ## 六，V100/A100/H100 计算能力对比
 
 下表比较了不同 NVIDIA GPU 架构之间的计算能力参数。
 
-![V100](../images/nvidia_gpu/v100-a100-h100-compute.png)
+<img src="../images/nvidia_gpu/v100-a100-h100-compute.png" width="60%" alt="v100-a100-h100-compute">
 
 ### 6.1，英伟达不同架构的 Tensor Core 特性总结
 
