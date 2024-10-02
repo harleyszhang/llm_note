@@ -1,26 +1,25 @@
 - [1. 介绍](#1-介绍)
 - [2. 背景](#2-背景)
-  - [2.1 硬件性能](#21-硬件性能)
-  - [2.2 标准 attention 实现](#22-标准-attention-实现)
+	- [2.1 硬件性能](#21-硬件性能)
+	- [2.2 标准 attention 实现](#22-标准-attention-实现)
 - [3 FlashAttention: 算法、分析和拓展](#3-flashattention-算法分析和拓展)
-  - [3.1 使用分块和重计算的高效注意力机制算法](#31-使用分块和重计算的高效注意力机制算法)
-  - [3.2 分析：FlashAttention 的 IO 复杂度](#32-分析flashattention-的-io-复杂度)
-  - [3.3 拓展：块稀疏 FlashAttention](#33-拓展块稀疏-flashattention)
+	- [3.1 使用分块和重计算的高效注意力机制算法](#31-使用分块和重计算的高效注意力机制算法)
+	- [3.2 分析：FlashAttention 的 IO 复杂度](#32-分析flashattention-的-io-复杂度)
+	- [3.3 拓展：块稀疏 FlashAttention](#33-拓展块稀疏-flashattention)
 - [4，实验](#4实验)
-  - [4.1 使用 FlashAttention 的更快模型](#41-使用-flashattention-的更快模型)
-  - [4.2 使用长序列的更好模型](#42-使用长序列的更好模型)
-  - [4.3 注意力基准测试](#43-注意力基准测试)
-  - [4.4 FlashAttention 运行时、内存占用和序列长度的关系](#44-flashattention-运行时内存占用和序列长度的关系)
+	- [4.1 使用 FlashAttention 的更快模型](#41-使用-flashattention-的更快模型)
+	- [4.2 使用长序列的更好模型](#42-使用长序列的更好模型)
+	- [4.3 注意力基准测试](#43-注意力基准测试)
+	- [4.4 FlashAttention 运行时、内存占用和序列长度的关系](#44-flashattention-运行时内存占用和序列长度的关系)
 - [5. 局限性和未来方向](#5-局限性和未来方向)
 - [A. 相关工作](#a-相关工作)
 - [B. 算法细节](#b-算法细节)
-  - [B.1 内存高效的前向传播](#b1-内存高效的前向传播)
-  - [B.2 内存高效的反向传播](#b2-内存高效的反向传播)
-  - [B.3 FlashAttention: 前向传播](#b3-flashattention-前向传播)
+	- [B.1 内存高效的前向传播](#b1-内存高效的前向传播)
+	- [B.2 内存高效的反向传播](#b2-内存高效的反向传播)
+	- [B.3 FlashAttention: 前向传播](#b3-flashattention-前向传播)
+	- [B.3 FlashAttention: 反向传播](#b3-flashattention-反向传播)
 - [C. 证明](#c-证明)
-- [代码实现](#代码实现)
 - [参考资料](#参考资料)
-
 
 ## 1. 介绍
 
@@ -126,16 +125,16 @@ $\text{算法 1 FlashAttention} \\
 要求：矩阵\; Q, K, V \in \mathbb{R}^{N \times d}  \;存储在\;\text{HBM}（高带宽内存）中，片上\;\text{SRAM}\;大小为\;M. \\$
 
 $1: 设置块大小\;B_c = \left\lceil \frac{M}{4d} \right\rceil ,  B_r = \min \left(\left\lceil \frac{M}{4d} \right\rceil , d\right). \\
-2: 初始化\;O = (0){N \times d} \in \mathbb{R}^{N \times d} ,  \ell = (0)N \in \mathbb{R}^N ,  m = (-\infty)N \in \mathbb{R}^N\;存储在\; \text{HBM} 中. \\
-3: 将 \;Q\;分成\; T_r = \left\lceil \frac{N}{B_r} \right\rceil \;块 Q_1, \dots, Q{T_r}，每块大小为  \;B_r \times d；将\;K, V\;分为\; T_c = \left\lceil \frac{N}{B_c} \right\rceil \;块\; K_1, \dots, K{T_c} \;和\; V_1, \dots, V{T_c}，每块大小为\; B_c \times d. \\
-4: 将 \;O\;分为\;T_r\; 块\;O_1, \dots, O_{T_r} ，每块大小为 \;B_r \times d ；将 \;\ell\;分为\;T_r\;块 \ell_1, \dots, \ell_{T_r}，将\; m \;分为\;T_r\;块 m_1, \dots, m_{T_r}，每块大小为\;B_r. \\
-5: 对于 \;1 \leq j \leq T_c\;\text{do} \\
+2: 初始化\;O = (0)_{N \times d} \in \mathbb{R}^{N \times d} ,  \ell = (0)_N \in \mathbb{R}^N ,  m = (-\infty)_N \in \mathbb{R}^N\;存储在\; \text{HBM} 中. \\
+3: 将 \;Q\;分成\; T_r = \left\lceil \frac{N}{B_r} \right\rceil \;块 Q_1, \dots, Q_{T_r}，每块大小为\;B_r\times d；将\;K, V\;分为\; T_c = \left\lceil \frac{N}{B_c} \right\rceil \;块\; K_1, \dots, K_{T_c} \;和\; V_1, \dots, V_{T_c}，每块大小为\; B_c \times d. \\
+4: 将 \;O\;分为\;T_r\; 块\;O_1, \dots, O_{T_r}，每块大小为 \;B_r\times d，将 \;\ell\;分为\;T_r\;块 \ell_1, \dots, \ell_{T_r}，将\; m \;分为\;T_r\;块 m_1, \dots, m_{T_r}，每块大小为\;B_r. \\
+5: for \;1 \leq j \leq T_c\;\text{do} \\
 6: \quad 从\;\text{HBM} 加载\;K_j, V_j\;到片上 \;\text{SRAM}. \\
-7: \quad 对于 \; 1 \leq i \leq T_r\; \text{do} \\
+7: \quad for \; 1 \leq i \leq T_r\; \text{do} \\
 8: \quad \quad 从 \; \text{HBM}\; 加载 \; Q_i, O_i, \ell_i, m_i \;到片上\; \text{SRAM}. \\
 9: \quad \quad 在片上计算\; S_{ij} = Q_i K_j^T \in \mathbb{R}^{B_r \times B_c}. \\
-10: \quad \quad 在片上计算\; \tilde{m}{ij} = \text{rowmax}(S{ij}) \in \mathbb{R}^{B_r} ， \tilde{P}{ij} = \exp(S{ij} - \tilde{m}{ij}) \in \mathbb{R}^{B_r \times B_c} （逐元素操作），计算\; \tilde{\ell}{ij} = \text{rowsum}(\tilde{P}{ij}) \in \mathbb{R}^{B_r}. \\
-11: \quad \quad 在片上计算\; m_i^{\text{new}} = \max(m_i, \tilde{m}{ij}) \in \mathbb{R}^{B_r} ， \ell_i^{\text{new}} = e^{m_i - m_i^{\text{new}}} \ell_i + e^{\tilde{m}{ij} - m_i^{\text{new}}} \tilde{\ell}{ij} \in \mathbb{R}^{B_r}. \\
+10: \quad \quad 在片上计算\; \tilde{m}_{ij} = \text{rowmax}(S_{ij}) \in \mathbb{R}^{B_r} ， \tilde{P}_{ij} = \exp(S_{ij} - \tilde{m}_{ij}) \in \mathbb{R}^{B_r \times B_c} （逐元素操作），计算\; \tilde{\ell}_{ij} = \text{rowsum}(\tilde{P}{ij}) \in \mathbb{R}^{B_r}. \\
+11: \quad \quad 在片上计算\; m_i^{\text{new}} = \max(m_i, \tilde{m}_{ij}) \in \mathbb{R}^{B_r} ， \ell_i^{\text{new}} = e^{m_i - m_i^{\text{new}}} \ell_i + e^{\tilde{m}_{ij} - m_i^{\text{new}}} \tilde{\ell}_{ij} \in \mathbb{R}^{B_r}. \\
 12: \quad \quad 将\; O_i \leftarrow \text{diag}(\ell_i^{\text{new}})^{-1} (\text{diag}(\ell_i) O_i + e^{\tilde{m}{ij} - m_i^{\text{new}}} \tilde{P}{ij} V_j) \; 写回到\; \text{HBM}. \\
 13: \quad \quad 将\; \ell_i \leftarrow \ell_i^{\text{new}}, m_i \leftarrow m_i^{\text{new}} \;写回到\; \text{HBM}. \\
 14: \quad \text{end for} \\
@@ -260,26 +259,20 @@ S\bigodot 1_{\tilde{M}} = S_{kl} \quad \tilde{M}_{kl} = 1 \\ \nonumber
 
 计算 $\text{softmax}(QK^T)$ 时，需要对 $K$ 所有列同时进行计算求和 `sum`，即 softmax 结果和 $K$ 的列耦合，这对于长序列来说，会显著增加内存占用，而如何将这些列计算**解耦合，实现分块计算 softmax 的归一化常数**，正是 online softmax 解决的问题。
 
-online softmax [60] 已经在文献[51, 66] 中使用，证明**注意力计算不需要二次的额外内存，即通过一次遍历输入数据来计算 Softmax 函数归一化项的方法**（但是 HBM 访问次数仍然是二次的，所以导致较慢的运行时间）。
+online softmax 技术[60] 在文献[51, 66] 中被使用，其证明**注意力计算不需要二次的额外内存，即通过一次遍历输入数据来计算 Softmax 函数归一化项的方法**（但是 HBM 访问次数仍然是二次的，所以导致较慢的运行时间）。
 
 为简便起见，此处本文省略了 softmax 过程中最大值平移的步骤。完整的算法见附录 B.3，其中包含所有步骤。
 
 给定输入 $Q,K,V \in R^{N\times d}$，目标是计算注意力输出 $O \in R^{N\times d}$: 
 
-$$S = QK^T \in R^{N\times N}, P = \text{softmax}(S) \in R^{N\times N}, O = PV\in R^{N\times d}$$
+$$S = QK^T \in R^{N\times N}, P = \text{softmax}(S) \in R^{N\times N}, O = PV\in R^{N\times d} $$
 
 假设 $q_i$ 和 $k_j$ 是 $Q$ 和 $K$ 矩阵的第 $i$ 和第 $j$ 列。定义 `softmax` 的**归一化常数**如下:
 
-> 因为取的是原始 $Q$ 和 $K$ 矩阵的列，所以原来的 $QK^T$ 要转变成 $q_i^Tk_j$，即 Q 行变 Q 列, K 列变 K 行。
-
-$$
-L_i = \sum_j e^{q_i^T k_j}
-$$
+$$L_i = \sum_j e^{q_i^T k_j} \tag{1} $$
 
 设 $v_j$ 为矩阵 $V$ 的第 $j$ 列，则注意力输出矩阵的第 $i$ 列为：
-$$
-o_i = P_{i:}V = \sum_j P_{ij}v_j = \sum_j \frac{e^{q_i^T k_j}}{L_i}v_j
-$$
+$$o_i = P_{i:}V = \sum_j P_{ij}v_j = \sum_j \frac{e^{q_i^T k_j}}{L_i}v_j \tag{2} $$
 
 > 因为 $v_j$ 为矩阵 $V$ 的第 $j$ 列，所以对应的对注意力分数矩阵也要取第 $j$ 列。
 
@@ -290,120 +283,174 @@ $$
 
 ### B.2 内存高效的反向传播
 
+略
+
 ### B.3 FlashAttention: 前向传播
 
-![full_flash_attention](../../images/flash_attention/full_flash_attention.png)
+FlashAttention 算法前向传播计算的细节如下公式所示。给定输入序列 $Q,K,V \in \mathbb{R}^{N\times d}$，输出 $O\in \mathbb{R}^{N\times d}$。
 
-本文保存输出 $O$、`softmax` 统计信息 $\ell$ 和 $m$，以及反向传播的伪随机数生成器状态 $R$。
+$$
+\mathbf{S} = \tau \mathbf{Q} \mathbf{K}^\top \in \mathbb{R}^{N \times N}, \quad
+\mathbf{S}_{\text{masked}} = \text{MASK}(\mathbf{S}) \in \mathbb{R}^{N \times N}, \quad
+\mathbf{P} = \text{softmax}(\mathbf{S}_{\text{masked}}) \in \mathbb{R}^{N \times N},
+$$
+
+$$
+\mathbf{P}_{\text{dropped}} = \text{dropout}(\mathbf{P}, p_{\text{drop}}), \quad
+\mathbf{O} = \mathbf{P}_{\text{dropped}} \mathbf{V} \in \mathbb{R}^{N \times d},
+$$
+
+其中，$ \tau \in \mathbb{R}$ 是某种 softmax 缩放（通常为 $\frac{1}{\sqrt{d}}$），`mask` 是某种掩码函数，用于将输入的某些项设置为 $-\infty $，其他项保持不变（例如，当批次中的序列长度不同时使用的 key padding 掩码），$\text{dropout}(x, p)$ 对 $x$ 逐元素应用 `dropout`（即，以概率 $1 − p$ 输出 $x$，且以概率 $p$ 输出 0）。
+
+完整算法过程见算法 2。保存了输出 $O$，softmax 统计量 $\ell$ 和 $m$，以及用于反向传播的伪随机数生成器状态 $R$。
 
 完整的 `FlashAttention` 前向传播算法如下:
 
-![完整的 FlashAttention 前向传播算法](../../images/flash_attention/full_flash_attention_pipeline.png)
+$要求：矩阵 Q, K, V \in \mathbb{R}^{N \times d} \text{存储在 HBM 中，片上 SRAM 大小为}  M，\text{softmax 缩放常数}  \tau \in \mathbb{R} ，\text{掩码函数 MASK，dropout 概率} p_{\text{drop}}$
+
+$1: 初始化伪随机数生成器状态\; \mathcal{R} ，并保存到 HBM 中. \\
+2: 设置块大小\; B_c = \left\lceil \frac{M}{4d} \right\rceil ， B_r = \min \left(\left\lceil \frac{M}{4d} \right\rceil, d \right). \\
+3: 初始化\; O = (0)_{N \times d} \in \mathbb{R}^{N \times d}, \ell = (0)_N \in \mathbb{R}^N, m = (-\infty)_N \in \mathbb{R}^N ，存储在 HBM 中. \\
+4: 将\; Q\; 分成  T_r = \left\lceil \frac{N}{B_r} \right\rceil \; 块 Q_1, \dots, Q_{T_r}，每块大小为\; B_r \times d; 将\; K, V\; 分为\; T_c = \left\lceil \frac{N}{B_c} \right\rceil  块 K_1, \dots, K_{T_c}，每块大小为  B_c \times d. \\
+5: 将\; O\; 分为  T_r  块 O_1, \dots, O_{T_r}，每块大小为  B_r \times d ，将  \ell  分为  T_r  块 \ell_1, \dots, \ell_{T_r}，将\; m\; 分为\; T_r\; 块 m_1, \dots, m_{T_r}，每块大小为\; B_r\\
+6: for\; 1 \leq j \leq T_c  do \\
+7: \quad 从\; HBM\; 中加载\; K_j, V_j\; 到片上 SRAM 中. \\
+8: \quad for\; 1 \leq i \leq T_r  do \\
+9: \quad \quad 从\; HBM\; 加载\; Q_i, O_i, \ell_i, m_i\; 到片上 SRAM 中. \\
+10: \quad \quad 在片上计算\; S_{ij} = \tau Q_i K_j^\top \in \mathbb{R}^{B_r \times B_c}. \\
+11: \quad \quad 在片上计算\; S_{ij}^{\text{masked}} = \text{MASK}(S_{ij}). \\
+12: \quad \quad 在片上计算\; \tilde{m}{ij} = \text{rowmax}(S_{ij}^{\text{masked}}) \in \mathbb{R}^{B_r}，
+\tilde{P}{ij} = \exp(S_{ij}^{\text{masked}} - \tilde{m}{ij}) \in \mathbb{R}^{B_r \times B_c} （逐元素操作），
+\tilde{\ell}{ij} = \text{rowsum}(\tilde{P}_{ij}) \in \mathbb{R}^{B_r}. \\
+13.	\quad \quad 在片上计算\; m_i^{\text{new}} = \max(m_i, \tilde{m}{ij}) \in \mathbb{R}^{B_r} ，
+\ell_i^{\text{new}} = e^{m_i - m_i^{\text{new}}} \ell_i + e^{\tilde{m}{ij} - m_i^{\text{new}}} \tilde{\ell}_{ij} \in \mathbb{R}^{B_r}. \\
+14.	\quad \quad 在片上计算\; \tilde{P}{ij}^{\text{dropped}} = \text{dropout}(\tilde{P}{ij}, p_{\text{drop}}). \\
+15.	\quad \quad 将\; O_i \leftarrow \text{diag}(\ell_i^{\text{new}})^{-1} \left( \text{diag}(\ell_i) O_i + e^{\tilde{m}{ij} - m_i^{\text{new}}} \tilde{P}{ij}^{\text{dropped}} V_j \right)  写回 HBM. \\
+16.	\quad \quad 将\; \ell_i \leftarrow \ell_i^{\text{new}}, m_i \leftarrow m_i^{\text{new}} 写回\; HBM. \\
+17.	\quad \text{end for} \\
+18.	\text{end for} \\
+19.	返回\; O, \ell, m, \mathcal{R}$
+
+<img src="../../images/flash_attention/full_flash_attention_pipeline.png" width="75%" alt="完整的 FlashAttention 前向传播算法">
+
+### B.3 FlashAttention: 反向传播
+
+给定输入序列 $Q、K、V ∈ \mathbb{R}^{N \times d}$、输出 $O \in \mathbb{R}^{N \times d}$ 和输出梯度 $dO$，现在我们需要计算输入梯度 $dQ、dK、dV \in \mathbb{R}^{N \times d}$。
+
+首先看下标准注意力层的反向传播算法流程。
+
+<img src="../../images/flash_attention/standard_attention_bp_algo.png" width="75%" alt="Standard Attention Backward Pass">
+
+FlashAttention 的反向传播做点两点改进：
+1. 不保存从前向传播中大小为 $O(N^2)$ 的 `dropout` 掩码，但可以保存前向传播中的伪随机数生成器状态 $R$，并在反向传播中重新生成 dropout 掩码，这样我们就只需要 $O(N)$ 的额外内存。
+2. 在计算 $\text{softmax}$ 梯度时，我们使用公式 (4) 计算 $D_i = P_i^\top dP_i$，而不在大小为 $N$ 的 $P_i$ 和 $dP_i$ 上进行归约（它们可能无法放入 SRAM）。相反，我们可以将其重写为 $D_i = dO_i^\top O_i$，并计算大小为 $N$ 的向量之间的点积。
+
+完整的 FlashAttention 反向传播算法见算法 4。从概念上讲，它其实是附录 B.2 中推导的分块版本。
+<img src="../../images/flash_attention/flashattention_bp.png" width="75%" alt="algorigthm4 FlashAttention Backward Pass">
+
+可以看出与前向传播类似，反向传播执行 $O(N^2)$ 的 `FLOPs`，并且只需要 $O(N)$ 的额外内存，除了输入和输出、输入和输出梯度之外。另外，FlashAttention 反向传播的 IO 复杂度，类似于前向传播（定理 2）。
+> 这里的额外内存是指除了输入输出之外的内存占用，一般指临时存储的中间结果、数值稳定性相关的存储和 dropout、掩码等操作的额外内存。
+
+【定理 5】设 $N$ 为序列长度，$d$ 为头部维度，$M$ 为 `SRAM` 的大小，且 $d \leq M \leq Nd$。标准注意力（算法 0）的反向传播需要 $\Theta(N d + N^2)$ 次 HBM 访问，而 FlashAttention 的反向传播（算法 4）只需要 $\Theta(N^2 d^2 M^{-1})$ 次 HBM 访问。
+
+证明见附录 C。
 
 ## C. 证明
 
-主要的 `FLOPs` 来源于**矩阵乘法**，在内循环的矩阵乘法中：
+**【证明定理1-计算 FLOPs 和需要的额外内存】**
+
+`FLOPs` 主要来源于**矩阵乘法**，在内循环的矩阵乘法中：
 
 1. 算法 1 第 9 行，计算 $Q_iK_j^T \in R^{B_r\times B_c}$ ，$Q \in R^{B_r \times d}$、$K_j \in R^{B_c \times d}$，FLOPs 为 $O(B_rB_cd)$
-2. 算法第 12 行，计算 $\tilde{P}_{ij}V_j \in R^{B_r \times d}$，这里 $\tilde{P} \in R^{B_r\times B_c}$、$V_j \in R^{B_c \times d}$，FLOPs 为 $O(B_rB_cd)$。
+2. 算法 1 第 12 行，计算 $\tilde{P}_{ij}V_j \in R^{B_r \times d}$，这里 $\tilde{P} \in R^{B_r\times B_c}$、$V_j \in R^{B_c \times d}$，FLOPs 为 $O(B_rB_cd)$。
 
-内部循环执行次数：$T_cT_r = \left \lceil \frac{N}{B_c} \right \rceil \left \lceil \frac{N}{B_r} \right \rceil$，由此可得总的 FLOPs 为：
+内部循环执行次数：$T_cT_r = \left \lceil \frac{N}{B_c} \right \rceil \left \lceil \frac{N}{B_r} \right \rceil$，**由此可得总的 FLOPs 为**：
 
 $$O(\frac{N^2}{B_r\times B_c}B_rB_cd) = O(N^2d)$$
 
 **块大小**为：$B_c = \frac{M}{4d}$，$B_r = min(\frac{M}{4d}, d)$。
 
-就所需的额外内存而言，本文发现本文需要 $O(N)$ 内存来存储统计数据 $(\ell, m)$。
+**从额外内存需求的角度来看，我们需要 $O(N)$ 的内存来存储统计量 $(\ell, m)$**。
 
-## 代码实现
+通过对 $j$ 进行归纳证明算法 1（FlashAttention）的正确性，其中 $0 ≤ j ≤ T_c$。令 $K_{: j} \in \mathbb{R}^{j B_c\times d}$ 为 $K$ 的前 $jB_c$ 行，同样地，令 $V_{:j} \in \mathbb{R}^{jB_c\times d}$ 为 $V$ 的前 $jB_c$ 行。令 $S_{:,:j} = QK_{:j}^\top \in \mathbb{R}^{N × 𝑗B_c}$，且 $P_{:,:j} = \text{softmax}(S:,:j) \in \mathbb{R}^{N × jB_c}$（softmax 按行应用）。令 $m_j, \ell^{(𝑗)}, O^{(j)}$ 为第 $j$ 次外层循环（算法 1 第 5 行）后 HBM 中的 $m, \ell, O$ 的值。（注意，$m, \ell, O$ 的这些值在每次外层循环后都会更新。）我们想证明，在第 $j$ 次外层循环之后，我们在 HBM 中计算出了：
 
-基于 `openai` `trion` 库实现的支持 `NoPad` 的 `FlashAttention` 算子如下：
+$$m^{(j)} = \text{rowmax}(S_{:,j}) \in \mathbb{R}^N, \quad
+\ell^{(j)} = \text{rowsum}(\exp(S_{:,j} - m^{(j)})) \in \mathbb{R}^N, \quad
+O^{(j)} = P_{:,j} V_{:,j} \in \mathbb{R}^{N \times d}.$$
 
-```python
-if triton.__version__ >= "2.1.0":
-    @triton.jit
-    def _fwd_kernel(
-        Q, K, V, sm_scale, B_Start_Loc, B_Seqlen,  # B_LOC 内部记录每个batch 输入的真实位置， B_SEQ_len 记录当前输入的真实长度
-        Out,
-        stride_qbs, stride_qh, stride_qd,
-        stride_kbs, stride_kh, stride_kd,
-        stride_vbs, stride_vh, stride_vd,
-        stride_obs, stride_oh, stride_od,
-        BLOCK_M: tl.constexpr, BLOCK_DMODEL: tl.constexpr,
-        BLOCK_N: tl.constexpr,
-    ):
-        cur_batch = tl.program_id(0)
-        cur_head = tl.program_id(1)
-        start_m = tl.program_id(2)
+根据我们的初始化（算法 1 第 2 行），当 $j = 0$ 时（即在外层循环的任何迭代执行之前），该命题成立。假设该命题对于某个 $j = 0, …, T_c - 1$ 成立。我们要证明该命题对于$j + 1$ 也成立。确实，当我们在外层循环的第 $j + 1$ 次迭代中更新内层循环中的统计量（算法 1 第 10 行）时，我们更新 $m^{(𝑗+1)} = \max(m^{(j)}, \tilde{m})$，其中 $\tilde{m} \in \mathbb{R}^{N}$ 是 $S_{:, j:j+1}$ 的行最大值，$S_{:, j:j+1}$ 是矩阵 $S$ 从列 $jB_c$ 到列 $(j + 1)B_c - 1$ 的切片。这意味着：
 
-        cur_batch_seq_len = tl.load(B_Seqlen + cur_batch)
-        cur_batch_in_all_start_index = tl.load(B_Start_Loc + cur_batch)
+$$m^{(j+1)} = \text{rowmax}(S_{:, j:j+1}) \in \mathbb{R}^{N}$$
 
-        block_start_loc = BLOCK_M * start_m
+![Proofs_O](../../images/flash_attention/Proofs_O.png)
 
-        # initialize offsets
-        offs_n = tl.arange(0, BLOCK_N)
-        offs_d = tl.arange(0, BLOCK_DMODEL)
-        offs_m = start_m * BLOCK_M + tl.arange(0, BLOCK_M)
-        off_q = (cur_batch_in_all_start_index + offs_m[:, None]) * stride_qbs + cur_head * stride_qh + offs_d[None, :] * stride_qd
-        off_k = offs_n[None, :] * stride_kbs + cur_head * stride_kh + offs_d[:, None] * stride_kd
-        off_v = offs_n[:, None] * stride_vbs + cur_head * stride_vh + offs_d[None, :] * stride_vd
+**【证明定理2-分析标准 attention 和 flashattention 的 IO 复杂度】**
 
-        q = tl.load(Q + off_q, mask=offs_m[:, None] < cur_batch_seq_len, other=0.0)
+首先分析标准 attention 的 IO 复杂度，算法 0 的计算步骤分为 $3$ 步：
+1. 首先，矩阵乘法 $S = QK^T$，输入 $Q, K$ 从 HBM 中读取，输出 $S \in \mathbb{R}^{N \times N}$ 被写入 HBM（算法 0 第 1 行）,HBM 访问次数为 $Nd + N^2$。
+2. 然后，计算 $\text{P = softmax(S)}$, 从 HBM 读取 S，再将 P 写入 HBM，HBM 访问次数为 $2N^2$.
+3. 最后，计算 $O = PV$，`HBM` 访问次数为 $N^2 + 2Nd$。
 
-        k_ptrs = K + off_k
-        v_ptrs = V + off_v
+**综上，标准注意力实现的 `HBM` 访问次数为 $\Theta(3N d + 4N^2)$**。
 
-        # initialize pointer to m and l
-        m_i = tl.zeros([BLOCK_M], dtype=tl.float32) - float("inf")
-        l_i = tl.zeros([BLOCK_M], dtype=tl.float32)
-        acc = tl.zeros([BLOCK_M, BLOCK_DMODEL], dtype=tl.float32)
+根据算法 1，我们看到 $K$ 和 $V$ 的每个元素都从 HBM 中加载一次（算法 1 第 6 行）。我们对 $Q$ 和 $O$ 进行 $T_c$ 次遍历，每次遍历将所有的 $Q$ 和 $O$ 加载到 `HBM` 中（算法 1 第 8 行）。
 
-        block_mask = tl.where(block_start_loc < cur_batch_seq_len, 1, 0)
+因此，FlashAttention 的 `HBM` 访问次数为 $\Theta(N d + N d T_c) = \Theta(NdT_c)$。
 
-        for start_n in range(0, block_mask * (start_m + 1) * BLOCK_M, BLOCK_N):
-            start_n = tl.multiple_of(start_n, BLOCK_N)
-            # -- compute qk ----
-            k = tl.load(k_ptrs + (cur_batch_in_all_start_index + start_n) * stride_kbs,
-                        mask=(start_n + offs_n[None, :]) < cur_batch_seq_len, other=0.0)
-            # mask = tl.load(mask_ptrs + start_n, mask=start_n + offs_n < cur_batch_end_loc, other=0.0)
+另外，块大小的需要根据内存 SRAM 大小来设置，$K_j$ 和 $V_j$块的大小为 $B_c \times d$。
 
-            qk = tl.zeros([BLOCK_M, BLOCK_N], dtype=tl.float32)
-            qk += tl.dot(q, k)
-            qk *= sm_scale
-            qk = tl.where(offs_m[:, None] >= (start_n + offs_n[None, :]), qk, float("-inf"))
+$$B_cd = O(M) <=>B_c = O(\frac{M}{d})$$
 
-            # -- compute m_ij, p, l_ij
-            m_ij = tl.max(qk, 1)
-            p = tl.exp(qk - m_ij[:, None])
-            l_ij = tl.sum(p, 1)
-            # -- update m_i and l_i
-            m_i_new = tl.maximum(m_i, m_ij)
-            alpha = tl.exp(m_i - m_i_new)
-            beta = tl.exp(m_ij - m_i_new)
-            l_i_new = alpha * l_i + beta * l_ij
-            # -- update output accumulator --
-            # scale p
-            p_scale = beta / l_i_new
-            p = p * p_scale[:, None]
-            # scale acc
-            acc_scale = l_i / l_i_new * alpha
-            acc = acc * acc_scale[:, None]
-            # update acc
-            v = tl.load(v_ptrs + (cur_batch_in_all_start_index + start_n) * stride_vbs,
-                        mask=(start_n + offs_n[:, None]) < cur_batch_seq_len, other=0.0)
+$Q_i$ 和 $Oi$ 块的大小为 $B_r \times d$。
 
-            p = p.to(v.dtype)
-            acc += tl.dot(p, v)
-            # update m_i and l_i
-            l_i = l_i_new
-            m_i = m_i_new
-        # initialize pointers to output
-        off_o = (cur_batch_in_all_start_index + offs_m[:, None]) * stride_obs + cur_head * stride_oh + offs_d[None, :] * stride_od
-        out_ptrs = Out + off_o
-        tl.store(out_ptrs, acc, mask=offs_m[:, None] < cur_batch_seq_len)
-        return
-```
+$$B_rd = O(M) <=>B_r = O(\frac{M}{d})$$
+
+最后，大小为 $B_r \times B_c$ 的块 $S_{ij}$ 要能够适应片上内存：
+
+$$B_r\times B_c = O(M)$$
+
+因此，$B_r$ 和 $B_c$ 设置如下:
+
+$$
+B_c = \Theta\left(\frac{M}{d}\right), \quad B_r = \Theta\left(\min\left(\frac{M}{d}, \frac{M}{B_c}\right)\right) = \Theta\left(\min\left(\frac{M}{d}, d\right)\right).
+$$
+
+于是，我们有：
+
+$$
+T_c = \frac{N}{B_c} = \Theta\left(\frac{Nd}{M}\right).
+$$
+
+因此，**`FlashAttention` 的 `HBM` 访问次数为**：
+$$
+\Theta(NdT_c) = \Theta\left(\frac{N^2 d^2}{M}\right).
+$$
+
+**【命题 3 的证明-反证法】**
+
+**反证法**，假设存在一个算法可以计算精确的注意力机制，并且对于所有 $M \in [d, Nd]$ 的 HBM 访问次数为：
+
+$$o\left(\frac{N^2 d^2}{M}\right).$$
+
+在 $M = \Theta(Nd)$ 的情况下，HBM 访问次数为
+
+$$o\left(\frac{N^2 d^2}{Nd}\right) = o(Nd).$$
+
+但是，注意力机制的输入（矩阵 Q、K、V）和输出 $O$ 的大小为 $Nd$，它们一开始就存储在 HBM 中，因此，如果该算法计算精确的注意力机制，必然会产生至少 $\Omega(N d)$ 次 HBM 访问。这就导致了矛盾。
+
+**【定理 5 的证明-注意力反向传播的 IO 复杂度和前向传播的 IO 复杂度（定理 2）非常相似】**
+
+首先分析标准注意力反向传播的 IO 复杂度。输入 $Q, K, V, dO ∈ \mathbb{R}^{N \times d}$ 存储在 HBM 中，算法结束时，输出 $dQ, dK, dV ∈ \mathbb{R}^{N \times d}$ 被写入 HBM。
+
+在标准注意力反向传播的每一步，需要从 HBM 中加载大小为 $Nd$ 或 $N^2$ 的输入，并且需要将大小为 $N^2$ 或 $Nd$ 的注意力输出写入 `HBM`。这将导致 $\Theta(N d + N^2)$ 次 HBM 访问。
+
+然后分析 FlashAttention 反向传播的 IO 复杂度。
+
+类似于定理 2，我们看到 $K$ 和 $V$ 的每个元素只从 `HBM` 加载一次。$dK$ 和 $dV$ 的每个元素也只写入 HBM 一次。我们对 $Q, O, dO$ 进行 `T_c` 次遍历，每次遍历将所有的 $Q, O, dO$ 加载到 HBM 中。我们还对 $dQ$ 进行 $T_c$ 次遍历，每次遍历从 HBM 读取/写入所有的 $dQ$。因此，HBM 访问次数为 $\Theta(N d + N d T_c) = \Theta(NdT_c)$。如定理 2 的证明中所述，可知 $T_c = \frac{N}{B_c} = \Theta(\frac{Nd}{M})$。
+
+最终，FlashAttention 反向传播的 HBM 访问次数为:
+
+$$\Theta(NdT_c) = \Theta(\frac{N^2d^2}{M})$$
 
 ## 参考资料
 
