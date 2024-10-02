@@ -448,7 +448,7 @@ $$o\left(\frac{N^2 d^2}{Nd}\right) = o(Nd).$$
 
 类似于定理 2，我们看到 $K$ 和 $V$ 的每个元素只从 `HBM` 加载一次。$dK$ 和 $dV$ 的每个元素也只写入 HBM 一次。我们对 $Q, O, dO$ 进行 `T_c` 次遍历，每次遍历将所有的 $Q, O, dO$ 加载到 HBM 中。我们还对 $dQ$ 进行 $T_c$ 次遍历，每次遍历从 HBM 读取/写入所有的 $dQ$。因此，HBM 访问次数为 $\Theta(N d + N d T_c) = \Theta(NdT_c)$。如定理 2 的证明中所述，可知 $T_c = \frac{N}{B_c} = \Theta(\frac{Nd}{M})$。
 
-最终，FlashAttention 反向传播的 HBM 访问次数为:
+最终，FlashAttention 反向传播的 `HBM` 访问次数为:
 
 $$\Theta(NdT_c) = \Theta(\frac{N^2d^2}{M})$$
 

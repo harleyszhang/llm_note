@@ -533,8 +533,8 @@ cudaError t cudaGetDeviceProperties(cudaDeviceProp* prop, int device);
 `cudaDeviceProp` 结构体包含了 CUDA 设备的属性信息，可以通过该[网址](https://docs.nvidia.com/cuda/cuda-runtime-api/structcudaDeviceProp.html)查看其内容。以下是一些关键成员及其意义：
 - name: 设备的名称（字符串）。
 - `totalGlobalMem`: 设备的全局内存总量（以字节为单位）。
-- sharedMemPerBlock: 每个线程块的共享内存大小（以字节为单位）。
-- regsPerBlock: 每个线程块的寄存器数量。
+- `sharedMemPerBlock`: 每个线程块的共享内存大小（以字节为单位）。
+- `regsPerBlock`: 每个线程块的寄存器数量。
 - warpSize: 每个 warp 的线程数量（通常为 32）。
 - maxThreadsPerBlock: 每个线程块的最大线程数。
 - maxThreadsDim[3]: 每个线程块在 3 个维度（x, y, z）上的最大线程数。
@@ -542,7 +542,7 @@ cudaError t cudaGetDeviceProperties(cudaDeviceProp* prop, int device);
 - clockRate: 核心时钟频率（以千赫兹为单位）。
 - totalConstMem: 设备的常量内存大小（以字节为单位）。
 - `multiProcessorCount`: 多处理器的数量（SM 数量）。
-- `computeCapability`:` 计算能力，包含 major 和 minor 版本号。
+- `computeCapability`: 计算能力，包含 major 和 minor 版本号。
 
 实例代码如下所示：
 
