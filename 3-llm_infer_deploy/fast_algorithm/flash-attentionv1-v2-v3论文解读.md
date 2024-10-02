@@ -1,16 +1,17 @@
-- [1. FlashAttention-v1](#1-flashattention-v1)
-	- [Original Softmax](#original-softmax)
-	- [Online Softmax](#online-softmax)
-	- [Tiling](#tiling)
-	- [Roofline](#roofline)
-	- [SRAM](#sram)
-	- [FlashAttention](#flashattention)
-- [2. FlashAttention-v2](#2-flashattention-v2)
-- [3. FlashAttention-v3](#3-flashattention-v3)
-- [4. FlashDecoding \& FlashDecoding++](#4-flashdecoding--flashdecoding)
+- [1. Online Softmax](#1-online-softmax)
+  - [Original Softmax](#original-softmax)
+  - [Online Softmax](#online-softmax)
+- [2. FlashAttention-v1](#2-flashattention-v1)
+  - [Tiling](#tiling)
+  - [Roofline](#roofline)
+  - [SRAM](#sram)
+  - [FlashAttention](#flashattention)
+- [3. FlashAttention-v2](#3-flashattention-v2)
+- [4. FlashAttention-v3](#4-flashattention-v3)
+- [5. FlashDecoding \& FlashDecoding++](#5-flashdecoding--flashdecoding)
 - [参考资料](#参考资料)
 
-## 1. FlashAttention-v1
+## 1. Online Softmax
 
 ### Original Softmax
 
@@ -20,7 +21,8 @@
 
 给定输入向量 $\mathbf{x} = [x_1, x_2, \dots, x_s]$，$Softmax(x)$ 函数的输出定义为：
 
-$$y_i = \frac{e^{x_i}}{\sum_j^{s} e^{x_j} } \quad (1)$$
+$$d_N= \sum_j^{N} e^{x_j} \\
+y_i = \frac{e^{x_i}}{d_N} $$
 
 Naive Softmax 算法主要包括两个步骤，其算法实现步骤和 `FLOPs` 分析如下：
 
@@ -58,8 +60,9 @@ def native_softmax(x):
 
 和 `Native Softmax` 相比，`Safe Softmax` 为了防止数值溢出还需要将 $x_i$ 再额外减掉一个 `max` 最大值：
 
-$$m = \text{max}_{k}^{s} x_k\\
-y_i = \frac{e^{(x_i - m)}}{\sum_j^{s} e^{(x_j -m)}} \quad (2)$$
+$$m_N= \text{max}_{k}^{N} x_k \\
+d_N= \sum_j^{N} e^{(x_j -m_N)} \\
+y_i = \frac{e^{(x_i - m)}}{d_N} $$
 
 `Safe Softmax` 涉及三个步骤，其算法实现步骤和 `FLOPs` 分析如下：
 
@@ -98,19 +101,45 @@ def safe_softmax(x):
     return output
 ```
 ### Online Softmax
-
-`Safe Softmax` 对输入向量进行了三次遍历：第一次计算最大值 $m_n$，第二次计算归一化项 $d_n$，第三次计算最终值 $y_i$，再加上将结果写回内存中，这导致**每个向量元素总共需要 `4` 次内存访问**，即原始的 Softmax 算法的内存访问（`MAC`）偏大。
-
-由此，[Online normalizer calculation for softmax](https://arxiv.org/pdf/1805.02867) paper 提出了一种能将上面的 3 步 softmax 合并成 2 步完成的方法。其算法实现过程如下所示：
 > 算法分析和公式证明过程，本文不再描述，感兴趣的可以看我上一篇文章-《online-softmax 论文解读》。
 
+考虑原始计算步骤中分母求最大值以及求和的部分，这里需要 $3$ 个独立的循环，即`Safe Softmax` 对输入向量进行了三次遍历：第一次计算最大值 $m_n$，第二次计算归一化项 $d_n$，第三次计算最终值 $y_i$，再加上将结果写回内存中，这导致**每个向量元素总共需要 `4` 次内存访问**，即原始的 Softmax 算法的内存访问（`MAC`）偏大。
+
+$$\begin{align}
+m_i &= \max(m_{i-1}, x_i) \\
+d_i &= d_{i-1} + e^{x_i - m_N} = \sum^i_{j=1}e^{x_j - m_N} \\
+softmax_i &= \frac{e^{x_i - m_N}}{d_N} \\
+\end{align}$$
+
+从上述公式很明显看出，MAC 大原因是因为存在数据依赖：(2) 需要依赖 $m_N$, (3) 则需要依赖 $m_N$ 和 $d_N$。但如果能有下述的关系：
+
+$$d_i' = \sum_{j=1}^i e^{x_j - m_i} = d_{i-1}' + e^{x_i -m_i}$$
+
+则公式 (2) 对 $m_N$ 的数据依赖则就不存在了，虽然序列的中间部分的值不相等但最终的结果 $d_N$ 与 $d_N'$ 是等价的，从代码角度看，则可以实现在一个 for 循环中得到最终的 $m_N$ 和 $d_N$，减少 `MAC`。这个就是 [Online normalizer calculation for softmax](https://arxiv.org/pdf/1805.02867) 论文提出的一种能将上面的 3 步 softmax 合并成 2 步完成的方法，论文证明了 $d_i'$ 存在递推性质
+
+$$\begin{aligned}
+d_i' &= \sum^i_{j=1}e^{x_j - m_i} \\
+&= \sum^{i-1}_{j=1}e^{x_j - m_i} + e^{x_i-m_i} \\
+&= \left ({\sum^{i-1}_{j=1}e^{x_j - m_{i-1}}} \right ) * e^{m_{i-1} - m_i} + e^{x_i-m_i} \\
+&= d_{i-1}'* e^{m_{i-1} - m_i} + e^{x_i-m_i} \\
+\end{aligned}$$
+
+即 $m_i$ 和 $d_i'$ 可以在一个 for 循环中计算并更新，这样 softmax 的实现就可以通过两个 for 循环完成，即两步 softmax，`Online Softmax` 计算公式如下：
+
+$$m_j = max(m_{j-1}, x_j),\quad d_j = d_{j-1}e^{m_{j-1} - m_j} + e^{x_j - m_j}  \\
+softmax\ x_i = \frac{e^{x_i - m_V}}{d_V} \tag{4}$$
+
+这里 $m_j$ 和 $d_j$, 可以在一个 for 循环中同时实现，或者说在一个 kernel 中计算完成；$m_s$ 和 $d_s$ 是全局的最大值和归一化项。其算法实现过程如下所示：
+
 <img src="../../images/flash_attention1-3/online-softmax.png" width="65%" alt="online softmax">
+
+如果想继续优化，则**使用分块技术计算归一化常数**，先定义分块计算: $ d_{xy} = d_x * e^{m_x - m_{xy}} + d_y * e^{m_y - m_{xy}}$，分块计算完 $m$ 和 $d$ 之后，再将所有子块结果重新聚合得到全局结果 $m_N$ 和 $d_N$，其和串行顺序计算结果在数学上完全等价**
 
 这篇论文在算法上其实有**两个创新**：
 1. 提出并证明了通过**一次遍历**输入数据来计算 Softmax 函数归一化项的方法，该方法将 Softmax 函数的内存访问次数减少了 $1.33 (4/3 = 1.33)$倍
 2. 证明了可以**分块计算归一化常数**，这个方法可以发挥 GPU 多线程的特性。
 
-这里针对上面两个创新，我分别给出算法的 `python` 代码实现和其对 global memory 的访存量 `MAC`。
+这里针对上面两个创新，我分别给出 online softmax 算法的 `python` 代码实现以及 global memory 的访存量 `MAC`。
 
 ```python
 import numpy as np
@@ -200,6 +229,8 @@ safe softmax 与 PyTorch softmax 结果一致!
 online softmax 与 PyTorch softmax 结果一致!
 block online softmax 与 PyTorch softmax 结果一致!
 
+## 2. FlashAttention-v1
+
 ### Tiling
 
 Parallel online normalizer calculation.
@@ -232,14 +263,28 @@ FlashAttention-v1 其实并没有提出新的算法和网络结构上的优化�
 总的来说，FlashAttention 通过 `Tiling` 和 `Recomputation` 技术大幅减少了 cuda kernel 对 global memory 的访问量，使得在 sequence length 偏长和 attention 计算处于内存密集型的情况下有着明显的加速效果。
 > 本文主要分析其在模型推理阶段的优化，因此**重计算**方法的分析就略过了。
 
+论文总结的一些定理：
 
-## 2. FlashAttention-v2
+【**定理 1**】 算法 1 注意力输出矩阵 $O = softmax(QK^T)V$ 要求 $O(N^2d)$ 的 FLOPs，并且除了输入和输出内存之外，需要额外的 $O(N)$ 内存【证明见附录 B】。
+
+【**定理 2**】假设 $N$ 是输入序列的长度，$d$ 是注意力头的维度，$M$ 是 `SRAM` 大小，且 $d \leq M\leq Nd$。标准 attention 的 `HBM` 访问次数是 $O(Nd+N^2)$，而 FlashAttention [算法 1] 只需要 $O(N^2d^2M^{-1})$。
+
+【**命题 3**】设 $N$ 为序列长度，$d$ 为头部维度，$M$ 为 `SRAM` 的大小，且 $d \leq M \leq Nd$。不存在一个算法可以在所有范围内的 $M$（即 $[d, N d]$）使用少于 $O(N^2 d^2 M^{-1})$ 次 `HBM` 访问来计算精确的注意力。
+
+【**定理 4**】假设 $N$ 是输入序列的长度，$d$ 是注意力头的维度，$M$ 是 `SRAM` 大小，且 $d \leq M\leq Nd$。块-稀疏的 FlashAttention (算法 5) 的 HBM 访问次数是 $O(Nd + N^2d^2M^{−1}s)$。（其中 $s$ 是块稀疏掩码中非零块的比例）
+
+【**定理 5**】设 $N$ 为序列长度，$d$ 为头部维度，$M$ 为 `SRAM` 的大小，且 $d \leq M \leq Nd$。标准注意力（算法 0）的反向传播需要 $\Theta(N d + N^2)$ 次 HBM 访问，而 FlashAttention 的反向传播（算法 4）只需要 $\Theta(N^2 d^2 M^{-1})$ 次 HBM 访问。
+
+Online Softmax 实现在一个 for 循环中计算 $m_i$ 和 $d_i$，FlashAttention-v1 基于它的思想更进一步，实现在一个 for 循环中计算 $m_i$、$d_i$、$\text{softmax}_i$ 和注意力输出 $O_i$，也就是说，在一个 kernel 中实现 attention 的所有操作，这样大大减少了内存访问次数（内存读/写的次数）。
 
 
-## 3. FlashAttention-v3
+## 3. FlashAttention-v2
 
 
-## 4. FlashDecoding & FlashDecoding++
+## 4. FlashAttention-v3
+
+
+## 5. FlashDecoding & FlashDecoding++
 
 
 ## 参考资料
