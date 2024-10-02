@@ -15,89 +15,86 @@
 
 Softmax 函数是一种常用于机器学习，特别是多分类问题中的激活函数。它的作用是将一个任意实数向量转换为一个概率分布，并确保输出的概率和为 1。
 
-给定输入向量 $\mathbf{x} = [x_1, x_2, \dots, x_n]$，$Softmax(x)$ 函数的输出定义为：
+给定输入向量 $\mathbf{x} = [x_1, x_2, \dots, x_V]$，$Softmax(x)$ 函数的输出定义为：
 
-$$y_i = \frac{e^{x_i}}{\sum_j^{n} e^{x_j} } \quad (1)$$
+$$d_V = \sum_j^{V} e^{x_j} \\
+y_i = \frac{e^{x_i}}{d_V} \tag{1}$$
 
-其中，$x,y\in  \mathbb{R}^{n}$。朴素的 Softmax [算法 1] 实现需要对 $\mathbf{x}$ 进行二次内存访问，一次计算归一化项 $d_n$，另一次计算输出值 $y_i$，加上写输出结果 $y_i$，即**每个向量元素都需要进行三次内存访问：两次读取和一次写入**。
-> Softmax 函数中，分母的求和项被叫做归一化项 $d_n$，作用是将输入向量中每个元素 $e^{x_i}$ 变为比例较小的数值，保证它们的和为 1，从而符合概率的定义。
+其中，$x,y\in  \mathbb{R}^{V}$。朴素的 Softmax [算法 1] 实现需要对 $\mathbf{x}$ 进行二次内存访问，一次计算归一化项 $d_V$，另一次计算输出值 $y_i$，加上写输出结果 $y_i$，即**每个向量元素都需要进行三次内存访问：两次读取和一次写入**。
+> Softmax 函数中，分母的求和项被叫做归一化项 $d_V$，作用是将输入向量中每个元素 $e^{x_i}$ 变为比例较小的数值，保证它们的和为 1，从而符合概率的定义。
 
 $\text{算法 1 朴素 softmax} \\
 \begin{aligned}
 1: & \quad d_0 \leftarrow 0 \\
-2: & \quad \textbf{for} \ j \leftarrow 1, n \ \textbf{do} \\
+2: & \quad \textbf{for} \ j \leftarrow 1, V \ \textbf{do} \\
 3: & \quad \quad d_j \leftarrow d_{j-1} + e^{x_j} \\
 4: & \quad \textbf{end for} \\
-5: & \quad \textbf{for} \ i \leftarrow 1, n \ \textbf{do} \\
-6: & \quad \quad y_i \leftarrow \frac{e^{x_i}}{d_n} \\
+5: & \quad \textbf{for} \ i \leftarrow 1, V \ \textbf{do} \\
+6: & \quad \quad y_i \leftarrow \frac{e^{x_i}}{d_V} \\
 7: & \quad \textbf{end for}
 \end{aligned}
 $
 
 在实际硬件上，由于表示对数字范围有限，算法 1 的第 3 行可能会因指数运算而发生溢出或下溢，因此目前通用的 Softmax 实现（更安全的形式）中为了防止数值溢出还需要再额外减掉一个 `max` 最大值：
 
-$$m = \text{max}_{k}^{n} x_k\\
-y_i = \frac{e^{(x_i - m)}}{\sum_j^{n} e^{(x_j -m)}} \quad (2)
-$$
+$$m_V = \text{max}_{k}^{V} x_k \\
+d_j = d_{j - 1} + e^{x_j - m_V}; \quad d_V = \sum_j^{V} e^{(x_j -m_V)} \\
+y_i = \frac{e^{(x_i - m)}}{d_V } \tag{2}$$
 
-大部分深度学习框架都是采用这个更安全的朴素实现，算法流程见 [算法2]。但安全 Softmax 对输入向量进行了三次遍历：第一次计算最大值 $m_n$，第二次计算归一化项 $d_n$，第三次计算最终值 $y_i$，再加上将结果写回内存中，这导致**每个向量元素总共需要 `4` 次内存访问**，即原始的 Softmax 算法的内存访问（`MAC`）偏大，本文希望对此进行改进。
+大部分深度学习框架都是采用这个更安全的朴素实现，算法流程见 [算法2]。但安全 Softmax 对输入向量进行了三次遍历：第一次计算最大值 $m_V$，第二次计算归一化项 $d_V$，第三次计算最终值 $y_i$，再加上将结果写回内存中，这导致**每个向量元素总共需要 `4` 次内存访问**，即原始的 Softmax 算法的内存访问（`MAC`）偏大，本文希望对此进行改进。
 
 $\text{算法 2 安全 Softmax} \\
 \begin{aligned}
 1: & \quad m_0 \leftarrow -\infty \\
-2: & \quad \textbf{for} \ k \leftarrow 1, n \ \textbf{do} \\
+2: & \quad \textbf{for} \ k \leftarrow 1, V \ \textbf{do} \\
 3: & \quad \quad m_k \leftarrow \max(m_{k-1}, x_k) \\
 4: & \quad \textbf{end for} \\
 5: & \quad d_0 \leftarrow 0 \\
-6: & \quad \textbf{for} \ j \leftarrow 1, n \ \textbf{do} \\
-7: & \quad \quad d_j \leftarrow d_{j-1} + e^{x_j - m_n} \\
+6: & \quad \textbf{for} \ j \leftarrow 1, V \ \textbf{do} \\
+7: & \quad \quad d_j \leftarrow d_{j-1} + e^{x_j - m_V} \\
 8: & \quad \textbf{end for} \\
-9: & \quad \textbf{for} \ i \leftarrow 1, n \ \textbf{do} \\
-10: & \quad \quad y_i \leftarrow \frac{e^{x_i - m_n}}{d_n} \\
+9: & \quad \textbf{for} \ i \leftarrow 1, V \ \textbf{do} \\
+10: & \quad \quad y_i \leftarrow \frac{e^{x_i - m_V}}{d_V} \\
 11: & \quad \textbf{end for}
 \end{aligned}$
 
 ## 2. 在线归一化计算
 
-算法 3 通过一次遍历输入向量，同时计算最大值 $m$ 和归一化项（normalization term）$d$，每个向量元素仅增加两次操作（2 个 for 循环遍历），几乎没有额外成本。它将 `Softmax` 函数计算的内存访问次数从每个向量元素的 4 次减少到 3 次。灵感来源于数值稳定的方差在线计算算法 [18]。
+算法 3 通过一次遍历输入向量，同时计算最大值 $m$ 和归一化项（normalization term）$d$，每个向量元素仅增加两次操作（2 个 for 循环遍历），几乎没有额外成本。它将 `Softmax` 函数计算的内存访问次数从每个向量元素的 4 次减少到 3 次。灵感来源于数值稳定的方差在线计算算法 [18]。算法对应的计算公式如下所示:
+
+$$m_j = max(m_{j-1}, x_j),\quad d_j = d_{j-1}e^{m_{j-1} - m_j} + e^{x_j - m_j}  \\
+softmax_i = \frac{e^{x_i - m_V}}{d_V} \tag{3}$$
+
+这里 $m_j$ 和 $d_j$, 可以在一个 for 循环中同时实现，或者说在一个 kernel 中计算完成；$m_V$ 和 $d_V$ 是全局的最大值和归一化项。
 
 $\text{算法 3 带在线归一化计算的安全 Softmax} \\
 \begin{aligned}
 1: & \quad m_0 \leftarrow -\infty \\
 2: & \quad d_0 \leftarrow 0 \\
-3: & \quad \textbf{for} \ j \leftarrow 1, n \ \textbf{do} \\
+3: & \quad \textbf{for} \ j \leftarrow 1, V \ \textbf{do} \\
 4: & \quad \quad m_j \leftarrow \max(m_{j-1}, x_j) \\
 5: & \quad \quad d_j \leftarrow d_{j-1} \times e^{m_{j-1} - m_j} + e^{x_j - m_j} \\
 6: & \quad \textbf{end for} \\
-7: & \quad \textbf{for} \ i \leftarrow 1, n \ \textbf{do} \\
-8: & \quad \quad y_i \leftarrow \frac{e^{x_i - m_n}}{d_n} \\
+7: & \quad \textbf{for} \ i \leftarrow 1, V \ \textbf{do} \\
+8: & \quad \quad y_i \leftarrow \frac{e^{x_i - m_V}}{d_V} \\
 9: & \quad \textbf{end for}
 \end{aligned}$
 
-算法对应的计算公式如下所示:
-
-$$m_j = max(m_{j-1}, x_j) \\
-d_j = d_{j-1}e^{m_{j-1} - m_j} + e^{x_j - m_j} \\
-softmax\ x_i = \frac{e^{x_i - m_s}}{d_n}
-$$
-
-这里的 $m_s$ 和 $d_s$ 是全局的最大值和归一化项。
-
 算法 3 本质上就是在遍历输入数组元素的过程中，**持续更新最大值** $m$ 和归一化项 $d$。在每次迭代时，算法基于新的最大值 $m_j$ 更新归一化项 $d$，之后再将新值加入归一化项中。
 
-**定理 1**：算法 3 的第 1-6 行计算 $m_n = \max_{k=1}^{n} x_k$ 和 $d_n = \sum_{j=1}^{n} e^{x_j - m_n}$。
+**定理 1**：算法 3 的第 1-6 行计算 $m_V = \max_{k=1}^{V} x_k$ 和 $d_V = \sum_{j=1}^{V} e^{x_j - m_V}$。
 
 定理 1 可通过数学归纳法进行证明：
 
-- *基础情况*：当  $n = 1$
+- *基础情况*：当  $V = 1$
     $m_1 \leftarrow x_1 \\
         \quad\;\; = max_{k=1}^1x_k\qquad\qquad\qquad\qquad\; \text{根据算法 3 第 4 行}$
     $d_1 \leftarrow e^{x_1 - m_1} \\
     \quad\;\; = \sum_{j=1}^1 e^{x_j - m_1} \qquad\qquad\quad\qquad\;\; \text{根据算法 3 第 5 行}$
 
-    上述公式仅 对于 $n = 1$ ，定理成立。
+    上述公式仅 对于 $V = 1$ ，定理成立。
 
-- *归纳步骤*：假设定理在 $n = S - 1$ 时成立，即算法的第 1-6 行可以计算得到  $m_{S-1} = \max_{k=1}^{S-1} x_k$  且  $d_{S-1} = \sum_{j=1}^{S-1} e^{x_j - m_{S-1}}$。现在，我们来看看当 $n = S$ 时，算法计算的结果。
+- *归纳步骤*：假设定理在 $V = S - 1$ 时成立，即算法的第 1-6 行可以计算得到  $m_{S-1} = \max_{k=1}^{S-1} x_k$  且  $d_{S-1} = \sum_{j=1}^{S-1} e^{x_j - m_{S-1}}$。现在，我们来看看当 $V = S$ 时，算法计算的结果。
     
     $m_S \leftarrow \max(m_{S-1}, x_S) \qquad\qquad\qquad\; \text{根据算法 3 第 4 行} \\
     \quad\;\; = \max\left(\max_{k=1}^{S-1} x_k, x_S\right) \qquad\qquad \text{根据归纳假设} \\
@@ -112,10 +109,10 @@ $$
 
 算法 3 被证明可以计算公式 (2) 中定义的 Softmax 函数，并且是安全的：
 
-- $m_j$  是运行中的最大值：$m_j \in \left[ \min_{k=1}^{n} m_k, \max_{k=1}^{n} m_k \right]$，对于所有 $j \in [1, n]，m_j$ 不会发生下溢或上溢。
-- $d_j$ 同样有界：$1 \leq d_j \leq j$ ，对于所有 $j \in [1, n]$。这一点可以通过归纳法轻松证明。对于 $d_j$，32 位浮点数存储保证可以处理最多 $1.7 \times 10^{37}$ 个向量元素而不会发生上溢。这是一个合理大的数，但如果你的向量更大，则需要使用 64 位浮点数存储 $d_j$。
+- $m_j$  是运行中的最大值：$m_j \in \left[ \min_{k=1}^{V} m_k, \max_{k=1}^{V} m_k \right]$，对于所有 $j \in [1, V]，m_j$ 不会发生下溢或上溢。
+- $d_j$ 同样有界：$1 \leq d_j \leq j$ ，对于所有 $j \in [1, V]$。这一点可以通过归纳法轻松证明。对于 $d_j$，32 位浮点数存储保证可以处理最多 $1.7 \times 10^{37}$ 个向量元素而不会发生上溢。这是一个合理大的数，但如果你的向量更大，则需要使用 64 位浮点数存储 $d_j$。
 
-算法 2 提供了相同的保证：$1 ≤ d_j ≤ j$，$∀j \in [1, n]$。
+算法 2 提供了相同的保证：$1 ≤ d_j ≤ j$，$∀j \in [1, V]$。
 
 **算法 3 意义**：上述公式证明了 $m_j$ 和 $d_j$ 可以在一个 for 循环中同时计算得到，换句话说 $m_j$ 和 $d_j$ 可以在一个 kernel 中计算完成了，这样就将 softmax  的安全计算由 3 个 kernel 减少到 2 个。在本文的其余部分中，我们将算法 3 称为“**在线 Softmax**”。
 
