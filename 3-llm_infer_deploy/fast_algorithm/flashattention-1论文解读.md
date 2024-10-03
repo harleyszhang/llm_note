@@ -143,6 +143,87 @@ $1: 设置块大小\;B_c = \left\lceil \frac{M}{4d} \right\rceil ,  B_r = \min \
 
 ![flash attention 算法步骤](../../images/flash_attention/flash_attention_algorithm1.png)
 
+算法 1 第 12 行的公式的推导证明在附录 C 中。
+
+$$O_i \leftarrow \text{diag}(\ell_i^{\text{new}})^{-1} (\text{diag}(\ell_i) e^{m_{i} - m_i^{\text{new}}}O_i + e^{\tilde{m}_{ij} - m_i^{\text{new}}} \tilde{P}_{ij} V_j)$$
+
+这里原论文给出的推导不是很容易看懂，我参考[文章](https://fancyerii.github.io/2023/10/23/flashattention/)给出了推导证明。其实本质上是想通过推导公式，证明了 $O_i$ 的计算也是可以同时满足交换律和结合律，任意分块分别计算 $m$、$\ell$ 和 $O_i$之后，将所有子块结果重新聚合在数学上完全等价，从而实现在一个 `for` 循环中计算 $m$、$\ell$ 和 $O_i$。
+
+假设输入矩阵大小为 $[N, N]$，这里用大写 $M、D$ 表示最大值，归一化项，它们的长度都为 $N$。还是对每一行做一维的 softmax，将矩阵版的 online-softmax 套进标准 Attention 计算公式如下：
+
+$$\begin{aligned}
+X_{r, i} &= \sum^{Dim}_{j=1}Q[r, j]K[j, i]\\
+M_{r, i} &= \max(M_{r, i-1}, X_{r, i}) \\
+D_{r, i}' &= D_{r, i-1}' * e^{M_{r, i-1} - M_{r, i}} + e^{X_{r, i}-M_{r, i}} \\
+Softmax_{r, i} &= \frac{e^{X_{r, i} - M_{r, L}}}{D_{r, L}'} \\
+O_{r, c} &= \sum^L_{i=1}(Softmax_{r, i} * V[i, c]) \\
+\end{aligned}
+$$
+
+对应代码如下：
+
+```python
+def flashattn_0(q, k, v):
+    # [L, Dim] * [Dim, L] -> [L, L]
+    x = np.zeros([L, L], "float32")
+    for r in range(0, L):
+        for i in range(0, L):
+            for j in range(0, Dim):
+                x[r, i] += q[r, j] * k[i, j]
+
+    # [L, L] -> [L, L] * [L, Dim] -> [L, Dim]
+    o = np.zeros([L, Dim], "float32")
+    for r in range(0, L):
+        m = MIN_M
+        d = 0
+        for i in range(0, L):
+            m, d = online_softmax_update(m, d, x[r, i], 1)
+
+        softmax = np.zeros([L], "float32")
+        for i in range(0, L):
+            softmax[i] = np.exp(x[r, i] - m) / d
+
+        for c in range(0, Dim):
+            for i in range(0, L):
+                o[r, c] += softmax[i] * v[i, c]
+
+    return o
+```
+
+这里 $softmax_i$ 和 $O_(r,c)$ 的计算是分在两个 kernel 内单独完成，即两次 for 循环，那么能不能通过一个 kernel(一个 for 循环) 计算完成呢？就像 online-softmax 那样。实际是可以的。
+
+$O_(r,c)$的计算是一个累加过程，拆开来看：
+$$
+\begin{aligned}
+SubSum_{r, c, i} &= SubSum_{r, c, i-1} + Softmax_{r, i} * V[i, c]\\
+&=SubSum_{r, c, i-1} + \frac{e^{X_{r, i} - M_{r, L}}}{D_{r, L}'} * V[i, c]\\
+&=\sum^i_{j=1}\frac{e^{X_{r, j} - M_{r, L}}}{D_{r, L}’}V[j, c]
+\end{aligned}
+$$
+
+可以发现 $SubSum_{r, c, i}$ 依赖于 $M_{r, L}$ 和 $D_{r, L}'$，运用与 online softmax 相似的归纳假设方法，可以在这里增加一个人 $SubSum_{r, c, i}'$，则：
+
+$$\begin{aligned}
+SubSum_{r,c,i}' &= \sum^i_{j=1}\frac{e^{X_{r, j} - M_{r, i}}}{D_{r, i}'}V[j, c]\\
+&=\sum^{i-1}_{j=1}\frac{e^{X_{r, j} - M_{r, i}}}{D_{r, i}'}V[j, c] + \frac{e^{X_{r, i} - M_{r, i}}}{D_{r, i}'}V[i, c]\\
+&=\left (\sum^{i-1}_{j=1}\frac{e^{X_{r, j} - M_{r, i-1}}}{D_{r, i-1}'}V[j, c] \right) * \frac{e^{M_{r, i-1} - M_{r, i}}D_{r,i-1}’}{D_{r,i}'} + \frac{e^{X_{r, i} - M_{r, i}}}{D_{r, i}'}V[i, c]\\
+&=SubSum_{r,c,i-1}'*\frac{e^{M_{r, i-1} - M_{r, i}}D_{r,i-1}'}{D_{r,i}'} + \frac{e^{X_{r, i} - M_{r, i}}}{D_{r, i}'}V[i, c]\\
+\end{aligned}$$
+
+综上，可知我们可以像 online softmax 那样在一个 $[i, L]$ 的循环中完成如下计算：
+
+$$\begin{aligned}
+X_{r, i} &= \sum^{Dim}_{j=1}Q[r, j]K[j, i]\\
+M_{r, i} &= \max(M_{r, i-1}, X_{r, i})\\
+D_{r, i}' &= D_{r, i-1}' * e^{M_{r, i-1} - M_{r, i}} + e^{X_{r, i}-M_{r, i}}\\
+SubSum_{r,c,i}' &=SubSum_{r,c,i-1}'*\frac{e^{M_{r, i-1} - M_{r, i}}D_{r,i-1}'}{D_{r,i}'} + \frac{e^{X_{r, i} - M_{r, i}}}{D_{r, i}'}V[i, c]\\
+\end{aligned}
+$$
+
+最终，我们想要的注意力输出结果为:
+
+$$O_{r,c} = SubSum_{r,c,L}$$
+
 【**定理 1**】 算法 1 注意力输出矩阵 $O = softmax(QK^T)V$ 要求 $O(N^2d)$ 的 FLOPs，并且除了输入和输出内存之外，需要额外的 $O(N)$ 内存【证明见附录 B】。
 
 ### 3.2 分析：FlashAttention 的 IO 复杂度

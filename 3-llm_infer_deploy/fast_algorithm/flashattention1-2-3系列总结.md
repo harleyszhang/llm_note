@@ -6,8 +6,8 @@
   - [Roofline](#roofline)
   - [SRAM](#sram)
   - [FlashAttention](#flashattention)
-- [3. FlashAttention-v2](#3-flashattention-v2)
-- [4. FlashAttention-v3](#4-flashattention-v3)
+- [3. FlashAttention-2](#3-flashattention-2)
+- [4. FlashAttention-3](#4-flashattention-3)
 - [5. FlashDecoding \& FlashDecoding++](#5-flashdecoding--flashdecoding)
 - [参考资料](#参考资料)
 
@@ -15,11 +15,9 @@
 
 ### Original Softmax
 
-假设 $\text{Softmax}$ 函数输入矩阵大小为 $[s,s]$，这里都默认是对行进行 `Softmax`。
-
 **1，Naive softmax**
 
-给定输入向量 $\mathbf{x} = [x_1, x_2, \dots, x_s]$，$Softmax(x)$ 函数的输出定义为：
+给定输入向量 $\mathbf{x} = [x_1, x_2, \dots, x_N]$，$Softmax(x)$ 函数的输出定义为（默认对行进行 `Softmax`。）：
 
 $$d_N= \sum_j^{N} e^{x_j} \\
 y_i = \frac{e^{x_i}}{d_N} $$
@@ -28,12 +26,12 @@ Naive Softmax 算法主要包括两个步骤，其算法实现步骤和 `FLOPs` 
 
 <img src="../../images/flash_attention1-3/native-softmax.png" width="65%" alt="native softmax">
 
-1. **计算归一化项 $dn$**：先对矩阵每个元素都需要进行指数运算，涉及 `FLOPs` 为 $s^2$（逐元素操作），假设是**对每一行进行 `Softmax`**，每一行有 $s$ 个元素，需要进行 $s - 1$ 次加法，矩阵总共有 $s$ 行，因此需要 $s\times(s - 1)$ 次加法，最后计算归一化项 $dn$ 的 `FLOPs` 为 $2s^2-s$
-2. **计算 softmax 输出**：分为两步进行每个元素都需要除以所在行的总和，总共 $s^2$ 个元素，`FLOPs` 为 $s^2$。
+1. **计算归一化项 $dn$**：先对矩阵每个元素都需要进行指数运算，涉及 `FLOPs` 为 $N^2$（逐元素操作），假设是**对每一行进行 `Softmax`**，每一行有 $N$ 个元素，需要进行 $N - 1$ 次加法，矩阵总共有 $N$ 行，因此需要 $s\times(N - 1)$ 次加法，最后计算归一化项 $d_N$ 的 `FLOPs` 为 $2N^2N$
+2. **计算 softmax 输出**：分为两步进行每个元素都需要除以所在行的总和，总共 $N^2$ 个元素，`FLOPs` 为 $N^2$。
 
 综上，`Native Softmax` 的总 FLOPs 为：
 
-$$\text{Native Softmax FLOPs} = 2s^2 - s + s^2 = 3s^2-s$$
+$$\text{Native Softmax FLOPs} = 2N^2 - N + N^2 = 3N^2-N$$
 
 算法的 `python` 代码实现和其对 global memory 的访存量 `MAC` 数值如下所示：
 
@@ -41,15 +39,15 @@ $$\text{Native Softmax FLOPs} = 2s^2 - s + s^2 = 3s^2-s$$
 """
 在 attenion 算子中, softmax 函数的输入 QK^T, 输入矩阵大小就是 [s,s]
 """
-# [s, s] -> [s, s], 每个元素进行 3 次内存访问：2次读取和一次写入.
-# mac = 3s^2, flops = 3s^2 - s
+# [N, N] -> [N, N], 每个元素进行 3 次内存访问：2次读取和一次写入.
+# mac = 3N^2, flops = 3N^2 - N
 def native_softmax(x):
     s, s = x.shape # 第一个维度是序列长度，第二个维度是隐藏层大小
     output = np.array(x) # np.array() 将 python 中的数据结构（如列表、元组等）转换为 NumPy 的数组
     for r in range(s):
         sum = 0
-        for j in range(s):
-            sum += np.exp(x[r][j]) 
+        for i in range(s):
+            sum += np.exp(x[r][i]) 
         for i in range(s):
             output[r][i] = np.exp(x[r][i]) / sum
     
@@ -60,62 +58,56 @@ def native_softmax(x):
 
 和 `Native Softmax` 相比，`Safe Softmax` 为了防止数值溢出还需要将 $x_i$ 再额外减掉一个 `max` 最大值：
 
-$$m_N= \text{max}_{k}^{N} x_k \\
-d_N= \sum_j^{N} e^{(x_j -m_N)} \\
-y_i = \frac{e^{(x_i - m)}}{d_N} $$
+$$\begin{align}
+m_N &= \text{max}_{k}^{N} x_k \\
+d_N &= \sum_j^{N} e^{(x_j -m_N)} \\
+softmax_i &= \frac{e^{x_i - m_N}}{d_N} \\
+\end{align}$$
 
 `Safe Softmax` 涉及三个步骤，其算法实现步骤和 `FLOPs` 分析如下：
 
 <img src="../../images/flash_attention1-3/safe-softmax.png" width="65%" alt="safe softmax">
 
-1. **对每行求最大值**：遍历每行元素，做 $s-1$ 次比较，得到每行元素的最大值，总共 $s$ 行，因此该操作涉及 `FLOPs` 为 $s(s-1)$
-2. **计算指数并求和得到归一化项 $dn$**：将每个元素减去最大值后，再计算指数，这个过程是**逐元素操作**，`FLOPs` 为 $s^2 + s^2$。对每行进行求和，每行进行 $s - 1$ 次加法，整个矩阵共 $s\times(s - 1)$ 次加法。
-3. **计算 softmax 输出**：将每个元素减去最大值后，再计算指数，最后除以行总和，需要 $2s^2$ 次除法。
+1. **对每行求最大值**：遍历每行元素，做 $N-1$ 次比较，得到每行元素的最大值，总共 $N$ 行，因此该操作涉及 `FLOPs` 为 $N(N-1)$
+2. **计算指数并求和得到归一化项 $d_N$**：将每个元素减去最大值后，再计算指数，这个过程是**逐元素操作**，`FLOPs` 为 $N^2 + N^2$。对每行进行求和，每行进行 $N - 1$ 次加法，整个矩阵共 $N\times(N - 1)$ 次加法。
+3. **计算 softmax 输出**：将每个元素减去最大值后，再计算指数，最后除以行总和，需要 $2N^2$ 次除法。
 
 值的注意的是，这里计算 max 需要一次独立的**全局** reduce，计算分母的 sum 再需要一次独立的全局 reduce，最后分别计算每一个元素的 softmax 值。三个步骤之间**存在数据依赖**。
 
 结合前面 `Native Softmax` 的 FLOPs 计算，再加上对每行求最大值的操作，可知 `Safe Softmax` 总 `FLOPs`：
 
-$$\text{Safe Softmax FLOPs} = (s^2 - s) + (5s^2 - s) = 6s^2 - 2s$$
+$$\text{Safe Softmax FLOPs} = (N^2 - N) + (5N^2 - N) = 6N^2 - 2N$$
 
 `Safe Softmax` 算法的 `python` 代码实现和其对 global memory 的访存量 `MAC` 数值如下所示：
 
 ```python
-# [s, s] -> [s, s], 每个元素进行 4 次内存访问：3次读取和一次写入.
-# mac = 4s^2, flops = 4s^2 - 2s
+# [N, N] -> [N, N], 每个元素进行 4 次内存访问：3次读取和一次写入.
+# mac = 4N^2, flops = 4N^2 - 2N
 def safe_softmax(x):
     s, s = x.shape # 第一个维度是序列长度，第二个维度是隐藏层大小
     output = np.array(x) # np.array() 将 python 中的数据结构（如列表、元组等）转换为 NumPy 的数组
     for r in range(s):
         max_r = 0
-        for k in range(s):
-            max_r = max(max_r, x[r][k]) # flops 为 1
+        for i in range(s):
+            max_r = max(max_r, x[r][i]) # flops 为 1
             
         sum = 0
-        for j in range(s):
-            sum += np.exp(x[r][j] - max_r) # flops 为 2 + 1
+        for i in range(s):
+            sum += np.exp(x[r][i] - max_r) # flops 为 2 + 1
             
         for i in range(s):
             output[r][i] = np.exp(x[r][i] - max_r) / sum # flops 为 2
     
     return output
 ```
+
+**IO 复杂度分析**：`Safe Softmax` 需要 $3$ 个独立的循环对输入向量进行了三次遍历：第一次计算最大值 $m_N$，第二次计算归一化项 $d_N$，第三次计算最终值 $softmax_i$，再加上将结果写回内存中，这导致**每个向量元素需要 `4` 次内存访问**，即 Safe Softmax 算法的内存访问（`MAC`）偏大，即 softmax 函数的 HBM 访问次数为 $4N^2$，和序列长度呈二次方关系。
+
 ### Online Softmax
-> 算法分析和公式证明过程，本文不再描述，感兴趣的可以看我上一篇文章-《online-softmax 论文解读》。
 
-考虑原始计算步骤中分母求最大值以及求和的部分，这里需要 $3$ 个独立的循环，即`Safe Softmax` 对输入向量进行了三次遍历：第一次计算最大值 $m_n$，第二次计算归一化项 $d_n$，第三次计算最终值 $y_i$，再加上将结果写回内存中，这导致**每个向量元素总共需要 `4` 次内存访问**，即 Safe Softmax 算法的内存访问（`MAC`）偏大。
+从 `Safe Softmax` 公式很明显看出，`MAC` 大原因是因为存在数据依赖：(2) 需要依赖 $m_N$, (3) 则需要依赖 $m_N$ 和 $d_N$。如果能**同时计算最大值 $m$ 和归一化项（normalization term）$d$，在一个 for 循环中得到最终的 $m_N$ 和 $d_N$**，则能直接减少 HBM 的访问次数（`MAC`），又因为 Softmax 典型情况都是内存受限，所以这肯定能提高 Softmax 算子的运行速度。
 
-$$\begin{align}
-m_i &= \max(m_{i-1}, x_i) \\
-d_i &= d_{i-1} + e^{x_i - m_N} = \sum^i_{j=1}e^{x_j - m_N} \\
-softmax_i &= \frac{e^{x_i - m_N}}{d_N} \\
-\end{align}$$
-
-从上述公式很明显看出，`MAC` 大原因是因为存在数据依赖：(2) 需要依赖 $m_N$, (3) 则需要依赖 $m_N$ 和 $d_N$。但如果能有下述的关系：
-
-$$d_i' = \sum_{j=1}^i e^{x_j - m_i} = d_{i-1}' + e^{x_i -m_i}$$
-
-则公式 (2) 对 $m_N$ 的数据依赖则就不存在了，虽然序列的中间部分的值不相等但最终的结果 $d_N$ 与 $d_N'$ 是等价的，从代码角度看，则可以实现在一个 for 循环中得到最终的 $m_N$ 和 $d_N$，减少 `MAC`。这个就是 [Online normalizer calculation for softmax](https://arxiv.org/pdf/1805.02867) 论文提出的一种能将上面的 3 步 softmax 合并成 2 步完成的方法，论文证明了 $d_i'$ 存在递推性质
+[Online normalizer calculation for softmax](https://arxiv.org/pdf/1805.02867) 论文将 3 步 safe softmax 合并成 2 步完成的方法，并证明了 $d_i'$ 存在如下递推性质：
 
 $$\begin{aligned}
 d_i' &= \sum^i_{j=1}e^{x_j - m_i} \\
@@ -129,11 +121,16 @@ d_i' &= \sum^i_{j=1}e^{x_j - m_i} \\
 $$m_j = max(m_{j-1}, x_j),\quad d_j = d_{j-1}e^{m_{j-1} - m_j} + e^{x_j - m_j}  \\
 softmax\ x_i = \frac{e^{x_i - m_V}}{d_V} \tag{4}$$
 
-这里 $m_j$ 和 $d_j$, 可以在一个 for 循环中同时实现，或者说在一个 kernel 中计算完成；$m_s$ 和 $d_s$ 是全局的最大值和归一化项。其算法实现过程如下所示：
+这里 $m_j$ 和 $d_j$, 可以在一个 for 循环中同时实现，或者说在一个 kernel 中计算完成；$m_N$ 和 $d_N$ 是全局的最大值和归一化项。其算法实现过程如下所示：
 
 <img src="../../images/flash_attention1-3/online-softmax.png" width="65%" alt="online softmax">
 
-如果想继续优化，则**使用分块技术计算归一化常数**，先定义分块计算: $ d_{xy} = d([x,y]) = d_x * e^{m_x - m_{xy}} + d_y * e^{m_y - m_{xy}}$，分块计算完 $m$ 和 $d$ 之后，再将所有子块结果重新聚合得到全局结果 $m_N$ 和 $d_N$，其和串行顺序计算结果在数学上完全等价**
+如果想继续优化，则**使用分块技术计算归一化常数**，假设 $x = [x_1,x_2], y = [x_3, x_4]$，$m_{xy} = \text{max}(m_x, m_y)$定义分块计算: 
+
+$$d_{xy} = d([x^{},y]) = d_x * e^{m_x - m_{xy}} + d_y * e^{m_y - m_{xy}}$$
+
+分块计算完 $m$ 和 $d$ 之后，再将所有子块结果重新聚合得到全局结果 $m_N$ 和 $d_N$，其和串行顺序计算结果在数学上完全等价。
+> 算法分析和公式证明过程，本文不再描述，感兴趣的可以看我上一篇文章-《online-softmax 论文解读》。
 
 这篇论文在算法上其实有**两个创新**：
 1. 提出并证明了通过**一次遍历**输入数据来计算 Softmax 函数归一化项的方法，该方法将 Softmax 函数的内存访问次数减少了 $1.33 (4/3 = 1.33)$倍
@@ -152,8 +149,8 @@ def online_softmax_update(m0, d0, m1, d1):
     d = d0 * np.exp(m0 - m) + d1 * np.exp(m1-m) # flops: 5
     return m, d
 
-# [s, s] -> [s, s], 每个元素进行 3 次内存访问：2 次读取和一次写入.
-# mac = 3s^2, flops = 8s^2 
+# [N, N] -> [N, N], 每个元素进行 3 次内存访问：2 次读取和一次写入.
+# mac = 3N^2, flops = 8N^2 
 def online_softmax(x):
     s, s = x.shape
     output = np.array(x)
@@ -167,8 +164,8 @@ def online_softmax(x):
             
     return output
 
-# [s, s] -> [s, s], 每个元素进行 3 次内存访问：2 次读取和一次写入. 
-# mac = 3s^2, flops = 8s^2，分块计算，可发挥并行计算优势
+# [N, N] -> [N, N], 每个元素进行 3 次内存访问：2 次读取和一次写入. 
+# mac = 3N^2, flops = 8N^2，分块计算，可发挥并行计算优势
 def block_online_softmax(x, block_size=256):
     assert x.shape[1] % block_size == 0
     s, s = x.shape
@@ -177,7 +174,7 @@ def block_online_softmax(x, block_size=256):
         m = x[r][0]
         d = 0
         
-        # 可使用多线程并行计算，实际 mac 为 s^2
+        # 可使用多线程并行计算，实际 mac 为 N^2
         for b in range(0, s // block_size):
             # Calculate m,d of single block
             m_block = x[r][b*block_size]
@@ -276,104 +273,269 @@ FlashAttention-v1 其实并没有提出新的算法和网络结构上的优化�
 
 【**定理 5**】设 $N$ 为序列长度，$d$ 为头部维度，$M$ 为 `SRAM` 的大小，且 $d \leq M \leq Nd$。标准注意力（算法 0）的反向传播需要 $\Theta(N d + N^2)$ 次 HBM 访问，而 FlashAttention 的反向传播（算法 4）只需要 $\Theta(N^2 d^2 M^{-1})$ 次 HBM 访问。
 
-Online Softmax 实现在一个 for 循环中计算 $m_i$ 和 $d_i$，FlashAttention-v1 基于它的思想更进一步，实现在一个 for 循环中计算 $m_i$、$d_i$、$\text{softmax}_i$ 和注意力输出 $O_i$，也就是说，在一个 kernel 中实现 attention 的所有操作，这样大大减少了内存访问次数（内存读/写的次数）。
+`FlashAttention` 算法实现步骤如下所示。
 
-`FlashAttention` 算法实现步骤如下图所示。
+$\text{算法 1 FlashAttention} \\
+要求：矩阵\; Q, K, V \in \mathbb{R}^{N \times d}  \;存储在\;\text{HBM}（高带宽内存）中，片上\;\text{SRAM}\;大小为\;M. \\$
+
+$1: 设置块大小\;B_c = \left\lceil \frac{M}{4d} \right\rceil ,  B_r = \min \left(\left\lceil \frac{M}{4d} \right\rceil , d\right). \\
+2: 初始化\;O = (0)_{N \times d} \in \mathbb{R}^{N \times d} ,  \ell = (0)_N \in \mathbb{R}^N ,  m = (-\infty)_N \in \mathbb{R}^N\;存储在\; \text{HBM} 中. \\
+3: 将 \;Q\;分成\; T_r = \left\lceil \frac{N}{B_r} \right\rceil \;块 Q_1, \dots, Q_{T_r}，每块大小为\;B_r\times d；将\;K, V\;分为\; T_c = \left\lceil \frac{N}{B_c} \right\rceil \;块\; K_1, \dots, K_{T_c} \;和\; V_1, \dots, V_{T_c}，每块大小为\; B_c \times d. \\
+4: 将 \;O\;分为\;T_r\; 块\;O_1, \dots, O_{T_r}，每块大小为 \;B_r\times d，将 \;\ell\;分为\;T_r\;块 \ell_1, \dots, \ell_{T_r}，将\; m \;分为\;T_r\;块 m_1, \dots, m_{T_r}，每块大小为\;B_r. \\
+5: for \;1 \leq j \leq T_c\;\text{do} \\
+6: \quad 从\;\text{HBM} 加载\;K_j, V_j\;到片上 \;\text{SRAM}. \\
+7: \quad for \; 1 \leq i \leq T_r\; \text{do} \\
+8: \quad \quad 从 \; \text{HBM}\; 加载 \; Q_i, O_i, \ell_i, m_i \;到片上\; \text{SRAM}. \\
+9: \quad \quad 在片上计算\; S_{ij} = Q_i K_j^T \in \mathbb{R}^{B_r \times B_c}. \\
+10: \quad \quad 在片上计算\; \tilde{m}_{ij} = \text{rowmax}(S_{ij}) \in \mathbb{R}^{B_r} ， \tilde{P}_{ij} = \exp(S_{ij} - \tilde{m}_{ij}) \in \mathbb{R}^{B_r \times B_c} （逐元素操作），计算\; \tilde{\ell}_{ij} = \text{rowsum}(\tilde{P}{ij}) \in \mathbb{R}^{B_r}. \\
+11: \quad \quad 在片上计算\; m_i^{\text{new}} = \max(m_i, \tilde{m}_{ij}) \in \mathbb{R}^{B_r} ， \ell_i^{\text{new}} = e^{m_i - m_i^{\text{new}}} \ell_i + e^{\tilde{m}_{ij} - m_i^{\text{new}}} \tilde{\ell}_{ij} \in \mathbb{R}^{B_r}. \\
+12: \quad \quad 将\; O_i \leftarrow \text{diag}(\ell_i^{\text{new}})^{-1} (\text{diag}(\ell_i) e^{m_{i} - m_i^{\text{new}}}O_i + e^{\tilde{m}_{ij} - m_i^{\text{new}}} \tilde{P}_{ij} V_j) \; 写回到\; \text{HBM}. \\
+13: \quad \quad 将\; \ell_i \leftarrow \ell_i^{\text{new}}, m_i \leftarrow m_i^{\text{new}} \;写回到\; \text{HBM}. \\
+14: \quad \text{end for} \\
+15: \text{end for} \\
+16: 返回\; O$
 
 ![flash attention 算法步骤](../../images/flash_attention/flash_attention_algorithm1.png)
 
-基于 `openai` `trion` 库实现的支持 `NoPad` 的 `FlashAttention` 算子如下：
+Online Softmax 实现在一个 for 循环中计算 $m_i$ 和 $d_i$，FlashAttention-v1 基于它的思想更进一步，实现在一个 for 循环中计算 $m_i$、$d_i$、$\text{softmax}_i$ 和注意力输出 $O_i$，也就是说，在一个 kernel 中实现 attention 的所有操作，这样大大减少了 HBM 访问次数（内存读/写的次数）。
+
+注意力输出 $O_i$ 的更新公式在算法 1 第 12 行，公式的推导证明在附录 C 中。
+
+$$O_i \leftarrow \text{diag}(\ell_i^{\text{new}})^{-1} (\text{diag}(\ell_i) e^{m_{i} - m_i^{\text{new}}}O_i + e^{\tilde{m}_{ij} - m_i^{\text{new}}} \tilde{P}_{ij} V_j)$$
+
+这里原论文给出的推导不是很容易看懂，我参考[文章](https://fancyerii.github.io/2023/10/23/flashattention/)给出了推导证明。其实本质上是想通过推导公式，证明了 $O_i$ 的计算也是可以同时满足交换律和结合律，任意分块分别计算 $m$、$\ell$ 和 $O_i$之后，将所有子块结果重新聚合在数学上完全等价，从而实现在一个 `for` 循环中计算 $m$、$\ell$ 和 $O_i$。
+
+假设输入矩阵大小为 $[N, N]$，这里用大写 $M、D$ 表示最大值，归一化项，它们的长度都为 $N$。还是对每一行做一维的 softmax，将矩阵版的 online-softmax 套进标准 Attention 计算公式如下：
+
+$$\begin{aligned}
+X_{r, i} &= \sum^{Dim}_{j=1}Q[r, j]K[j, i]\\
+M_{r, i} &= \max(M_{r, i-1}, X_{r, i}) \\
+D_{r, i}' &= D_{r, i-1}' * e^{M_{r, i-1} - M_{r, i}} + e^{X_{r, i}-M_{r, i}} \\
+Softmax_{r, i} &= \frac{e^{X_{r, i} - M_{r, L}}}{D_{r, L}'} \\
+O_{r, c} &= \sum^L_{i=1}(Softmax_{r, i} * V[i, c]) \\
+\end{aligned}
+$$
+
+对应代码如下：
 
 ```python
-if triton.__version__ >= "2.1.0":
-    @triton.jit
-    def _fwd_kernel(
-        Q, K, V, sm_scale, B_Start_Loc, B_Seqlen,  # B_LOC 内部记录每个batch 输入的真实位置， B_SEQ_len 记录当前输入的真实长度
-        Out,
-        stride_qbs, stride_qh, stride_qd,
-        stride_kbs, stride_kh, stride_kd,
-        stride_vbs, stride_vh, stride_vd,
-        stride_obs, stride_oh, stride_od,
-        BLOCK_M: tl.constexpr, BLOCK_DMODEL: tl.constexpr,
-        BLOCK_N: tl.constexpr,
-    ):
-        cur_batch = tl.program_id(0)
-        cur_head = tl.program_id(1)
-        start_m = tl.program_id(2)
+def flashattn_0(q, k, v):
+    # [L, Dim] * [Dim, L] -> [L, L]
+    x = np.zeros([L, L], "float32")
+    for r in range(0, L):
+        for i in range(0, L):
+            for j in range(0, Dim):
+                x[r, i] += q[r, j] * k[i, j]
 
-        cur_batch_seq_len = tl.load(B_Seqlen + cur_batch)
-        cur_batch_in_all_start_index = tl.load(B_Start_Loc + cur_batch)
+    # [L, L] -> [L, L] * [L, Dim] -> [L, Dim]
+    o = np.zeros([L, Dim], "float32")
+    for r in range(0, L):
+        m = MIN_M
+        d = 0
+        for i in range(0, L):
+            m, d = online_softmax_update(m, d, x[r, i], 1)
 
-        block_start_loc = BLOCK_M * start_m
+        softmax = np.zeros([L], "float32")
+        for i in range(0, L):
+            softmax[i] = np.exp(x[r, i] - m) / d
 
-        # initialize offsets
-        offs_n = tl.arange(0, BLOCK_N)
-        offs_d = tl.arange(0, BLOCK_DMODEL)
-        offs_m = start_m * BLOCK_M + tl.arange(0, BLOCK_M)
-        off_q = (cur_batch_in_all_start_index + offs_m[:, None]) * stride_qbs + cur_head * stride_qh + offs_d[None, :] * stride_qd
-        off_k = offs_n[None, :] * stride_kbs + cur_head * stride_kh + offs_d[:, None] * stride_kd
-        off_v = offs_n[:, None] * stride_vbs + cur_head * stride_vh + offs_d[None, :] * stride_vd
+        for c in range(0, Dim):
+            for i in range(0, L):
+                o[r, c] += softmax[i] * v[i, c]
 
-        q = tl.load(Q + off_q, mask=offs_m[:, None] < cur_batch_seq_len, other=0.0)
-
-        k_ptrs = K + off_k
-        v_ptrs = V + off_v
-
-        # initialize pointer to m and l
-        m_i = tl.zeros([BLOCK_M], dtype=tl.float32) - float("inf")
-        l_i = tl.zeros([BLOCK_M], dtype=tl.float32)
-        acc = tl.zeros([BLOCK_M, BLOCK_DMODEL], dtype=tl.float32)
-
-        block_mask = tl.where(block_start_loc < cur_batch_seq_len, 1, 0)
-
-        for start_n in range(0, block_mask * (start_m + 1) * BLOCK_M, BLOCK_N):
-            start_n = tl.multiple_of(start_n, BLOCK_N)
-            # -- compute qk ----
-            k = tl.load(k_ptrs + (cur_batch_in_all_start_index + start_n) * stride_kbs,
-                        mask=(start_n + offs_n[None, :]) < cur_batch_seq_len, other=0.0)
-            # mask = tl.load(mask_ptrs + start_n, mask=start_n + offs_n < cur_batch_end_loc, other=0.0)
-
-            qk = tl.zeros([BLOCK_M, BLOCK_N], dtype=tl.float32)
-            qk += tl.dot(q, k)
-            qk *= sm_scale
-            qk = tl.where(offs_m[:, None] >= (start_n + offs_n[None, :]), qk, float("-inf"))
-
-            # -- compute m_ij, p, l_ij
-            m_ij = tl.max(qk, 1)
-            p = tl.exp(qk - m_ij[:, None])
-            l_ij = tl.sum(p, 1)
-            # -- update m_i and l_i
-            m_i_new = tl.maximum(m_i, m_ij)
-            alpha = tl.exp(m_i - m_i_new)
-            beta = tl.exp(m_ij - m_i_new)
-            l_i_new = alpha * l_i + beta * l_ij
-            # -- update output accumulator --
-            # scale p
-            p_scale = beta / l_i_new
-            p = p * p_scale[:, None]
-            # scale acc
-            acc_scale = l_i / l_i_new * alpha
-            acc = acc * acc_scale[:, None]
-            # update acc
-            v = tl.load(v_ptrs + (cur_batch_in_all_start_index + start_n) * stride_vbs,
-                        mask=(start_n + offs_n[:, None]) < cur_batch_seq_len, other=0.0)
-
-            p = p.to(v.dtype)
-            acc += tl.dot(p, v)
-            # update m_i and l_i
-            l_i = l_i_new
-            m_i = m_i_new
-        # initialize pointers to output
-        off_o = (cur_batch_in_all_start_index + offs_m[:, None]) * stride_obs + cur_head * stride_oh + offs_d[None, :] * stride_od
-        out_ptrs = Out + off_o
-        tl.store(out_ptrs, acc, mask=offs_m[:, None] < cur_batch_seq_len)
-        return
+    return o
 ```
 
-## 3. FlashAttention-v2
+这里 $softmax_i$ 和 $O_(r,c)$ 的计算是分在两个 kernel 内单独完成，即两次 for 循环，那么能不能通过一个 kernel(一个 for 循环) 计算完成呢？就像 online-softmax 那样。实际是可以的。
+
+$O_(r,c)$的计算是一个累加过程，拆开来看：
+$$
+\begin{aligned}
+SubSum_{r, c, i} &= SubSum_{r, c, i-1} + Softmax_{r, i} * V[i, c]\\
+&=SubSum_{r, c, i-1} + \frac{e^{X_{r, i} - M_{r, L}}}{D_{r, L}'} * V[i, c]\\
+&=\sum^i_{j=1}\frac{e^{X_{r, j} - M_{r, L}}}{D_{r, L}’}V[j, c]
+\end{aligned}
+$$
+
+可以发现 $SubSum_{r, c, i}$ 依赖于 $M_{r, L}$ 和 $D_{r, L}'$，运用与 online softmax 相似的归纳假设方法，可以在这里增加一个人 $SubSum_{r, c, i}'$，则：
+
+$$\begin{aligned}
+SubSum_{r,c,i}' &= \sum^i_{j=1}\frac{e^{X_{r, j} - M_{r, i}}}{D_{r, i}'}V[j, c]\\
+&=\sum^{i-1}_{j=1}\frac{e^{X_{r, j} - M_{r, i}}}{D_{r, i}'}V[j, c] + \frac{e^{X_{r, i} - M_{r, i}}}{D_{r, i}'}V[i, c]\\
+&=\left (\sum^{i-1}_{j=1}\frac{e^{X_{r, j} - M_{r, i-1}}}{D_{r, i-1}'}V[j, c] \right) * \frac{e^{M_{r, i-1} - M_{r, i}}D_{r,i-1}’}{D_{r,i}'} + \frac{e^{X_{r, i} - M_{r, i}}}{D_{r, i}'}V[i, c]\\
+&=SubSum_{r,c,i-1}'*\frac{e^{M_{r, i-1} - M_{r, i}}D_{r,i-1}'}{D_{r,i}'} + \frac{e^{X_{r, i} - M_{r, i}}}{D_{r, i}'}V[i, c]\\
+\end{aligned}$$
+
+综上，可知我们可以像 online softmax 那样在一个 $[i, L]$ 的循环中完成如下计算：
+
+$$\begin{aligned}
+X_{r, i} &= \sum^{Dim}_{j=1}Q[r, j]K[j, i]\\
+M_{r, i} &= \max(M_{r, i-1}, X_{r, i})\\
+D_{r, i}' &= D_{r, i-1}' * e^{M_{r, i-1} - M_{r, i}} + e^{X_{r, i}-M_{r, i}}\\
+SubSum_{r,c,i}' &=SubSum_{r,c,i-1}'*\frac{e^{M_{r, i-1} - M_{r, i}}D_{r,i-1}'}{D_{r,i}'} + \frac{e^{X_{r, i} - M_{r, i}}}{D_{r, i}'}V[i, c]\\
+\end{aligned}
+$$
+
+最终，我们想要的注意力输出结果为:
+
+$$O_{r,c} = SubSum_{r,c,L}$$
+
+【**定理 1**】 算法 1 注意力输出矩阵 $O = softmax(QK^T)V$ 要求 $O(N^2d)$ 的 FLOPs，并且除了输入和输出内存之外，需要额外的 $O(N)$ 内存【证明见附录 B】。
+
+FlashAttention 伪代码如下所示：
+
+```python
+for (r = 1 to L)
+    for (i = 1 to L)
+        // [L, Dim] * [Dim, L] -> [L, L]
+        for (j = 1 to Dim) 
+            X[r, i] += Q[r, j] * K[j, i]
+
+        // [L, L]
+        M[r, i] = max(M[r, i-1], X[r, i])
+
+        // [L, L]
+        D'[r, i] = D'[r, i-1] * e(...) + e(...)
+
+        // [L, Dim]
+        for (c = 1 to Dim)
+            O[r, c] += O[r, c] * e(...) * D'[r, i-1] / D'[r, i] + e(...) / D'[r, i] * V[i, c]
+```
+
+再用 python 实现如下所示:
+
+```python
+def flashattn_update(m, d, m0, d0, s0, m1, d1, s1):
+    #                      |   |   |   |   |   |
+    #                      |   |   |   x   v   1
+    # Init value:        MIN_M 0   0
+    s = s0 * np.exp(m0 - m) * d0 / d + s1 * np.exp(m1 - m) * d1 / d
+    return s
 
 
-## 4. FlashAttention-v3
+def flashattn_1(q, k, v):
+    # [L, Dim] * [Dim, L] -> [L, L]
+    x = np.zeros([L, L], "float32")
+    for r in range(0, L):
+        for i in range(0, L):
+            for j in range(0, Dim):
+                x[r, i] += q[r, j] * k[i, j]
+
+    # [L, L] -> [L, L] * [L, Dim] -> [L, Dim]
+    o = np.zeros([L, Dim], "float32")
+    for r in range(0, L):
+        m = []
+        d = []
+        for i in range(0, L):
+            mm, dd = online_softmax_update(
+                m[-1] if i > 0 else MIN_M, d[-1] if i > 0 else 0, x[r, i], 1
+            )
+            m.append(mm)
+            d.append(dd)
+
+        for c in range(0, Dim):
+            s = 0
+            for i in range(0, L):
+                s = flashattn_update(
+                    m[i],
+                    d[i],
+                    m[i - 1] if i > 0 else MIN_M,
+                    d[i - 1] if i > 0 else 0,
+                    s,
+                    x[r, i],
+                    v[i, c],
+                    1,
+                )
+            o[r, c] = s
+    return o
+```
+
+继续优化，上面的公式和代码只是实现了在一个 for 循环中计算 $o(r, c)$，但是没有分块计算，同样和 Online softmax 一样，SubSum_{r,c,i}' 也具有分块满足交换律和结合律的特性：
+
+$$\begin{aligned}
+D_{r, xy}' &= D_{r, x}' * e^{M_{r, x} - M_{r, xy}} + D_{r, y}' * e^{M_{r, y} - M_{r, xy}}\\
+SubSum_{r,c,xy}' &= SubSum_{r,c,x}' * \frac{e^{M_{r, x}-M_{r, xy}}D_{r, x}’}{D_{r, xy}’} + SubSum_{r,c,y}' * \frac{e^{M_{r, y}-M_{r, xy}}D_{r, y}’}{D_{r, xy}’}\\
+\end{aligned}$$
+
+因此，FlashAttention-1 的分块计算 python 代码如下。
+
+```python
+def flashattn_1_block(q, k, v):
+    assert L % BLK == 0
+    # [L, Dim] * [Dim, L] -> [L, L]
+    x = np.zeros([L, L], "float32")
+    for r in range(0, L):
+        for i in range(0, L):
+            for j in range(0, Dim):
+                x[r, i] += q[r, j] * k[i, j]
+
+    # [L, L] -> [L, L] * [L, Dim] -> [L, Dim]
+    o = np.zeros([L, Dim], "float32")
+    for r in range(0, L):
+        m = np.zeros([L // BLK], "float32")
+        d = np.zeros([L // BLK], "float32")
+        mm = np.zeros([L], "float32")
+        dd = np.zeros([L], "float32")
+        for b in range(0, L // BLK):
+            # Calculate block
+            for i in range(0, BLK):
+                mm[b * BLK + i], dd[b * BLK + i] = online_softmax_update(
+                    mm[b * BLK + i - 1] if i > 0 else MIN_M,
+                    dd[b * BLK + i - 1] if i > 0 else 0,
+                    x[r, b * BLK + i],
+                    1,
+                )
+
+            # Merge to total
+            m[b], d[b] = online_softmax_update(
+                m[b - 1] if b > 0 else MIN_M,
+                d[b - 1] if i > 0 else 0,
+                mm[(b + 1) * BLK - 1],
+                dd[(b + 1) * BLK - 1],
+            )
+
+        for c in range(0, Dim):
+            s = 0
+            for b in range(0, L // BLK):
+                # Calculate block
+                ss = 0
+                for i in range(0, BLK):
+                    ss = flashattn_update(
+                        mm[b * BLK + i],
+                        dd[b * BLK + i],
+                        mm[b * BLK + i - 1] if i > 0 else MIN_M,
+                        dd[b * BLK + i - 1] if i > 0 else 0,
+                        ss,
+                        x[r, b * BLK + i],
+                        v[b * BLK + i, c],
+                        1,
+                    )
+
+                # Merge to total
+                s = flashattn_update(
+                    m[b],
+                    d[b],
+                    m[b - 1] if b > 0 else MIN_M,
+                    d[b - 1] if b > 0 else 0,
+                    s,
+                    mm[(b + 1) * BLK - 1],
+                    dd[(b + 1) * BLK - 1],
+                    ss,
+                )
+            o[r, c] = s
+    return o
+```
+
+上面的是纯 python 代码，下面我们继续优化，利用 triton 框架写出极度优化的  FlashAttention-1 内核代码。
+
+```python
+
+```
+
+## 3. FlashAttention-2
+
+
+## 4. FlashAttention-3
 
 
 ## 5. FlashDecoding & FlashDecoding++
@@ -392,3 +554,4 @@ if triton.__version__ >= "2.1.0":
 - [榨干 GPU 效能的 Flash Attention 3](https://tomohiroliu22.medium.com/%E6%A6%A8%E4%B9%BEgpu%E6%95%88%E8%83%BD%E7%9A%84flashattention%E7%AC%AC%E4%B8%89%E4%BB%A3-4a8b0a2a812e)
 - [图解大模型计算加速系列：FlashAttention V1，从硬件到计算逻辑](https://zhuanlan.zhihu.com/p/669926191)
 - [FlashAttention 实现算子融合原理的可视化](https://www.bilibili.com/video/BV1Zz4y1q7FX/?vd_source=69e98dbaea70afc6b62d55a86d59e408)
+- [FlashAttention: Fast and Memory-Efficient Exact Attention With IO-Awareness](https://www.nvidia.com/en-us/on-demand/session/gtc24-s62546/)

@@ -43,13 +43,39 @@ Dao 等人 [5] 提出 FlashAttention **在算法层面通过重排注意力计�
 
 ### 2.2 标准 Attention 实现
 
-略
+给定输入序列 $Q, K, V \in \mathbb{R}^{N \times d}$，其中 $N$ 代表序列长度，$d$ 表示头维度（head dimension），我们需要计算注意力输出 $O \in \mathbb{R}^{N \times d}$：
+
+$$S = QK^\top \in \mathbb{R}^{N \times N}, \quad P = \text{softmax}(S) \in \mathbb{R}^{N \times N}, \quad O = PV \in \mathbb{R}^{N \times d},$$
+其中 softmax 是按行应用的。对于多头注意力（MHA），同样的计算会在多个头上并行执行，并在批次维度上并行（即一个批次中的输入序列数量）。
+
+注意力的反向传播过程如下。令 $dO \in \mathbb{R}^{N \times d}$ 是相对于某个损失函数的 $O$ 的梯度。然后根据链式法则（即反向传播）：
+
+$$\begin{aligned}
+    dV &= P^\top dO \in \mathbb{R}^{N \times d} \\
+    dP &= dO V^\top \in \mathbb{R}^{N \times N} \\
+    dS &= \text{dsoftmax}(dP) \in \mathbb{R}^{N \times N} \\
+    dQ &= dS K \in \mathbb{R}^{N \times d} \\
+    dK &= Q dS^\top \in \mathbb{R}^{N \times d}
+\end{aligned}$$
+
+其中 dsoftmax 是按行应用的 softmax 的梯度（反向传播）。
+
+可以推导出，对于向量 $s$ 和 $p$，如果 $p = \text{softmax}(s)$，那么当输出梯度为 $dp$ 时，输入梯度可以表示为 $ds = (\text{diag}(p) - pp^\top) dp$。
+
+其中 $\text{diag}(p)$ 是一个对角矩阵，其对角线上的元素为 $p$ 中的各个元素。上述公式描述了 softmax 函数的输入梯度 $ds$ 与输出梯度 $dp$ 之间的关系，同时考虑了输出概率的相互依赖性。
+
+标准的注意力机制实现会将矩阵 $S$ 和 $P$ 写入 HBM，这需要 $O(N^2)$ 的内存。通常 $N \gg d$（典型情况下，$N$ 大约在 1k–8k 之间，而 $d$ 大约在 64–128 之间）。**标准注意力的实现步骤**：
+1. 调用矩阵乘法（GEMM）子程序计算 $S = QK^\top$，并将结果写入 `HBM`，
+2. 然后从 `HBM` 加载 $S$，计算 softmax，将结果 $P$ 写入 HBM，
+3. 最后调用 `GEMM` 计算 $O = PV$。
+
+由于大多数操作都受限于内存带宽，大量的内存访问会导致较慢的实际执行时间。此外，额外需要存储 $S$ 和 $P$ 的内存占用量为 $O(N^2)$。并且，为了反向传播时计算梯度，还需要保存矩阵 $P \in \mathbb{R}^{N \times N}$。
 
 ### 2.3 FlashAttention
 
 #### 2.3.1 前向传播
 
-FlashAttention 使用经典的 `tiling` 技术来减少内存 IO 操作，具体步骤包括：
+FlashAttention 使用经典的 `tiling` 技术来减少内存 IO 操作，**FlashAttention 实现步骤**：
 1. 将输入块从 HBM 加载到 SRAM，
 2. 针对该块计算注意力，
 3. 更新输出而无需将大型中间矩阵 S 和 P 写入 HBM。
@@ -65,9 +91,9 @@ $$\mathbf{P} = [\mathbf{P}^{(1)} \; \mathbf{P}^{(2)}] = \text{diag}(\ell)^{-1} \
 
 $$\mathbf{O} = [\mathbf{P}^{(1)} \; \mathbf{P}^{(2)}] \begin{bmatrix} \mathbf{V}^{(1)} \\ \mathbf{V}^{(2)} \end{bmatrix} = \text{diag}(\ell)^{-1} e^{S^{(1)} - m} \mathbf{V}^{(1)} + e^{S^{(2)} - m} \mathbf{V}^{(2)} \in \mathbb{R}^{B_r \times d}$$
 
-在线 softmax 计算 “局部” softmax，并在最终输出时进行重新缩放以获得正确结果：
-\[
-\begin{aligned}
+在线 softmax 会针对每个块计算“局部” softmax，并在最后通过重缩放得到正确的输出:
+
+$$\begin{aligned}
     m^{(1)} &= \text{rowmax}(S^{(1)}) \in \mathbb{R}^{B_r}, \quad
     \ell^{(1)} = \text{rowsum}(e^{S^{(1)} - m^{(1)}}) \in \mathbb{R}^{B_r} \\
     \tilde{P}^{(1)} &= \text{diag}(\ell^{(1)})^{-1} e^{S^{(1)} - m^{(1)}} \in \mathbb{R}^{B_r \times B_c} \\
@@ -76,8 +102,7 @@ $$\mathbf{O} = [\mathbf{P}^{(1)} \; \mathbf{P}^{(2)}] \begin{bmatrix} \mathbf{V}
     \ell^{(2)} &= e^{m^{(1)} - m^{(2)}} \ell^{(1)} + \text{rowsum}(e^{S^{(2)} - m^{(2)}}) = \text{rowsum}(e^{S^{(1)} - m}) + \text{rowsum}(e^{S^{(2)} - m}) = \ell \\
     \tilde{P}^{(2)} &= \text{diag}(\ell^{(2)})^{-1} e^{S^{(2)} - m^{(2)}} \in \mathbb{R}^{B_r \times B_c} \\
     \mathbf{O}^{(2)} &= \text{diag}\left(\frac{\ell^{(2)}}{\ell^{(1)}}\right) \mathbf{O}^{(1)} + \tilde{P}^{(2)} \mathbf{V}^{(2)} = \text{diag}(\ell^{(2)})^{-1} e^{S^{(1)} - m} \mathbf{V}^{(1)} + \text{diag}(\ell^{(2)})^{-1} e^{S^{(2)} - m} \mathbf{V}^{(2)} = \mathbf{O}.
-\end{aligned}
-\]
+\end{aligned}$$
 
 下图展示 FlashAttention 如何使用在线 softmax 实现分块处理（见图 1），从而减少内存的读写操作。
 
@@ -117,8 +142,7 @@ $$
 
 和第 2.3 节只处理 2 个块的简单场景，在线 softmax 技巧现在变为：
 
-\[
-\begin{aligned}
+$$\begin{aligned}
     m^{(1)} &= \text{rowmax}(S^{(1)}) \in \mathbb{R}^{B_r} \\
     \ell^{(1)} &= \text{rowsum}(e^{S^{(1)} - m^{(1)}}) \in \mathbb{R}^{B_r} \\
     \mathbf{O}^{(1)} &= e^{S^{(1)} - m^{(1)}} \mathbf{V}^{(1)} \in \mathbb{R}^{B_r \times d} \\
@@ -127,8 +151,7 @@ $$
     \tilde{\mathbf{P}}^{(2)} &= \text{diag}(\ell^{(2)})^{-1} e^{S^{(2)} - m^{(2)}} \\
     \tilde{\mathbf{O}}^{(2)} &= \text{diag}(e^{m^{(1)} - m^{(2)}}) \tilde{\mathbf{O}}^{(1)} + e^{S^{(2)} - m^{(2)}} \mathbf{V}^{(2)} \\
     \mathbf{O}^{(2)} &= \text{diag}(\ell^{(2)})^{-1} \tilde{\mathbf{O}}^{(2)} = 0
-\end{aligned}
-\]
+\end{aligned}$$
 
 FlashAttention-2 算法前向传播过程的完整流程在算法 1 中描述。
 
