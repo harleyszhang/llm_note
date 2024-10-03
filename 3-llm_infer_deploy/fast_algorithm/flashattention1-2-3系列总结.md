@@ -133,7 +133,7 @@ softmax\ x_i = \frac{e^{x_i - m_V}}{d_V} \tag{4}$$
 
 <img src="../../images/flash_attention1-3/online-softmax.png" width="65%" alt="online softmax">
 
-如果想继续优化，则**使用分块技术计算归一化常数**，先定义分块计算: $ d_{xy} = d_x * e^{m_x - m_{xy}} + d_y * e^{m_y - m_{xy}}$，分块计算完 $m$ 和 $d$ 之后，再将所有子块结果重新聚合得到全局结果 $m_N$ 和 $d_N$，其和串行顺序计算结果在数学上完全等价**
+如果想继续优化，则**使用分块技术计算归一化常数**，先定义分块计算: $ d_{xy} = d([x,y]) = d_x * e^{m_x - m_{xy}} + d_y * e^{m_y - m_{xy}}$，分块计算完 $m$ 和 $d$ 之后，再将所有子块结果重新聚合得到全局结果 $m_N$ 和 $d_N$，其和串行顺序计算结果在数学上完全等价**
 
 这篇论文在算法上其实有**两个创新**：
 1. 提出并证明了通过**一次遍历**输入数据来计算 Softmax 函数归一化项的方法，该方法将 Softmax 函数的内存访问次数减少了 $1.33 (4/3 = 1.33)$倍
@@ -260,7 +260,8 @@ FlashAttention 核心是分块计算注意力，可以简单理解为就是将�
 FlashAttention-v1 其实并没有提出新的算法和网络结构上的优化，但是其在算法上综合了过往的两个创新点：**分块**和**重计算**，并将其应用于 Attention 结构，给出了详尽的数学计算、证明和 IO 复杂度分析（论文长达 34 页大头都是公式），可以说是过往 transformer 模型在 gpu 上优化的**集大成者**，而且最重要的是提供了非常易用的前向传播和反向传播的代码库，这使得其广为引用和应用于工业界。
 > 可见，优秀的代码功底、扎实的理论基础、底层硬件和框架的熟悉对于科研工作非常重要，即使你没有提出新的算法，但是你的工作依然可以广为传播和应用。
 
-总的来说，FlashAttention 通过 `Tiling` 和 `Recomputation` 技术大幅减少了 cuda kernel 对 global memory 的访问量，使得在 sequence length 偏长和 attention 计算处于内存密集型的情况下有着明显的加速效果。
+总的来说，FlashAttention **在算法层面通过重排注意力计算，并利用经典技术（分块和重计算）显著加速了注意力计算，将内存占用从二次方降低到线性**。使得在 sequence length 偏长和 attention 计算处于内存密集型的情况下有着明显的加速效果。并直接带来了相对于优化基准 2-4 倍的实际运行时间加速，以及高达 10-20 倍的内存节省，并且计算结果是精确而非近似的。
+
 > 本文主要分析其在模型推理阶段的优化，因此**重计算**方法的分析就略过了。
 
 论文总结的一些定理：
@@ -276,6 +277,10 @@ FlashAttention-v1 其实并没有提出新的算法和网络结构上的优化�
 【**定理 5**】设 $N$ 为序列长度，$d$ 为头部维度，$M$ 为 `SRAM` 的大小，且 $d \leq M \leq Nd$。标准注意力（算法 0）的反向传播需要 $\Theta(N d + N^2)$ 次 HBM 访问，而 FlashAttention 的反向传播（算法 4）只需要 $\Theta(N^2 d^2 M^{-1})$ 次 HBM 访问。
 
 Online Softmax 实现在一个 for 循环中计算 $m_i$ 和 $d_i$，FlashAttention-v1 基于它的思想更进一步，实现在一个 for 循环中计算 $m_i$、$d_i$、$\text{softmax}_i$ 和注意力输出 $O_i$，也就是说，在一个 kernel 中实现 attention 的所有操作，这样大大减少了内存访问次数（内存读/写的次数）。
+
+`FlashAttention` 算法实现步骤如下图所示。
+
+![flash attention 算法步骤](../../images/flash_attention/flash_attention_algorithm1.png)
 
 基于 `openai` `trion` 库实现的支持 `NoPad` 的 `FlashAttention` 算子如下：
 
