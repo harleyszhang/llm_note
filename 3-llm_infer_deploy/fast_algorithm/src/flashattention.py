@@ -117,14 +117,15 @@ def flashattn_1(Q, K, V):
             d[i] = dd
         
         for c in range(0, Dim):
-            oo = 0
+            o = 0
             for i in range(0, N):
+                # 迭代更新注意力计算输出
                 o = flashattn_update(
                    m[i],
                    d[i],
                    m[i-1] if i > 0 else MIN_M,
                    d[i-1] if i > 0 else 0,
-                   oo,
+                   o,
                    S[r][i],
                    V[i][c],
                    1
