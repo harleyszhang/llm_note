@@ -7,7 +7,7 @@
 ## 一 Roofline 性能分析模型
 ### 1.1 Roofline 模型原理
 
-`Roofline` 性能分析模型是一种用于**衡量和分析计算性能**的工具，通过将应用程序的计算性能与硬件的理论峰值性能进行对比，**以揭示应用是受到计算性能的限制还是受到内存带宽的限制**。Roofline 模型的有两个关键指标：**操作强度** （Operational Intensity, OI， 也称算术强度 Arithmetic Intensity。
+`Roofline` 性能分析模型是一种用于**衡量和分析计算性能**的工具，通过将应用程序的计算性能与硬件的理论峰值性能进行对比，**以揭示应用是受到计算性能的限制还是受到内存带宽的限制**。Roofline 模型的有两个关键指标：**操作强度** （Operational Intensity, OI， 也称算术强度 Arithmetic Intensity 和性能上限。
 
 1. 操作强度：每访问一个字节的内存所执行的计算量（FLOPs/Byte）。$\text{OI} = \frac{\text{总浮点操作数（FLOPs）}}{\text{总内存访问量（Bytes）}}$
 2. 性能上限：

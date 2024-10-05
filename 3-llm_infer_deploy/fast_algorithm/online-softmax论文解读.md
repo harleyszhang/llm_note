@@ -211,6 +211,7 @@ $$TopK(y) = (v, z) : v_i = y_{z_i}, v_i \geq y_j, ∀i ∈ [1, K], ∀j /∈ z$$
 
 ## 参考资料
 
+- [Online normalizer calculation for softmax](https://arxiv.org/pdf/1805.02867)
 - [Flash Attention (零) - Online Softmax](https://zhuanlan.zhihu.com/p/672664395)
 - [Easymath-wiki: 数列的求和](https://easymath-wiki.org/%E5%88%9D%E7%AD%89%E6%95%B0%E5%AD%A6/%E6%95%B0%E5%88%97/02%E6%95%B0%E5%88%97%E7%9A%84%E6%B1%82%E5%92%8C/)
 - [FlashAttentions](https://jcf94.com/2024/02/24/2024-02-24-flash-attention/)

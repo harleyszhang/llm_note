@@ -1,23 +1,23 @@
 - [1. 介绍](#1-介绍)
 - [2. 背景](#2-背景)
-	- [2.1 硬件性能](#21-硬件性能)
-	- [2.2 标准 attention 实现](#22-标准-attention-实现)
+  - [2.1 硬件性能](#21-硬件性能)
+  - [2.2 标准 attention 实现](#22-标准-attention-实现)
 - [3 FlashAttention: 算法、分析和拓展](#3-flashattention-算法分析和拓展)
-	- [3.1 使用分块和重计算的高效注意力机制算法](#31-使用分块和重计算的高效注意力机制算法)
-	- [3.2 分析：FlashAttention 的 IO 复杂度](#32-分析flashattention-的-io-复杂度)
-	- [3.3 拓展：块稀疏 FlashAttention](#33-拓展块稀疏-flashattention)
+  - [3.1 使用分块和重计算的高效注意力机制算法](#31-使用分块和重计算的高效注意力机制算法)
+  - [3.2 分析：FlashAttention 的 IO 复杂度](#32-分析flashattention-的-io-复杂度)
+  - [3.3 拓展：块稀疏 FlashAttention](#33-拓展块稀疏-flashattention)
 - [4，实验](#4实验)
-	- [4.1 使用 FlashAttention 的更快模型](#41-使用-flashattention-的更快模型)
-	- [4.2 使用长序列的更好模型](#42-使用长序列的更好模型)
-	- [4.3 注意力基准测试](#43-注意力基准测试)
-	- [4.4 FlashAttention 运行时、内存占用和序列长度的关系](#44-flashattention-运行时内存占用和序列长度的关系)
+  - [4.1 使用 FlashAttention 的更快模型](#41-使用-flashattention-的更快模型)
+  - [4.2 使用长序列的更好模型](#42-使用长序列的更好模型)
+  - [4.3 注意力基准测试](#43-注意力基准测试)
+  - [4.4 FlashAttention 运行时、内存占用和序列长度的关系](#44-flashattention-运行时内存占用和序列长度的关系)
 - [5. 局限性和未来方向](#5-局限性和未来方向)
 - [A. 相关工作](#a-相关工作)
 - [B. 算法细节](#b-算法细节)
-	- [B.1 内存高效的前向传播](#b1-内存高效的前向传播)
-	- [B.2 内存高效的反向传播](#b2-内存高效的反向传播)
-	- [B.3 FlashAttention: 前向传播](#b3-flashattention-前向传播)
-	- [B.3 FlashAttention: 反向传播](#b3-flashattention-反向传播)
+  - [B.1 内存高效的前向传播](#b1-内存高效的前向传播)
+  - [B.2 内存高效的反向传播](#b2-内存高效的反向传播)
+  - [B.3 FlashAttention: 前向传播](#b3-flashattention-前向传播)
+  - [B.3 FlashAttention: 反向传播](#b3-flashattention-反向传播)
 - [C. 证明](#c-证明)
 - [参考资料](#参考资料)
 
@@ -43,7 +43,7 @@ Transformer 模型目前已经成为自然语言处理和图像分类等领域�
 
 为此，本文采用了两种已经被广泛使用的技术来解决这些挑战。
 
-- 重构了注意力计算，将输入分块并多次遍历，逐步执行 softmax reduction（也称为切片）。这样可以在不需要访问整个输入的情况下计算 softmax reduction。
+- 重构了注意力计算，将输入分块并多次遍历，逐步执行 softmax reduction。这样可以在不需要访问整个输入的情况下计算 softmax reduction。
 - 本文在前向传播中存储了 softmax 归一化因子，以便在反向传播中快速重新计算芯片上的注意力。这比从 HBM 读取中间注意力矩阵的标准方法更快。
 
 本文使用 CUDA 实现了 FlashAttention，以精细控制内存访问，并将所有注意力操作融合到一个 GPU 内核中。即使由于重新计算而增加了 FLOPs，但**得益于大幅减少的 HBM 访问量，FlashAttention 依然比标准注意力机制运行更快**（在 GPT-2 上可达 7.6 倍加速，见图 1 右侧），并且使用的内存更少——随序列长度线性增长。
@@ -77,25 +77,31 @@ Transformer 模型目前已经成为自然语言处理和图像分类等领域�
 
 ### 2.2 标准 attention 实现
 
-给定输入序列 $Q, K, V \in \mathbb{R}^{N\times d}$，其中 $N$ 是输入序列的长度的，$d$ 是自注意力机制头的长度，本文想要计算注意力模块的输出矩阵 $O \in \mathbb{R}^{N\times d}$: 
+给定输入二维矩阵 $Q, K, V \in \mathbb{R}^{N\times d}$，其中 $N$ 是输入序列的长度，$d$ 是自注意力机制头的长度，Softmax 是按行应用的，注意力输出矩阵 $O \in \mathbb{R}^{N\times d}$ 的计算公式如下: 
 
 $$\text{S = QK}^\text{T} \in \mathbb{R}^{N\times N},\quad \text{P = softmax(S)} \in \mathbb{R}^{N\times N},\quad \text{O = PV}\in \mathbb{R}^{N\times d}$$
-
-这里的 softmax 是按行应用的。
 
 标准的注意力实现会将矩阵 $\text{S}$ 和 $\text{P}$ 写入到 HBM，这需要 $O(N^2)$ 的内存。通常情况下，N 和 d 相对较大（例如，对于GPT2，N = 1024，d = 64）。本文在算法 0 中描述了标准的注意力实现。由于一些或大多数操作是内存受限的（例如 softmax），大量的内存访问会导致墙钟时间（wall-clock time）变慢。
 
 这个问题在应用于注意力矩阵的其他逐元素操作时会加剧，例如应用于 S 的掩码 mask 或应用于 P 的丢弃 dropout 操作。因此，已经有很多尝试将多个逐元素操作融合在一起，比如将掩码与 softmax 融合在一起[77]。
 
-在第3.2节中，本文将展示标准的注意力实现在序列长度 N 方面执行 HBM 访问，同时比较标准注意力和本文的方法（FlashAttention）的 FLOPs 数量和 HBM 访问数量。
-
 ![标准 attention算法](../../images/flash_attention/standard_attention_imple.png)
+> 3.2 节会对比标准注意力和 FlashAttention 的 HBM 访问代价和 FLOPs 的差别。
+
+标准的 `Attention` 运算大致可以描述为以下三个步骤：
+1. 将 $Q, K$ 矩阵以块的形式从 `HBM` 中加载到 `SRAM` 中，计算 $S=QK^T$，将 $S$ 写入到 `HBM` 中。
+2. 将 $S$ 矩阵从 `HBM` 中加载到 `SRAM` 中，计算 $P = Softmax(S)$，将 $P$写入到 HBM 中。
+3. 将 $P, V$ 矩阵以块的形式从 HBM 中加载到 SRAM 中，计算 $O=PV$, 将 $O$ 写入到 HBM 中。
+
+![self-attention 与 HBM 的交互](../../images/flash_attention/standard_attention_mac.png)
+
+self-attention 算子涉及到的和 HBM 数据传输过程如上图所示，很明显需要从HBM 中读取 5次，写入 HBM 3 次，`HBM` 访存量 $MAC = 3N^2 + 4Nd$，很明显标准注意力的 HBM 随序列长度增加呈二次方增长。
 
 ## 3 FlashAttention: 算法、分析和拓展
 
 ### 3.1 使用分块和重计算的高效注意力机制算法
 
-给定输入  $Q,K,V \in R^{N\times d}$ 存储于 HBM（高带宽内存）中，本文的目标是计算出注意力输出 $O \in R^{N\times d}$ 并将其写回 HBM，并且将对 HBM 的访问次数减少到 $N^2$ 以下。
+给定输入二维矩阵 $Q,K,V \in R^{N\times d}$ 存储于 HBM（高带宽内存）中，本文的目标是计算出注意力输出 $O \in R^{N\times d}$ 并将其写回 HBM，并且将对 HBM 的访问次数减少到 $N^2$ 以下。
 
 本文采用了两种已知的优化技术（**分块和重计算**），以解决在次二次（sub-quadratic）HBM 访问中计算精确注意力的技术难题。具体步骤详见算法 1。核心思想是将输入的 Q、K、V 矩阵拆分为多个块，将其从较慢的 HBM 加载到更快的 SRAM 中，然后分别计算这些块的注意力输出。最后，将每个块的输出按正确的**归一化因子缩放**之后相加，本文最终得到了正确的结果。
 
@@ -111,7 +117,7 @@ m(x)=m\left(\left[x^{(1)}\ x^{(2)}\right]\right)=\max \left(m\left(x^{(1)}\right
 \ell(x)=\ell\left(\left[x^{(1)}\ x^{(2)}\right]\right)=e^{m\left(x^{(1)}\right)-m(x)} \ell\left(x^{(1)}\right)+e^{m\left(x^{(2)}\right)-m(x)} \ell\left(x^{(2)}\right), \quad \operatorname{softmax}(x)=\frac{f(x)}{\ell(x)}
 \end{array}$$
 
-上述公式意义总结就是，正常 `Softmax` 需要对**完整的** $QK^T$ 结果矩阵（图上虚线部分正方形）沿着 `Inner Loop` 维度进行归一化；`Softmax` 需要全局的 max 和 sum 结果才能 scale 每一个元素；但是这里，本文**借助 `Online Softmax` 技术，实现了分块计算 `Softmax`**。
+上述公式意义总结就是，正常 `Softmax` 需要对**完整的** $QK^T$ 结果矩阵（图 1 上虚线部分正方形）沿着 `Inner Loop` 维度进行归一化；`Softmax` 需要全局的 max 和 sum 结果才能 scale 每一个元素；但是这里，本文**借助 `Online Softmax` 技术，实现了分块计算 `Softmax`**。
 
 即如果本文**计算一些额外的统计信息** $(m(x), \ell(x))$，本文**可以逐块计算 `Softmax`**。本文将输入的 $Q、K、V$ 拆分为多个块（参见算法 1 第 3 行），计算 Softmax 以及相应的额外统计信息（参见算法 1 第 10 行），并最终结合这些结果（参见算法 1 第 12 行）。
 
@@ -147,9 +153,9 @@ $1: 设置块大小\;B_c = \left\lceil \frac{M}{4d} \right\rceil ,  B_r = \min \
 
 $$O_i \leftarrow \text{diag}(\ell_i^{\text{new}})^{-1} (\text{diag}(\ell_i) e^{m_{i} - m_i^{\text{new}}}O_i + e^{\tilde{m}_{ij} - m_i^{\text{new}}} \tilde{P}_{ij} V_j)$$
 
-这里原论文给出的推导不是很容易看懂，我参考[文章](https://fancyerii.github.io/2023/10/23/flashattention/)给出了推导证明。其实本质上是想通过推导公式，证明了 $O_i$ 的计算也是可以同时满足交换律和结合律，任意分块分别计算 $m$、$\ell$ 和 $O_i$之后，将所有子块结果重新聚合在数学上完全等价，从而实现在一个 `for` 循环中计算 $m$、$\ell$ 和 $O_i$。
+这里原论文给出的推导不是很容易看懂，我参考[文章](https://fancyerii.github.io/2023/10/23/flashattention/)给出了推导证明，其证明了 $O_i$ 的计算也是可以同时满足交换律和结合律，任意分块分别计算 $m$、$\ell$ 和 $O_i$之后，将所有子块结果重新聚合在数学上完全等价，从而实现在一个 `for` 循环中计算 $m$、$\ell$ 和 $O_i$。
 
-假设输入矩阵大小为 $[N, N]$，这里用大写 $M、D$ 表示最大值，归一化项，它们的长度都为 $N$。还是对每一行做一维的 softmax，将矩阵版的 online-softmax 套进标准 Attention 计算公式如下：
+将矩阵版的 online-softmax 套进标准 Attention，这里的 Softmax 是对 $QK^T \in [N, N]$ 结果中的每一行做一维的 softmax。这里用大写 $M、D$ 表示最大、归一化项，它们的长度都为 $N$；$O\in [N,d]$ 表示注意力输出。计算公式如下：
 
 $$\begin{aligned}
 X_{r, i} &= \sum^{Dim}_{j=1}Q[r, j]K[j, i]\\

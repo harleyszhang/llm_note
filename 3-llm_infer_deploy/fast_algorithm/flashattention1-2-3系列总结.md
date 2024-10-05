@@ -341,7 +341,7 @@ def flashattn_0(Q, K, V):
     return O
 ```
 
-可以看到将 online softmax 应用到标准 attention 后，新的注意层只需在三个 for 循环完成 O[r][c] 的计算，那么还能不能继续优化，在两个 for 循环内完成注意力 O[r][c] 的计算呢？就像 online-softmax 那样，实际是可以的。
+可以看到将 online softmax 应用到标准 attention 后，新的注意层只需在两个 for 循环完成 O[r][c] 的计算，那么还能不能继续优化，在一个 for 循环内完成注意力 O[r][c] 的计算呢？就像 online-softmax 那样，实际是可以的。
 
 $O_{r,c}$ 的计算是一个累加过程，拆开来看：
 
@@ -373,61 +373,11 @@ $$
 
 $$O_{r,c} = \sum_{i=0}^N O_{r,c,i}$$
 
-与 Online softmax 的 $D_{r,i}$一样，$ O'_{r,c, i}$ 也满足也具有分块满足交换律和结合律的特性：
-
-$$
-\begin{aligned}
-D_{r, xy}' &= D_{r, x}' * e^{M_{r, x} - M_{r, xy}} + D_{r, y}' * e^{M_{r, y} - M_{r, xy}}\\
-O_{r,c,xy}' &= O_{r,c,x}' * \frac{e^{M_{r, x}-M_{r, xy}}D_{r, x}'}{D_{r, xy}'} + O_{r,c,y}' * \frac{e^{M_{r, y}-M_{r, xy}}D_{r, y}'}{D_{r, xy}'}\\
-\end{aligned}$$
-
-上述就是 FlashAttention 算法的等效计算公式，对应的注意输出第 k 行第 c 列结果 $O_{k,c}$ 的伪代码可以写为:
-
-```python
-for i in range(0, N):
-    Sk[i] = np.dot(Q[k, :], K.T[:, i])
-    Mk[i] = Mk[i] = max(Mk[i - 1], Sk[i])
-    Dk[i] = Dk[i-1] * exp(Mk[i - 1] - Mk[i]) + exp(Sk[i] - Mk[i])
-    Ok[i] = Ok[i-1] * (exp(Mk[i - 1] - Mk[i]) * Dk[i-1]) / Dk[i] + exp(Sk[i] - Mk[i]) / Dk[i] * V[i,:]
-```
-
-或者类似下面写法：
-
-$$\begin{align}
-SubSum_{r, c, i} &= SubSum_{r, c, i-1} + Softmax_{r, i} * V[i, c] \nonumber \\
-&=SubSum_{r, c, i-1} + \frac{e^{X_{r, i} - M_{r, N}}}{D_{r, N}'} * V[i, c]  \nonumber \\
-&=\sum^i_{j=1}\frac{e^{X_{r, j} - M_{r, N}}}{D_{r, L}'}V[j, c] \nonumber
-\end{align}
-$$
-
-可以发现 $SubSum_{r, c, i}$ 依赖于 $M_{r, L}$ 和 $D_{r, L}'$，运用与 online softmax 相似的归纳假设方法，可以在这里增加一个人 $SubSum_{r, c, i}'$，则：
-
-$$\begin{aligned}
-SubSum_{r,c,i}' &= \sum^i_{j=1}\frac{e^{X_{r, j} - M_{r, i}}}{D_{r, i}'}V[j, c]\\
-&=\sum^{i-1}_{j=1}\frac{e^{X_{r, j} - M_{r, i}}}{D_{r, i}'}V[j, c] + \frac{e^{X_{r, i} - M_{r, i}}}{D_{r, i}'}V[i, c]\\
-&=\left (\sum^{i-1}_{j=1}\frac{e^{X_{r, j} - M_{r, i-1}}}{D_{r, i-1}'}V[j, c] \right) * \frac{e^{M_{r, i-1} - M_{r, i}}D_{r,i-1}'}{D_{r,i}'} + \frac{e^{X_{r, i} - M_{r, i}}}{D_{r, i}'}V[i, c]\\
-&=SubSum_{r,c,i-1}'*\frac{e^{M_{r, i-1} - M_{r, i}}D_{r,i-1}'}{D_{r,i}'} + \frac{e^{X_{r, i} - M_{r, i}}}{D_{r, i}'}V[i, c]\\
-\end{aligned}$$
-
-综上，可知我们可以像 online softmax 那样在一个 $[i, L]$ 的循环中完成如下计算：
-
-$$\begin{aligned}
-X_{r, i} &= \sum^{Dim}_{j=1}Q[r, j]K[j, i]\\
-M_{r, i} &= \max(M_{r, i-1}, X_{r, i})\\
-D_{r, i}' &= D_{r, i-1}' * e^{M_{r, i-1} - M_{r, i}} + e^{X_{r, i}-M_{r, i}}\\
-SubSum_{r,c,i}' &=SubSum_{r,c,i-1}'*\frac{e^{M_{r, i-1} - M_{r, i}}D_{r,i-1}'}{D_{r,i}'} + \frac{e^{X_{r, i} - M_{r, i}}}{D_{r, i}'}V[i, c]\\
-\end{aligned}
-$$
-
-最终，我们想要的注意力输出结果为:
-
-$$O_{r,c} = SubSum_{r,c,L}$$
-
 【**定理 1**】 算法 1 注意力输出矩阵 $O = softmax(QK^T)V$ 要求 $O(N^2d)$ 的 FLOPs，并且除了输入和输出内存之外，需要额外的 $O(N)$ 内存【证明见附录 B】。
 
-FlashAttention 伪代码如下所示：
+上述就是 FlashAttention 算法的等效计算公式，对应的伪代码可以写为:
 
-```python
+```bash
 for (r = 1 to L)
     for (i = 1 to L)
         // [L, Dim] * [Dim, L] -> [L, L]
@@ -438,66 +388,82 @@ for (r = 1 to L)
         M[r, i] = max(M[r, i-1], X[r, i])
 
         // [L, L]
-        D'[r, i] = D'[r, i-1] * e(...) + e(...)
+        D'[r, i] = D'[r, i-1] * exp(M[r, i-1] - M[r, i]) + exp(S[r, i] - M[r, i])
 
-        // [L, Dim]
-        for (c = 1 to Dim)
-            O[r, c] += O[r, c] * e(...) * D'[r, i-1] / D'[r, i] + e(...) / D'[r, i] * V[i, c]
+    // [L, Dim]
+    for (c = 0 to Dim)
+        for i in range(0, N):
+            o += o * e(...) * D'[r, i-1] / D'[r, i] + e(...) / D'[r, i] * V[i, c]
+        O[r][c] = o
 ```
 
 再用 python 实现如下所示:
 
 ```python
-def flashattn_update(m, d, m0, d0, s0, m1, d1, s1):
+def online_softmax_update(m0, d0, m1, d1):
+    #                             x   1
+    m = max(m0, m1) # flops: 1
+    d = d0 * np.exp(m0 - m) + d1 * np.exp(m1-m) # flops: 5
+    return m, d
+
+def flashattn_update(m, d, m0, d0, o0, m1, d1, o1):
     #                      |   |   |   |   |   |
     #                      |   |   |   x   v   1
     # Init value:        MIN_M 0   0
-    s = s0 * np.exp(m0 - m) * d0 / d + s1 * np.exp(m1 - m) * d1 / d
-    return s
-
-
-def flashattn_1(q, k, v):
-    # [L, Dim] * [Dim, L] -> [L, L]
-    x = np.zeros([L, L], "float32")
-    for r in range(0, L):
-        for i in range(0, L):
-            for j in range(0, Dim):
-                x[r, i] += q[r, j] * k[i, j]
-
-    # [L, L] -> [L, L] * [L, Dim] -> [L, Dim]
-    o = np.zeros([L, Dim], "float32")
-    for r in range(0, L):
-        m = []
-        d = []
-        for i in range(0, L):
-            mm, dd = online_softmax_update(
-                m[-1] if i > 0 else MIN_M, d[-1] if i > 0 else 0, x[r, i], 1
-            )
-            m.append(mm)
-            d.append(dd)
-
-        for c in range(0, Dim):
-            s = 0
-            for i in range(0, L):
-                s = flashattn_update(
-                    m[i],
-                    d[i],
-                    m[i - 1] if i > 0 else MIN_M,
-                    d[i - 1] if i > 0 else 0,
-                    s,
-                    x[r, i],
-                    v[i, c],
-                    1,
-                )
-            o[r, c] = s
+    
+    o = o0 * np.exp(m0 - m) * d0 / d + o1 * np.exp(m1 - m) * d1 / d
     return o
+
+def flashattn_1(Q, K, V):
+    N, Dim = Q.shape
+    
+    # 1, Load Q K and write S. and Compute S[r][i] by matrix multiply 
+    S = np.zeros([N, N], "float32")
+    O = np.zeros([N, Dim], "float32")
+    m = np.zeros([N],  "float32")
+    d = np.zeros([N],  "float32")
+                
+    for r in range(0, N):
+        # 计算 QK^T 的第 i 行结果 S[r][i]
+        for i in range(0, N):
+            # QK^T
+            for j in range(0, Dim):
+                S[r][i] += Q[r][j] * K[i][j] # K^T 的列就是 K 的行
+            
+            # softmax: [N,N] -> [N,N]
+            if i == 0:
+                mm = S[r][0]
+                dd = 0
+            mm, dd = online_softmax_update(mm, dd, S[r][i], 1) # flops 为 6
+            m[i] = mm
+            d[i] = dd
+        
+        # PV: [N, N] * [N, Dim] -> [N, dim]
+        for c in range(0, Dim):
+            o = 0
+            for i in range(0, N):
+                # 迭代更新注意力计算输出
+                o = flashattn_update(
+                   m[i],
+                   d[i],
+                   m[i-1] if i > 0 else MIN_M,
+                   d[i-1] if i > 0 else 0,
+                   o,
+                   S[r][i],
+                   V[i][c],
+                   1
+                )
+            O[r][c] = o
+      
+    return O
 ```
 
-继续优化，上面的公式和代码只是实现了在一个 for 循环中计算 $o(r, c)$，但是没有分块计算，同样和 Online softmax 一样，SubSum_{r,c,i}' 也具有分块满足交换律和结合律的特性：
+继续优化，上面的公式和代码只是实现了在一个 for 循环中计算 $o(r, c)$，但是没有分块计算，与 Online softmax 的 $D_{r,i}$一样，$ O'_{r,c, i}$ 也满足也具有分块满足交换律和结合律的特性：
 
-$$\begin{aligned}
+$$
+\begin{aligned}
 D_{r, xy}' &= D_{r, x}' * e^{M_{r, x} - M_{r, xy}} + D_{r, y}' * e^{M_{r, y} - M_{r, xy}}\\
-SubSum_{r,c,xy}' &= SubSum_{r,c,x}' * \frac{e^{M_{r, x}-M_{r, xy}}D_{r, x}’}{D_{r, xy}’} + SubSum_{r,c,y}' * \frac{e^{M_{r, y}-M_{r, xy}}D_{r, y}’}{D_{r, xy}’}\\
+O_{r,c,xy}' &= O_{r,c,x}' * \frac{e^{M_{r, x}-M_{r, xy}}D_{r, x}'}{D_{r, xy}'} + O_{r,c,y}' * \frac{e^{M_{r, y}-M_{r, xy}}D_{r, y}'}{D_{r, xy}'}\\
 \end{aligned}$$
 
 因此，FlashAttention-1 的分块计算 python 代码如下。

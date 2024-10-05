@@ -155,8 +155,8 @@ class SelfAttention(nn.Module):
     
 if __name__ == "__main__":
        
-    N = 1024
-    Dim = 128
+    N = 256
+    Dim = 64
     BLK = 4
     MIN_M = -10000
 
