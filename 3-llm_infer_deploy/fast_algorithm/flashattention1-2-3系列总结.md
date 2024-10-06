@@ -9,7 +9,6 @@
   - [2.5 FlashAttention](#25-flashattention)
 - [3. FlashAttention-2](#3-flashattention-2)
 - [4. FlashAttention-3](#4-flashattention-3)
-- [5. FlashDecoding \& FlashDecoding++](#5-flashdecoding--flashdecoding)
 - [参考资料](#参考资料)
 
 ## 1. Online Softmax
@@ -276,23 +275,22 @@ FlashAttention 核心是分块计算注意力，可以简单理解为就是将�
 
 2，可以从 GPU 内存层次角度直接看出 SRAM 是 L1 Cache (数据缓冲)。
 
-论文 2.1 节明确都说了 A100 的 SRAM 大小是 192 KB，“As an example, the A100 GPU has 40-80GB of high bandwidth memory (HBM) with bandwidth 1.5-2.0TB/s and 192KB of on-chip SRAM per each of 108 streaming multiprocessors with bandwidth estimated around 19TB/s [44, 45].” 
+论文 2.1 节明确都说了 A100 的 SRAM 大小是 192 KB，而英伟达官网给出的 A100 白皮书也明确说了 A100 的 L1 cache 大小是 192KB（ 组合共享内存和 L1 数据缓存），所以论文的 SRAM 肯定指的是 L1 cache 了。
+> “As an example, the A100 GPU has 40-80GB of high bandwidth memory (HBM) with bandwidth 1.5-2.0TB/s and 192KB of on-chip SRAM per each of 108 streaming multiprocessors with bandwidth estimated around 19TB/s [44, 45].” 
 
-而英伟达官网给出的 A100 白皮书也明确说了 A100 的 L1 cache 大小是 192KB（ 组合共享内存和 L1 数据缓存），所以论文的 SRAM 肯定指的是 L1 cache 了。
-
-另外，这个论文学习，除非有 cuda 编程经验和 transformer 模型扎实的算法基础就好容易理解点，不然真的太难懂啦，很多人其实刚开始就看了个寂寞，而且这个论文也可以说 attention 和 cuda 优化的集大成者啦。
 
 ### 2.4 Tiling
 
-Online Softmax 实现在一个 for 循环中计算 $m_i$ 和 $d_i$，FlashAttention-v1 基于它的思想更进一步，实现在一个 for 循环中计算 $m_i$、$d_i$、$\text{softmax}_i$ 和注意力输出 $O_i$，也就是说，在一个 kernel 中实现 attention 的所有操作。再通过分块 Tiling 技术，将输入的 Q、K、V 矩阵拆分为多个块，将其从较慢的 HBM 加载到更快的 SRAM 中，然后分别计算这些块的注意力输出，最后，将每个块的输出按正确的**归一化因子缩放**之后相加后可得到精确的注意力输出。把在 HBM 上的访存通过 Tiling 技术 转移到 SRAM 上，从而大大减少了 HBM 访问次数（内存读/写的次数）
+Online Softmax 实现在一个 for 循环中计算 $m_i$ 和 $d_i$，FlashAttention-v1 基于它的思想更进一步，实现在一个 for 循环中计算 $m_i$、$d_i$ 和注意力输出 $O_i$，也就是说，在一个 kernel 中实现 attention 的所有操作。再通过分块 Tiling 技术，将输入的 Q、K、V 矩阵拆分为多个块，将其从较慢的 HBM 加载到更快的 SRAM 中，从而大大减少了 HBM 访问次数（内存读/写的次数），然后分别计算这些块的注意力输出，最后，将每个块的输出按正确的**归一化因子缩放**之后相加后可得到精确的注意力输出。
 
-注意力输出 $O_i$ 的更新公式在算法 1 第 12 行，公式的推导证明在附录 C 中。
+注意力输出 $O_i$ 的迭代更新公式在算法 1 第 12 行，公式的推导证明在附录 C 中。
 
 $$O_i \leftarrow \text{diag}(\ell_i^{\text{new}})^{-1} (\text{diag}(\ell_i) e^{m_{i} - m_i^{\text{new}}}O_i + e^{\tilde{m}_{ij} - m_i^{\text{new}}} \tilde{P}_{ij} V_j)$$
 
-这里原论文给出的推导不是很容易看懂，我参考[文章](https://fancyerii.github.io/2023/10/23/flashattention/)给出了推导证明，其证明了 $O_i$ 的计算也是可以同时满足交换律和结合律，任意分块分别计算 $m$、$\ell$ 和 $O_i$之后，将所有子块结果重新聚合在数学上完全等价，从而实现在一个 `for` 循环中计算 $m$、$\ell$ 和 $O_i$。
+这里原论文给出的推导不是很容易看懂，我参考[文章](https://fancyerii.github.io/2023/10/23/flashattention/)给出了推导证明，其证明了 $O_i$ 的计算也是可以同时满足交换律和结合律，任意分块分别计算 $M$、$D$ 和 $O$ 之后，将所有子块结果重新聚合在数学上完全等价，从而实现在一个 $i = (0，N)$ 的循环中计算 $M_i$、$D_i$ 和 $O_i$。
 
-将矩阵版的 online-softmax 套进标准 Attention，这里的 Softmax 是对 $QK^T \in [N, N]$ 结果中的每一行做一维的 softmax；用大写 $M、D$ 表示最大、归一化项，它们的长度都为 $N$；$O\in [N,d]$ 表示注意力输出。计算公式如下：
+
+回到一开始的标准 attention，将 online-softmax 算法套进去，这里的 Softmax 是对 $QK^T \in [N, N]$ 结果中的每一行做一维的 softmax；用大写 $M、D$ 表示最大、归一化项，它们的长度都为 $N$；$O\in [N,d]$ 表示注意力输出。计算公式如下：
 
 $$\begin{aligned}
 S_{r, i} &= \sum^{d}_{j=0}Q_{r,j}K_{j,i}\\
@@ -341,7 +339,7 @@ def flashattn_0(Q, K, V):
     return O
 ```
 
-可以看到将 online softmax 应用到标准 attention 后，新的注意层只需在两个 for 循环完成 O[r][c] 的计算，那么还能不能继续优化，在一个 for 循环内完成注意力 O[r][c] 的计算呢？就像 online-softmax 那样，实际是可以的。
+将 online softmax 应用到标准 attention 后，Softmax 的 HBM 访存减少了，但还能不能继续优化，在一个 for 循环内完成注意力 O[r][c] 的计算呢？就像 online-softmax 那样，实际是可以的。
 
 $O_{r,c}$ 的计算是一个累加过程，拆开来看：
 
@@ -371,7 +369,7 @@ $$
 
 最终，我们想要的注意力输出结果为:
 
-$$O_{r,c} = \sum_{i=0}^N O_{r,c,i}$$
+$$O_{r,c} = O_{r,c,N}'$$
 
 【**定理 1**】 算法 1 注意力输出矩阵 $O = softmax(QK^T)V$ 要求 $O(N^2d)$ 的 FLOPs，并且除了输入和输出内存之外，需要额外的 $O(N)$ 内存【证明见附录 B】。
 
@@ -469,70 +467,75 @@ O_{r,c,xy}' &= O_{r,c,x}' * \frac{e^{M_{r, x}-M_{r, xy}}D_{r, x}'}{D_{r, xy}'} +
 因此，FlashAttention-1 的分块计算 python 代码如下。
 
 ```python
-def flashattn_1_block(q, k, v):
-    assert L % BLK == 0
-    # [L, Dim] * [Dim, L] -> [L, L]
-    x = np.zeros([L, L], "float32")
-    for r in range(0, L):
-        for i in range(0, L):
-            for j in range(0, Dim):
-                x[r, i] += q[r, j] * k[i, j]
-
-    # [L, L] -> [L, L] * [L, Dim] -> [L, Dim]
-    o = np.zeros([L, Dim], "float32")
-    for r in range(0, L):
-        m = np.zeros([L // BLK], "float32")
-        d = np.zeros([L // BLK], "float32")
-        mm = np.zeros([L], "float32")
-        dd = np.zeros([L], "float32")
-        for b in range(0, L // BLK):
-            # Calculate block
-            for i in range(0, BLK):
-                mm[b * BLK + i], dd[b * BLK + i] = online_softmax_update(
-                    mm[b * BLK + i - 1] if i > 0 else MIN_M,
-                    dd[b * BLK + i - 1] if i > 0 else 0,
-                    x[r, b * BLK + i],
+def block_flashattn(Q, K, V, block_size=32):
+    N, Dim = Q.shape
+    
+    # 1, Load Q K and write S. and Compute S[r][i] by matrix multiply 
+    S = np.zeros([N, N], "float32")
+    O = np.zeros([N, Dim], "float32")
+        
+    for r in range(0, N):
+       for i in range(0, N):
+           # QK^T
+           for j in range(0, Dim):
+               S[r][i] += Q[r][j] * K[i][j]
+    
+    for r in range(0, N):  
+        # Softmax
+        mm = np.zeros([N],  "float32")
+        dd = np.zeros([N],  "float32")
+        m = np.zeros([N // block_size],  "float32")
+        d = np.zeros([N // block_size],  "float32")
+        
+        for b in range(0, N // block_size):
+            # Calculate m,d of single block
+            for i in range(0, block_size):
+                mm[b*block_size + i], dd[b*block_size + i] = online_softmax_update(
+                    mm[b*block_size + i-1] if i > 0 else MIN_M,
+                    dd[b*block_size + i-1] if j > 0 else 0,
+                    S[r, b*block_size + i], 
                     1,
                 )
-
-            # Merge to total
+            
+            # Merge all block's result to total
             m[b], d[b] = online_softmax_update(
-                m[b - 1] if b > 0 else MIN_M,
-                d[b - 1] if i > 0 else 0,
-                mm[(b + 1) * BLK - 1],
-                dd[(b + 1) * BLK - 1],
-            )
-
+                m[b-1] if b > 0 else MIN_M,
+                d[b-1] if b > 0 else 0,
+                mm[(b + 1) * block_size - 1], # 当前块的 mm 和  dd
+                dd[(b + 1) * block_size - 1])
+        
+        # PV: [N, N] * [N, Dim] -> [N, dim]
         for c in range(0, Dim):
-            s = 0
-            for b in range(0, L // BLK):
-                # Calculate block
-                ss = 0
-                for i in range(0, BLK):
-                    ss = flashattn_update(
-                        mm[b * BLK + i],
-                        dd[b * BLK + i],
-                        mm[b * BLK + i - 1] if i > 0 else MIN_M,
-                        dd[b * BLK + i - 1] if i > 0 else 0,
-                        ss,
-                        x[r, b * BLK + i],
-                        v[b * BLK + i, c],
-                        1,
+            o = 0
+            for b in range(0, N //block_size):
+                # Calculate single block
+                oo = 0
+                for i in range(0, block_size):
+                    oo = flashattn_update(
+                        mm[b * block_size + i], # 当前迭代位置的 m
+                        dd[b * block_size + i], # 当前迭代位置的 d
+                        mm[b * block_size + i-1] if i > 0 else MIN_M,
+                        dd[b * block_size + i-1] if i > 0 else 0,
+                        oo,
+                        S[r, b * block_size + i], # 当前迭代位置的 s[r,i]
+                        V[b * block_size + i, c],
+                        1
                     )
-
-                # Merge to total
-                s = flashattn_update(
+                
+                # Merge all blocks to total
+                o = flashattn_update(
                     m[b],
                     d[b],
                     m[b - 1] if b > 0 else MIN_M,
                     d[b - 1] if b > 0 else 0,
-                    s,
-                    mm[(b + 1) * BLK - 1],
-                    dd[(b + 1) * BLK - 1],
-                    ss,
+                    o,
+                    mm[(b + 1) * block_size - 1],
+                    dd[(b + 1) * block_size - 1],
+                    oo,
                 )
-            o[r, c] = s
-    return o
+            O[r][c] = o
+            
+    return O
 ```
 ### 2.5 FlashAttention
 
@@ -579,8 +582,6 @@ $1: 设置块大小\;B_c = \left\lceil \frac{M}{4d} \right\rceil ,  B_r = \min \
 
 ![flash attention 算法步骤](../../images/flash_attention/flash_attention_algorithm1.png)
 
-
-
 上面的是纯 python 代码，下面我们继续优化，利用 triton 框架写出极度优化的  FlashAttention-1 内核代码。
 
 ```python
@@ -589,12 +590,122 @@ $1: 设置块大小\;B_c = \left\lceil \frac{M}{4d} \right\rceil ,  B_r = \min \
 
 ## 3. FlashAttention-2
 
+FlashAttention-2 主要是在 cuda 工程上进行极致优化，算法上的改动很小，$O_{r,c,i}$ 的迭代计算过程中需要反复除以 $D_{r,i}'$，总共需要除以 $N^2d$ 次，这大大增加了计算量，可以考虑简化下述递推公式。
+
+$$O'_{r,c, i} =O_{r,c,i-1}'*\frac{e^{M_{r, i-1} - M_{r, i}}D_{r,i-1}'}{D_{r,i}'} + \frac{e^{S_{r, i} - M_{r, i}}}{D_{r, i}'}V[i, c]$$
+
+先将原递推公式简写成：
+$$O[i] = O[i-1] * E * D[i-1]/D[i] + E*V/D[i]$$
+
+将等式两边同时乘以 $D[i]$ 得：
+
+$$O[i]*D[i] = O[i-1] * E * D[i-1] + E*V$$
+
+再记 $O[i]*D[i] == OD[i]$，则:
+
+$$\begin{align}
+OD[i] &= OD[i-1] * E + E*V \nonumber \\
+O[i] &= OD[i] / D[i] \nonumber
+\end{align}$$
+
+这样公式就大大简化了，减少了 FlashAttention 的计算量。对应的 python 代码：
+
+```python
+#                      m, d, m0, d0, o0, m1, d1, o1):
+def flashattn_2_update(m,    m0,     od0, m1, d1, od1):
+    #                        |       |   |   |   |
+    #                        |       |   x   v   1
+    # Init value:           MIN_M    0
+    od = od0 * np.exp(m0 - m) + od1 * np.exp(m1 - m) * d1
+    return od
+
+def block_flashattn2(Q, K, V, block_size=32):
+    N, Dim = Q.shape
+    
+    # 1, Load Q K and write S. and Compute S[r][i] by matrix multiply 
+    S = np.zeros([N, N], "float32")
+    O = np.zeros([N, Dim], "float32")
+        
+    for r in range(0, N):
+       for i in range(0, N):
+           # QK^T
+           for j in range(0, Dim):
+               S[r][i] += Q[r][j] * K[i][j]
+    
+    for r in range(0, N):  
+        # Softmax
+        mm = np.zeros([N],  "float32")
+        dd = np.zeros([N],  "float32")
+        m = np.zeros([N // block_size],  "float32")
+        d = np.zeros([N // block_size],  "float32")
+        
+        for b in range(0, N // block_size):
+            # Calculate m,d of single block
+            for i in range(0, block_size):
+                mm[b*block_size + i], dd[b*block_size + i] = online_softmax_update(
+                    mm[b*block_size + i-1] if i > 0 else MIN_M,
+                    dd[b*block_size + i-1] if j > 0 else 0,
+                    S[r, b*block_size + i], 
+                    1,
+                )
+            
+            # Merge all block's result to total
+            m[b], d[b] = online_softmax_update(
+                m[b-1] if b > 0 else MIN_M,
+                d[b-1] if b > 0 else 0,
+                mm[(b + 1) * block_size - 1], # 当前块的 mm 和  dd
+                dd[(b + 1) * block_size - 1])
+        
+        # PV: [N, N] * [N, Dim] -> [N, dim]
+        for c in range(0, Dim):
+            o = 0
+            for b in range(0, N //block_size):
+                # Calculate single block
+                od = 0
+                for i in range(0, block_size):
+                    od = flashattn_2_update(
+                        mm[b * block_size + i], # 当前迭代位置的 m
+                        mm[b * block_size + i-1] if i > 0 else MIN_M,
+                        od,
+                        S[r, b * block_size + i], # 当前迭代位置的 s[r,i]
+                        V[b * block_size + i, c],
+                        1
+                    )
+                
+                # Merge all blocks to total
+                o = flashattn_2_update(
+                    m[b],                              # 当前迭代 block 的 m
+                    m[b - 1] if b > 0 else MIN_M,
+                    o, # 上一个 block 的结果
+                    mm[(b + 1) * block_size - 1],      # m1
+                    dd[(b + 1) * block_size - 1],      # d1
+                    od / dd[(b + 1) * block_size - 1], # od1 
+                )
+            O[r][c] = o / d[b - 1] # 上一轮 block 的 d
+            
+    return O
+```
 
 ## 4. FlashAttention-3
 
+FlashAttention-2 的缺陷是对训练提速较多，对推理加速不大：主要是因为推理阶段查询的长度通常是 1，这意味着如果批量大小小于 GPU 上流处理器（SM）的数量（A100 GPU 上有 108 个 SM），那么 atttention 操作只能使用一小部分 GPU！尤其是在使用较长的上下文时，由于需要更小的批量大小以适应 GPU 内存，批量大小为 1 的情况下，FlashAttention 的 GPU 利用率不到 1%。
 
-## 5. FlashDecoding & FlashDecoding++
+为了提高 attention 在推理阶段的计算速度，提出了 `FlashAttention-3`。
 
+Flash-Decoding 在前作对 `batch size` 和 `query length` 并行的基础上增加了一个新的并行化维度：`keys/values` 的序列长度，代价是最后一个小的归约步骤。
+
+![flashattention_kv](../../images/flashattention-3/parallelization_kv.gif)
+
+Flash-Decoding 的工作流程分为三个步骤：
+1. 首先，将键/值拆分成更小的块。
+2. 然后，使用 FlashAttention 并行计算**查询与每个拆分块的注意力值**，同时为每行和每个块记录一个额外的标量：注意力值的 log-sum-exp。
+3. 最后，通过对所有拆分块进行归约，结合 log-sum-exp 调整各个块的贡献，计算出最终的结果。
+
+上述步骤之所以可行，是因为**注意力/softmax 可以迭代计算**（前作的贡献）。在 Flash-Decoding 中，它在两个层次上使用：在拆分内（类似于 FlashAttention）和跨拆分来执行最终归约。
+
+实际上，步骤 (1) 不涉及任何 GPU 操作，因为键/值块是完整键/值张量的视图。接下来，我们有两个独立的内核分别执行步骤 (2) 和 (3)。
+
+总结: Flash-Decoding 主要是针对 llm 推理的加速，在 batch_size 较小和序列长度较大时有着明显的加速效果，且性能对序列长度的增加并不敏感。
 
 ## 参考资料
 
