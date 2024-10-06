@@ -2,6 +2,8 @@ import numpy as np
 import torch.nn as nn
 import torch, math
 
+MIN_M = -10000
+
 def normal_softmax(x):
     N, N = x.shape
     out = np.array(x)
@@ -105,8 +107,7 @@ def flashattn_1(Q, K, V):
             # QK^T
             for j in range(0, Dim):
                 S[r][i] += Q[r][j] * K[i][j] # K^T 的列就是 K 的行
-            
-            # softmax: [N,N] -> [N,N]
+            # Softmax
             if i == 0:
                 mm = S[r][0]
                 dd = 0
@@ -133,6 +134,151 @@ def flashattn_1(Q, K, V):
       
     return O
 
+def block_flashattn1(Q, K, V, block_size=32):
+    N, Dim = Q.shape
+    
+    # 1, Load Q K and write S. and Compute S[r][i] by matrix multiply 
+    S = np.zeros([N, N], "float32")
+    O = np.zeros([N, Dim], "float32")
+        
+    for r in range(0, N):
+       for i in range(0, N):
+           # QK^T
+           for j in range(0, Dim):
+               S[r][i] += Q[r][j] * K[i][j]
+    
+    for r in range(0, N):  
+        # Softmax
+        mm = np.zeros([N],  "float32")
+        dd = np.zeros([N],  "float32")
+        m = np.zeros([N // block_size],  "float32")
+        d = np.zeros([N // block_size],  "float32")
+        
+        for b in range(0, N // block_size):
+            # Calculate m,d of single block
+            for i in range(0, block_size):
+                mm[b*block_size + i], dd[b*block_size + i] = online_softmax_update(
+                    mm[b*block_size + i-1] if i > 0 else MIN_M,
+                    dd[b*block_size + i-1] if j > 0 else 0,
+                    S[r, b*block_size + i], 
+                    1,
+                )
+            
+            # Merge all block's result to total
+            m[b], d[b] = online_softmax_update(
+                m[b-1] if b > 0 else MIN_M,
+                d[b-1] if b > 0 else 0,
+                mm[(b + 1) * block_size - 1], # 当前块的 mm 和  dd
+                dd[(b + 1) * block_size - 1])
+        
+        # PV: [N, N] * [N, Dim] -> [N, dim]
+        for c in range(0, Dim):
+            o = 0
+            for b in range(0, N //block_size):
+                # Calculate single block
+                oo = 0
+                for i in range(0, block_size):
+                    oo = flashattn_update(
+                        mm[b * block_size + i], # 当前迭代位置的 m
+                        dd[b * block_size + i], # 当前迭代位置的 d
+                        mm[b * block_size + i-1] if i > 0 else MIN_M,
+                        dd[b * block_size + i-1] if i > 0 else 0,
+                        oo,
+                        S[r, b * block_size + i], # 当前迭代位置的 s[r,i]
+                        V[b * block_size + i, c],
+                        1
+                    )
+                
+                # Merge all blocks to total
+                o = flashattn_update(
+                    m[b],
+                    d[b],
+                    m[b - 1] if b > 0 else MIN_M,
+                    d[b - 1] if b > 0 else 0,
+                    o,
+                    mm[(b + 1) * block_size - 1],
+                    dd[(b + 1) * block_size - 1],
+                    oo,
+                )
+            O[r][c] = o
+            
+    return O
+
+#                      m, d, m0, d0, o0, m1, d1, o1):
+def flashattn_2_update(m,    m0,     od0, m1, d1, od1):
+    #                        |       |   |   |   |
+    #                        |       |   x   v   1
+    # Init value:           MIN_M    0
+    od = od0 * np.exp(m0 - m) + od1 * np.exp(m1 - m) * d1
+    return od
+
+def block_flashattn2(Q, K, V, block_size=32):
+    N, Dim = Q.shape
+    
+    # 1, Load Q K and write S. and Compute S[r][i] by matrix multiply 
+    S = np.zeros([N, N], "float32")
+    O = np.zeros([N, Dim], "float32")
+        
+    for r in range(0, N):
+       for i in range(0, N):
+           # QK^T
+           for j in range(0, Dim):
+               S[r][i] += Q[r][j] * K[i][j]
+    
+    for r in range(0, N):  
+        # Softmax
+        mm = np.zeros([N],  "float32")
+        dd = np.zeros([N],  "float32")
+        m = np.zeros([N // block_size],  "float32")
+        d = np.zeros([N // block_size],  "float32")
+        
+        for b in range(0, N // block_size):
+            # Calculate m,d of single block
+            for i in range(0, block_size):
+                mm[b*block_size + i], dd[b*block_size + i] = online_softmax_update(
+                    mm[b*block_size + i-1] if i > 0 else MIN_M,
+                    dd[b*block_size + i-1] if j > 0 else 0,
+                    S[r, b*block_size + i], 
+                    1,
+                )
+            
+            # Merge all block's result to total
+            m[b], d[b] = online_softmax_update(
+                m[b-1] if b > 0 else MIN_M,
+                d[b-1] if b > 0 else 0,
+                mm[(b + 1) * block_size - 1], # 当前块的 mm 和  dd
+                dd[(b + 1) * block_size - 1])
+        
+        # PV: [N, N] * [N, Dim] -> [N, dim]
+        for c in range(0, Dim):
+            o = 0
+            for b in range(0, N //block_size):
+                # Calculate single block
+                od = 0
+                for i in range(0, block_size):
+                    od = flashattn_2_update(
+                        mm[b * block_size + i], # 当前迭代位置的 m
+                        mm[b * block_size + i-1] if i > 0 else MIN_M,
+                        od,
+                        S[r, b * block_size + i], # 当前迭代位置的 s[r,i]
+                        V[b * block_size + i, c],
+                        1
+                    )
+                
+                # Merge all blocks to total
+                o = flashattn_2_update(
+                    m[b],                              # 当前迭代 block 的 m
+                    m[b - 1] if b > 0 else MIN_M,
+                    o, # 上一个 block 的结果
+                    mm[(b + 1) * block_size - 1],      # m1
+                    dd[(b + 1) * block_size - 1],      # d1
+                    od / dd[(b + 1) * block_size - 1], # od1 
+                )
+            O[r][c] = o / d[N //block_size - 1]
+            
+    return O
+
+
 class SelfAttention(nn.Module):
     def __init__(self, ):
         super(SelfAttention, self).__init__()
@@ -154,11 +300,9 @@ class SelfAttention(nn.Module):
         return output
     
 if __name__ == "__main__":
-       
     N = 256
     Dim = 64
     BLK = 4
-    MIN_M = -10000
 
     Q = np.random.uniform(-1, 1, [N, Dim]).astype("float32")
     K = np.random.uniform(-1, 1, [N, Dim]).astype("float32")
@@ -168,10 +312,14 @@ if __name__ == "__main__":
     normal_selfattn_res = normal_selfattn(Q, K, V)
     flashattn_0_res = flashattn_0(Q, K, V)
     flashattn_1_res = flashattn_1(Q, K, V)
-
+    block_flashattn_res = block_flashattn1(Q, K, V)
+    block_flashattn2_res = block_flashattn2(Q, K, V)
+    
     np.testing.assert_allclose(np_attn_res, normal_selfattn_res, 1e-6, 1e-6)
     np.testing.assert_allclose(np_attn_res, flashattn_0_res, 1e-6, 1e-6)
     np.testing.assert_allclose(np_attn_res, flashattn_1_res, 1e-6, 1e-6)
+    np.testing.assert_allclose(np_attn_res, block_flashattn_res, 1e-6, 1e-6)
+    np.testing.assert_allclose(np_attn_res, block_flashattn2_res, 1e-6, 1e-6)
     
     attention = SelfAttention() # 创建 ScaleDotProductAttention 层
     pytorch_attention_output = attention(torch.tensor(Q), torch.tensor(K), torch.tensor(V)) # 将 Q、K、V 三个张量传递给 ScaleDotProductAttention 层进行计算
@@ -183,6 +331,16 @@ if __name__ == "__main__":
     # print(f"attn_weights shape: {attn_weights.shape}") # torch.Size([5, 10, 10])
 
     if torch.allclose(pytorch_attention_output, torch.tensor(flashattn_1_res, dtype=torch.float), atol=1e-2):
-        print("flashattention0 与 PyTorch 标准 attention 结果一致!")
+        print("flash attention1 与 PyTorch 标准 attention 结果一致!")
     else:
-        print("flashattention1 与 PyTorch 标准 attention结果不一致!")
+        print("flash attention1 与 PyTorch 标准 attention结果不一致!")
+    
+    if torch.allclose(pytorch_attention_output, torch.tensor(block_flashattn_res, dtype=torch.float), atol=1e-2):
+        print("block flash attention1 与 PyTorch 标准 attention 结果一致!")
+    else:
+        print("block flash attention1 与 PyTorch 标准 attention结果不一致!")
+
+    if torch.allclose(pytorch_attention_output, torch.tensor(block_flashattn2_res, dtype=torch.float), atol=1e-2):
+        print("block flash attention2 与 PyTorch 标准 attention 结果一致!")
+    else:
+        print("block flash attention2 与 PyTorch 标准 attention结果不一致!")
