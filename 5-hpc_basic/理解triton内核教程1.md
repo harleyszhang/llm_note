@@ -1,5 +1,7 @@
 - [1，基础知识](#1基础知识)
   - [张量维度判断](#张量维度判断)
+  - [矩阵元素指针算术](#矩阵元素指针算术)
+  - [子块地址计算方法](#子块地址计算方法)
   - [Triton 基础函数](#triton-基础函数)
   - [网格、块和内核](#网格块和内核)
   - [cuda 执行模型](#cuda-执行模型)
@@ -50,6 +52,65 @@ tensor([[[ 0.6238, -0.9315,  0.2173,  0.1954, -1.1565], ... ]])
 
 因此，这个张量是 3 维张量，形状为 `[3, 4, 5]`。
 
+#### 矩阵元素指针算术
+
+为了访问矩阵中的特定元素，使用指针算术计算其线性地址。对于矩阵 $A$  形状为 $(M, K)$，元素 $A[m, k]$ 的线性地址计算如下：
+
+$$\text{Address}(A[m, k]) = A_{\text{ptr}} + m \times K + k$$
+
+其中：
+- $A_{\text{ptr}}$ 是矩阵 $A$ 的起始指针（即  A[0,0]  的地址）。
+- $m \times K$  是跳过前 $m$ 行的元素数量。
+- $k$ 是当前行中跳过的元素数量。
+
+#### 子块地址计算方法
+
+对于矩阵 $A$ 形状为 $(M, K)$，元素顺序为：
+\[
+A = \begin{bmatrix}
+A[0,0] & A[0,1] & \dots & A[0,K-1] \\
+A[1,0] & A[1,1] & \dots & A[1,K-1] \\
+\vdots & \vdots & \ddots & \vdots \\
+A[M-1,0] & A[M-1,1] & \dots & A[M-1,K-1]
+\end{bmatrix}
+\]
+内存中的存储顺序：
+\[
+A[0,0], A[0,1], \dots, A[0,K-1], A[1,0], A[1,1], \dots, A[1,K-1], \dots, A[M-1,K-1]
+\]
+
+在分块矩阵乘法中，矩阵被划分为多个子块。每个子块由其在行和列方向上的起始索引定义。子块加载和存储的伪代码：
+```bash
+a_block = A[m: m + BLOCK_SIZE_M, k: k + BLOCK_SIZE_K]
+b_block = B[k: k + BLOCK_SIZE_K, n: n + BLOCK_SIZE_N]
+...
+C[m : m+BLOCK_SIZE_M, n : n+BLOCK_SIZE_N] = acc
+```
+
+a_block 地址范围：从 m 到 m + BLOCK_SIZE_M，列索引范围 k: k + BLOCK_SIZE_K。对应的子块矩阵元素地址是二维的，假设矩阵存储是行连续的，则地址范围为 (A_ptr + m * K + k, A_ptr + (m + BLOCK_SIZE_M) * K + k + BLOCK_SIZE_K) -1。
+
+如果是 triton 中实现上述地址的计算，对应代码为:
+```python
+# 1，行块和列块 id，即第几个块
+pid_m = tl.program_id(axis=0) # 这里的 pid_m 就是上面的 m 变量
+pid_n = tl.program_id(axis=0)
+# 2，行和列索引范围
+offsets_m = pid_m + tl.arange(0, BLOCK_SIZE_M)[:, None]
+offsets_n = pid_n + tl.arange(0, BLOCK_SIZE_N)[None,:]
+
+acc = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
+for k in range(0, K, BLOCK_SIZE_K):
+    offsets_mk = k + tl.arange(0, BLOCK_SIZE_K)[None,:]
+    offsets_nk = k + tl.arange(0, BLOCK_SIZE_K)[:, None]
+
+    a_idx = A_ptr + offsets_m * K + offsets_k
+    b_idx = B_ptr + offsets_nk * N + offsets_n
+    a_block = tl.load(a_idx, mask=(offs_m < M) & (x_k < K), other=0.0)
+    b_block = tl.load(b_idx, mask=(w_k < K) & (offs_n < N), other=0.0)
+    acc = tl.dot(a, b, acc=acc)
+
+c_idx = C_ptr + offsets_m * N + offsets_n
+```
 #### Triton 基础函数
 
 常用的 Triton 基础函数及其作用如下：
