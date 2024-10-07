@@ -79,37 +79,48 @@ A[M-1,0] & A[M-1,1] & \dots & A[M-1,K-1]
 A[0,0], A[0,1], \dots, A[0,K-1], A[1,0], A[1,1], \dots, A[1,K-1], \dots, A[M-1,K-1]
 \]
 
-在分块矩阵乘法中，矩阵被划分为多个子块。每个子块由其在行和列方向上的起始索引定义。子块加载和存储的伪代码：
+在分块矩阵乘法中，矩阵被划分为多个子块。每个子块由其在行和列方向上的起始索引定义。矩阵子块加载、存储和计算的伪代码：
 ```bash
-a_block = A[m: m + BLOCK_SIZE_M, k: k + BLOCK_SIZE_K]
-b_block = B[k: k + BLOCK_SIZE_K, n: n + BLOCK_SIZE_N]
-...
-C[m : m+BLOCK_SIZE_M, n : n+BLOCK_SIZE_N] = acc
+# Do in parallel
+for m in range(0, M, BLOCK_SIZE_M):
+  # Do in parallel
+  for n in range(0, N, BLOCK_SIZE_N):
+    acc = zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=float32)
+    for k in range(0, K, BLOCK_SIZE_K):
+      a = A[m : m+BLOCK_SIZE_M, k : k+BLOCK_SIZE_K]
+      b = B[k : k+BLOCK_SIZE_K, n : n+BLOCK_SIZE_N]
+      acc += dot(a, b)
+    C[m : m+BLOCK_SIZE_M, n : n+BLOCK_SIZE_N] = acc
 ```
 
-a_block 地址范围：从 m 到 m + BLOCK_SIZE_M，列索引范围 k: k + BLOCK_SIZE_K。对应的子块矩阵元素地址是二维的，假设矩阵存储是行连续的，则地址范围为 (A_ptr + m * K + k, A_ptr + (m + BLOCK_SIZE_M) * K + k + BLOCK_SIZE_K) -1。
+- a_block 地址范围：从 m 到 m + BLOCK_SIZE_M，列索引范围 k: k + BLOCK_SIZE_K。对应的子块矩阵元素地址是二维的，假设矩阵存储是行连续的，则地址范围为 (A_ptr + m * K + k, A_ptr + (m + BLOCK_SIZE_M) * K + k + BLOCK_SIZE_K) -1。
+- b_block 地址范围：B_ptr + k * N + n, B_ptr + (k + BLOCK_SIZE_K) * N + (n + BLOCK_SIZE_N) - 1。
 
 如果是 triton 中实现上述地址的计算，对应代码为:
+
 ```python
 # 1，行块和列块 id，即第几个块
 pid_m = tl.program_id(axis=0) # 这里的 pid_m 就是上面的 m 变量
 pid_n = tl.program_id(axis=0)
 # 2，行和列索引范围
+# pid_m * BLOCK_SIZE_M 是块在行方向的起始行索引，加上 tl.arange(0, BLOCK_SIZE_M)[:, None] 生成的行偏移量。
 offsets_m = pid_m + tl.arange(0, BLOCK_SIZE_M)[:, None]
+# pid_n * BLOCK_SIZE_N 是块在列方向的起始列索引，加上 tl.arange(0, BLOCK_SIZE_N)[None, :] 生成的列偏移量。
 offsets_n = pid_n + tl.arange(0, BLOCK_SIZE_N)[None,:]
 
 acc = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
 for k in range(0, K, BLOCK_SIZE_K):
-    offsets_mk = k + tl.arange(0, BLOCK_SIZE_K)[None,:]
-    offsets_nk = k + tl.arange(0, BLOCK_SIZE_K)[:, None]
+    offsets_ak = k + tl.arange(0, BLOCK_SIZE_K)[None,:]
+    offsets_bk = k + tl.arange(0, BLOCK_SIZE_K)[:, None]
 
-    a_idx = A_ptr + offsets_m * K + offsets_k
-    b_idx = B_ptr + offsets_nk * N + offsets_n
-    a_block = tl.load(a_idx, mask=(offs_m < M) & (x_k < K), other=0.0)
-    b_block = tl.load(b_idx, mask=(w_k < K) & (offs_n < N), other=0.0)
+    a_idx = A_ptr + offsets_m * K + offsets_ak # offsets_m * K：跳过前 offsets_m 行，每行有 K 个元素。
+    b_idx = B_ptr + offsets_bk * N + offsets_n
+    a_block = tl.load(a_idx, mask=(offsets_m < M) & (offsets_ak < K), other=0.0)
+    b_block = tl.load(b_idx, mask=(offsets_bk < K) & (offsets_n < N), other=0.0)
     acc = tl.dot(a, b, acc=acc)
 
-c_idx = C_ptr + offsets_m * N + offsets_n
+# offs_m * N：跳过前 offs_m 行，每行有 N 个元素。offsets_n：当前块负责的列偏移量。
+c_idx = C_ptr + offsets_m * N + offsets_n 
 ```
 #### Triton 基础函数
 
