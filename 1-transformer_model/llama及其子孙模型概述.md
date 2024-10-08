@@ -1,19 +1,20 @@
-- [一，介绍](#一介绍)
-- [二，模型结构](#二模型结构)
-  - [2.1，RMSNorm](#21rmsnorm)
-  - [2.2，SwiGLU](#22swiglu)
-  - [2.3，RoPE旋转位置编码](#23rope旋转位置编码)
-- [三，代码分析](#三代码分析)
-  - [3.2，transformers 模型推理](#32transformers-模型推理)
-  - [3.3，高性能 PyTorch 库-FairScale](#33高性能-pytorch-库-fairscale)
-- [四，基于开源 LLaMA 微调的模型](#四基于开源-llama-微调的模型)
-- [四，个人感想](#四个人感想)
+- [二 模型结构](#二-模型结构)
+  - [1.1 模型概述](#11-模型概述)
+  - [1.2 模型整体结构](#12-模型整体结构)
+  - [1.3 LayerNorm 的改进 RMSNorm](#13-layernorm-的改进-rmsnorm)
+  - [1.4 SwiGLU【待修改】](#14-swiglu待修改)
+  - [1.5 RoPE旋转位置编码](#15-rope旋转位置编码)
+- [二 代码分析](#二-代码分析)
+  - [3.2 transformers 模型推理](#32-transformers-模型推理)
+  - [3.3 高性能 PyTorch 库-FairScale](#33-高性能-pytorch-库-fairscale)
+- [三 基于开源 LLaMA 微调的模型](#三-基于开源-llama-微调的模型)
 - [参考资料](#参考资料)
 
 > 本文主要从模型推理角度去总结论文，因此没有涉及到数据集处理、模型训练及试验报告的细节，只介绍了 LLaMA（羊驼）模型的主要思想以及模型结构的细节，最后介绍一些基于 LLaMA finetune 的模型
 
-## 一，介绍
+## 二 模型结构
 
+### 1.1 模型概述
 `LLaMA`（Large Language Model Meta AI）是 由 Meta AI 发布的一个开放且高效的大型基础语言模型，共有 `7B`、`13B`、`33B`、`65B`（650 亿）四种版本。其数据集来源都是公开数据集，无任何定制数据集，保证了其工作与开源兼容和可复现，整个训练数据集在 token 化之后大约包含 1.4T 的 token。
 
 关于模型性能，LLaMA 的性能非常优异：具有 130 亿参数的 LLaMA 模型「在大多数基准上」可以**胜过** GPT-3（ 参数量达 1750 亿），而且可以在单块 V100 GPU 上运行；而最大的 650 亿参数的 LLaMA 模型可以媲美谷歌的 Chinchilla-70B 和 PaLM-540B。
@@ -26,7 +27,7 @@ Hoffmann 等人（2022）最近的工作表明了，在给定的计算预算下�
 
 LLaMA **优势**在于其**只使用公开可用的数据**，这可以保证论文的工作与开源兼容和可复现。之前的大模型要么使用了不公开的数据集去训练从而达到了 state-of-the-art，如 Chinchilla、PaLM 或 GPT-3；要么使用了公开数据集，但模型效果不是最佳无法和 PaLM-62B 或 Chinchilla 相竞争，如 OPT、GPT-NeoX、BLOOM 和 GLM。
 
-## 二，模型结构
+### 1.2 模型整体结构
 
 和 `GPT` 系列一样，LLaMA 模型也是 `Decoder-only` 架构，但结合前人的工作做了一些改进，比如：
 
@@ -41,31 +42,41 @@ LLaMA **优势**在于其**只使用公开可用的数据**，这可以保证论
 
 ![llama_parameters](../images/llama/llama_parameters.png)
 
-### 2.1，RMSNorm
+### 1.3 LayerNorm 的改进 RMSNorm
 
-LayerNorm 通过对输入和权重矩进行重新中心化和重新缩放（`re-centering 和re-scaling`，即减均值和除方差），来帮助稳定训练并加速模型收敛。
+**LayerNorm**：
 
-[RMSNorm](https://openreview.net/pdf?id=SygkZ3MTJE)（Root Mean Square Layer Normalization）论文假设 LayerNorm 中的重新中心化不再是必须的，并提出了一种新的归一化方法：均方根层归一化（RMSNorm）。RMSNorm 通过均方根（RMS）对每一层神经元的输入进行归一化，使模型具备重新缩放不变性和隐式学习率调整的能力。相比 LayerNorm，RMSNorm 计算更为简洁，因此效率更高。
+LayerNorm 通过对输入和权重矩进行重新中心化和重新缩放（`re-centering 和re-scaling`，即减均值和除方差，也称平移不变性和缩放不变性），来帮助稳定训练并加速模型收敛。
 
-对于输入向量 $x$ ，RMSNorm 的计算过程如下：
+LayerNorm（LN） 主要用于 NLP 领域，它对每个 token 的特征向量进行归一化计算。设某个 token 的特征向量为 \(x \in \mathbb{R}^d\)，LN 运算如下：
 
-1. **计算 RMS（均方根值）**：
+\[
+\text{LN}(x): \hat{x}_i =  \gamma \odot \frac{x_i - \hat{\mu}}{\hat{\sigma}} + \beta
+\]
 
-$$\text{RMS}(x) = \sqrt{\frac{1}{n} \sum_{i=1}^{n} x_i^2}$$
+其中 \(\odot\) 表示按位置乘，\(\gamma, \beta \in \mathbb{R}^d\) 是缩放参数（scale）和偏移参数（shift），代表着把第 \(i\) 个特征的 batch 分布的均值和方差移动到 \(\beta^i, \gamma^i\)。\(\gamma\) 和 \(\beta\) 是需要与其他模型参数一起学习的参数。 \(\hat{\mu}\) 和 \(\hat{\sigma}\) 表示特征向量所有元素的均值和方差，计算如下：
 
-这里，n 是输入向量的维度。
-	
-2. **归一化输入**：
+\[
+\hat{\mu} = \frac{1}{d} \sum_{x_i \in \textrm{x}} x_i
+\]
 
-$$\hat{x}_i = \frac{x_i}{\text{RMS}(x)}$$
+\[
+\hat{\sigma} = \sqrt{\frac{1}{d} \sum_{x_i \in \textrm{x}} (x_i - \hat{\mu})^2 + \epsilon}
+\]
 
-这一步将每个元素 x_i 按照 RMS 归一化。
+注意我们在方差估计值中添加一个小的常量 \(\epsilon\)，以确保我们永远不会尝试除以零。
 
-3. **缩放和偏移**：
+**RMSNorm**：
 
-$$y = \frac{x}{\sqrt{\text{RMS}[x]} + \epsilon} \times \gamma$$
+[RMSNorm](https://openreview.net/pdf?id=SygkZ3MTJE)（Root Mean Square Layer Normalization）论文假设 LayerNorm 中的重新中心化不再是必须的（平移不变性不重要），并提出了一种新的归一化方法：均方根层归一化（RMSNorm）。RMSNorm 通过均方根（RMS）对每一层神经元的输入进行归一化，使模型具备重新缩放不变性和隐式学习率调整的能力。相比 LayerNorm，RMSNorm 计算更为简洁，大约可以节省 7% 到 64% 的运算。
 
-其中，$\gamma$ 是可学习的缩放参数，transform 模型中形状为 $[h]$。
+LayerNorm 和 RMSNorm 都主要用于 NLP 领域，它对每个 `token` 的特征向量进行归一化计算。设某个 token 的特征向量为 $\textrm{x}\in \mathbb{R}$，RMSNorm 的计算如下：
+
+$$\text{RMSNorm}(x): \hat{x}_i = \gamma \odot \frac{x_i}{\text{RMS}(x)} \\
+\text{RMS(x)} = \sqrt{\frac{1}{d} \sum_{x_i \in \textrm{x}} x_i^2  + \epsilon}
+$$
+
+其中，$\gamma$ 是可学习的缩放参数，transform 模型中形状为 $[d]$。
 
 以下是 RMSNorm 在 PyTorch 中的简单实现，使用了 RMS（均方根）来对输入进行归一化处理。
 
@@ -114,7 +125,7 @@ else:
 > 输入和输出的形状:  torch.Size([2, 4, 8]) torch.Size([2, 4, 8])
 结果验证通过: 自己实的 RMSNorm 和 pytorch nn.RMSNorm 结果一致！
 
-### 2.2，SwiGLU
+### 1.4 SwiGLU【待修改】
 
 Feed Forward 层全称是 Position-wise Feed-Forward Networks（`FPN`），`FFN` 接收一个向量 x（序列中特定位置的隐藏表示），并将其通过两个可学习的**线性变换**（由矩阵 W1 和 W2 以及偏置向量 b1 和 b2 表示）进行处理，在两个线性变换之间应用修正线性（`ReLU`）激活函数。计算过程用数学公式可表达为：
 
@@ -192,11 +203,11 @@ out = layer(x)
 print(out.shape) # torch.Size([1, 128])
 ```
 
-### 2.3，RoPE旋转位置编码
+### 1.5 RoPE旋转位置编码
 
 `RoPE`（Rotary Position Embedding）旋转位置编码，是苏剑林老师提出的一种旋转位置编码方法，其思想是采用绝对位置编码的形式，实现相对位置编码。
 
-## 三，代码分析
+## 二 代码分析
 
 **LLaMA [官方代码](https://github.com/facebookresearch/llama) 只提供了模型结构和推理代码，没有提供模型训练代码**。另外看了官方提供的下载脚本，是没有直接提供下载链接，是需要自己申请！原版 `LLaMA` 模型需要去 [`LLaMA` 项目申请使用](https://github.com/facebookresearch/llama)或参考这个 [PR](https://github.com/facebookresearch/llama/pull/73/files)。因版权问题本项目无法提供下载链接。
 
@@ -208,7 +219,7 @@ LLaMA 模型结构也只使用 `Decoder` 结构。
 
 LLaMA 模型的线性计算层都是使用了 FairScale 库的 `ColumnParallelLinear` 层，它是一个并行的线性层，可以在多个 GPU 上**并行计算**，这个计算速度比 Linear 的 nn.Linear 层速度更快。
 
-### 3.2，transformers 模型推理
+### 3.2 transformers 模型推理
 
 `HuggingFace` 格式的 `LLaMA` 模型权重，可按照如下所示方式加载模型权重。
 
@@ -221,7 +232,7 @@ model = LlamaForCausalLM.from_pretrained("/output/path")
 
 加载 float16 精度的模型权重需要足够的 CPU RAM，对于 65B 参数模型，需要 130GB 的 RAM。
 
-### 3.3，高性能 PyTorch 库-FairScale
+### 3.3 高性能 PyTorch 库-FairScale
 
 1，`FairScale`: 用于在一台或多台机器/节点上进行高性能和大规模训练的 PyTorch库，由 Meta 发布。示例代码：
 
@@ -240,7 +251,7 @@ model = fairscale.nn.Pipe(model, balance=[2, 2], devices=[0, 1], chunks=8)
 
 在 2 个 GPU 上运行 4 层模型。前两层在 cuda:0 上运行，后两层在 cuda:1 上运行。
 
-## 四，基于开源 LLaMA 微调的模型
+## 三 基于开源 LLaMA 微调的模型
 > 以下这些项目都可以算是 Meta 发布的 LLaMA（驼马）模型的子子孙孙。
 
 **1，Alpaca**
@@ -281,7 +292,7 @@ model = fairscale.nn.Pipe(model, balance=[2, 2], devices=[0, 1], chunks=8)
 
 整体使用下来，其基本任务没问题，但是涌现能力还是有限的，且会有事实性/数学逻辑错误，另外，Close QA 问题也很一般。`GLM` 模型架构与 BERT、T5 等预训练模型模型架构不同，它采用了一种**自回归**的空白填充方法,。
 
-## 四，个人感想
+**个人感想**:
 
 一些 LLM 的论文看下来，发现讲模型结构的内容真的很少，大部分内容都在讲数据集构建方法、模型训练方法、实验报告等内容。
 
@@ -293,3 +304,4 @@ FlashLlamaAttention、LlamaMLP、LlamaRMSNorm、LlamaRMSNorm。
 2. [Hendrycks and Gimpel, 2016](https://arxiv.org/pdf/1606.08415.pdf) 
 3. [GLU Variants Improve Transformer](https://arxiv.org/pdf/2002.05202.pdf)
 4. [llama2介绍(模型结构+参数计算)](https://zhuanlan.zhihu.com/p/647862867)
+5. [详解三种常用标准化 Batch Norm & Layer Norm & RMSNorm](https://blog.csdn.net/wxc971231/article/details/139925707)
