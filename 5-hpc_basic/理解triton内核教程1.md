@@ -1,128 +1,15 @@
-- [1，基础知识](#1基础知识)
-  - [张量维度判断](#张量维度判断)
-  - [矩阵元素指针算术](#矩阵元素指针算术)
-  - [子块地址计算方法](#子块地址计算方法)
-  - [Triton 基础函数](#triton-基础函数)
-  - [网格、块和内核](#网格块和内核)
-  - [cuda 执行模型](#cuda-执行模型)
+- [1. Triton 基础函数](#1-triton-基础函数)
 - [2. 向量相加](#2-向量相加)
   - [2.1 `BLOCK_SIZE`、`gird` 和 `program_id` 意义](#21-block_sizegird-和-program_id-意义)
 - [3. 理解内核运行的机制](#3-理解内核运行的机制)
-- [3. 融合 Softmax](#3-融合-softmax)
-  - [简单 softmax 内核实现](#简单-softmax-内核实现)
+- [3. Softmax 算子](#3-softmax-算子)
+  - [原生 softmax 算子](#原生-softmax-算子)
+  - [简单 softmax 内核](#简单-softmax-内核)
   - [优化版 softmax 内核](#优化版-softmax-内核)
 - [参考资料](#参考资料)
 
-`Triton` 是一种用于并行编程的语言和编译器，它旨在提供一个基于 Python 的编程环境，帮助高效编写自定义的深度神经网络（DNN）计算核，并在现代 GPU 硬件上以最大吞吐量运行。
 
-Triton 的编程在语法和语义上与 `Numpy` 和 `PyTorch` 非常相似。然而，作为低级语言，开发者需要注意很多细节，特别是在内存加载和存储方面，这对于在低级设备上实现高速计算非常关键。
-
-### 1，基础知识
-
-#### 张量维度判断
-
-在一个 $M$ 行 $N$ 列的二维数组中，$M$ 是第 0 维，即行数；$N$ 是第 1 维，即列数。那么怎么肉眼判断更复杂的张量数据维度呢，举例：
-```python
-import torch
-
-# 示例张量
-tensor = torch.tensor([[[0.6238, -0.9315, 0.2173, 0.1954, -1.1565],
-                        [0.4559, 0.1531, 0.4178, 1.0225, 0.5923],
-                        [0.0499, 0.4024, -1.2547, -0.5042, -0.0231],
-                        [-1.1253, 0.3145, 0.8796, 0.4516, -0.0915]],
-
-                       [[1.5794, -0.6367, -0.2559, 0.1237, -0.1951],
-                        [0.1012, 0.0357, -0.5699, 1.0983, -0.2084],
-                        [-0.7019, 0.5872, 0.7736, 0.7423, -0.7894],
-                        [-0.3248, -0.5316, 1.2029, 0.2852, -0.4565]],
-
-                       [[-0.0073, 1.4143, -0.1859, -0.7211, -0.8652],
-                        [-0.3173, -0.4816, 0.1174, -0.1554, 0.9385],
-                        [0.1283, -0.6547, 0.3687, -0.1948, 0.7754],
-                        [-0.2185, -1.0437, 1.5963, -0.3284, -0.3654]]])
-```
-**判断规则**：方括号 `[` 的嵌套层数代表张量的维度。最外层括号的元素数量是第 0 维的大小，往内推。
-以上述张量为例分析：
-```python
-tensor([[[ 0.6238, -0.9315,  0.2173,  0.1954, -1.1565], ... ]])
-```
-- 最外层 [ 里有 3 个子列表 -> 第 0 维大小为 3。
-- 第二层 [ 里有 4 个子列表 -> 第 1 维大小为 4。
-- 第三层 [ 里有 5 个元素 -> 第 2 维大小为 5。
-
-因此，这个张量是 3 维张量，形状为 `[3, 4, 5]`。
-
-#### 矩阵元素指针算术
-
-为了访问矩阵中的特定元素，使用指针算术计算其线性地址。对于矩阵 $A$  形状为 $(M, K)$，元素 $A[m, k]$ 的线性地址计算如下：
-
-$$\text{Address}(A[m, k]) = A_{\text{ptr}} + m \times K + k$$
-
-其中：
-- $A_{\text{ptr}}$ 是矩阵 $A$ 的起始指针（即  A[0,0]  的地址）。
-- $m \times K$  是跳过前 $m$ 行的元素数量。
-- $k$ 是当前行中跳过的元素数量。
-
-#### 子块地址计算方法
-
-对于矩阵 $A$ 形状为 $(M, K)$，元素顺序为：
-\[
-A = \begin{bmatrix}
-A[0,0] & A[0,1] & \dots & A[0,K-1] \\
-A[1,0] & A[1,1] & \dots & A[1,K-1] \\
-\vdots & \vdots & \ddots & \vdots \\
-A[M-1,0] & A[M-1,1] & \dots & A[M-1,K-1]
-\end{bmatrix}
-\]
-内存中的存储顺序：
-\[
-A[0,0], A[0,1], \dots, A[0,K-1], A[1,0], A[1,1], \dots, A[1,K-1], \dots, A[M-1,K-1]
-\]
-
-在分块矩阵乘法中，矩阵被划分为多个子块。每个子块由其在行和列方向上的起始索引定义。矩阵子块加载、存储和计算的伪代码：
-```bash
-# Do in parallel
-for m in range(0, M, BLOCK_SIZE_M):
-  # Do in parallel
-  for n in range(0, N, BLOCK_SIZE_N):
-    acc = zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=float32)
-    for k in range(0, K, BLOCK_SIZE_K):
-      a = A[m : m+BLOCK_SIZE_M, k : k+BLOCK_SIZE_K]
-      b = B[k : k+BLOCK_SIZE_K, n : n+BLOCK_SIZE_N]
-      acc += dot(a, b)
-    C[m : m+BLOCK_SIZE_M, n : n+BLOCK_SIZE_N] = acc
-```
-
-- a_block 地址范围：从 m 到 m + BLOCK_SIZE_M，列索引范围 k: k + BLOCK_SIZE_K。对应的子块矩阵元素地址是二维的，假设矩阵存储是行连续的，则地址范围为 (A_ptr + m * K + k, A_ptr + (m + BLOCK_SIZE_M) * K + k + BLOCK_SIZE_K) -1。
-- b_block 地址范围：B_ptr + k * N + n, B_ptr + (k + BLOCK_SIZE_K) * N + (n + BLOCK_SIZE_N) - 1。
-
-如果是 triton 中实现上述地址的计算，对应代码为:
-
-```python
-# 1，行块和列块 id，即第几个块
-pid_m = tl.program_id(axis=0) # 这里的 pid_m 就是上面的 m 变量
-pid_n = tl.program_id(axis=0)
-# 2，行和列索引范围
-# pid_m * BLOCK_SIZE_M 是块在行方向的起始行索引，加上 tl.arange(0, BLOCK_SIZE_M)[:, None] 生成的行偏移量。
-offsets_m = pid_m + tl.arange(0, BLOCK_SIZE_M)[:, None]
-# pid_n * BLOCK_SIZE_N 是块在列方向的起始列索引，加上 tl.arange(0, BLOCK_SIZE_N)[None, :] 生成的列偏移量。
-offsets_n = pid_n + tl.arange(0, BLOCK_SIZE_N)[None,:]
-
-acc = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
-for k in range(0, K, BLOCK_SIZE_K):
-    offsets_ak = k + tl.arange(0, BLOCK_SIZE_K)[None,:]
-    offsets_bk = k + tl.arange(0, BLOCK_SIZE_K)[:, None]
-
-    a_idx = A_ptr + offsets_m * K + offsets_ak # offsets_m * K：跳过前 offsets_m 行，每行有 K 个元素。
-    b_idx = B_ptr + offsets_bk * N + offsets_n
-    a_block = tl.load(a_idx, mask=(offsets_m < M) & (offsets_ak < K), other=0.0)
-    b_block = tl.load(b_idx, mask=(offsets_bk < K) & (offsets_n < N), other=0.0)
-    acc = tl.dot(a, b, acc=acc)
-
-# offs_m * N：跳过前 offs_m 行，每行有 N 个元素。offsets_n：当前块负责的列偏移量。
-c_idx = C_ptr + offsets_m * N + offsets_n 
-```
-#### Triton 基础函数
+### 1. Triton 基础函数
 
 常用的 Triton 基础函数及其作用如下：
 - `tl.load`：用于于从由指针定义的内存位置加载数据。
@@ -140,18 +27,6 @@ META = {
     # 其他配置参数...
 }
 ```
-
-`META['BLOCK_SIZE']` 表示每个块（block）的大小，这个值很重要，因为它直接影响到内核的并行性和性能。
-
-#### 网格、块和内核
-
-**不同的 grid 则可以执行不同的程序（即 kernel）**。`grid` 定义了内核（kernel）执行的网格大小，即有多少个块（`blocks`）将被启动来执行一个内核，同时每个块包含 'BLOCK_SIZE' 个线程（`threads`），一个 block 中的 thread 能存取同一块共享的内存。
-
-与 cuda 编程把 thread 当作并行执行的基本单位不同，在 Triton 中，**块 block 才是内核并行执行的基本单位**，每个块负责处理任务的一个子集，通过合理划分块大小，可以充分利用 GPU 的并行计算能力。
-
-#### cuda 执行模型
-
-在执行 CUDA 程序的时候，每个 SP（stream processor） 对应一个 thread，每个 SM（stream multiprocessor）对应一个 Block。
 
 ### 2. 向量相加
 
@@ -228,9 +103,8 @@ if __name__ == "__main__":
 3. main 主函数
 
 1，先看内核调用函数 `vector_add_triton`。
-> Triton 内核的调用类似于 CUDA 的内核调用，但具有更高的抽象和简化的语法。
 
-网格 grid 定义：
+Triton 内核的调用类似于 CUDA 的内核调用，但具有更高的抽象和简化的语法。关键的是网格 grid 定义：
 ```python
 grid = lambda META: (triton.cdiv(N, META['BLOCK_SIZE']),)
 ```
@@ -270,7 +144,7 @@ def vector_add_kernel(X_ptr, Y_ptr, Z_ptr, N, BLOCK_SIZE: tl.constexpr):
 
 只有正确理解内核中的 `pid`、`block_start`、`offsets` 和 `idx` 这四个概念，才能写出正确、高效的内核代码。
 
-1. `pid`（Program ID）: 当前块（Block）的唯一标识符，代表块在整个网格（Grid）中的位置（第几个块）。`pid = tl.program_id(0)`。
+1. `pid`（Program ID）: 当前块（Block）的唯一标识符，代表块在整个网格（Grid）中的位置（第几个块）。一维的 `grid` 的 `pid = tl.program_id(0)`。
 2. `block_start`: 当前块在全局数据中的起始位置索引，用于确保每个块处理的数据范围不重叠且覆盖整个数据集。`block_start = pid * BLOCK_SIZE`。
 3. `offsets`: 表示当前块内每个线程相对于块起始位置的偏移量，帮助每个线程计算其在全局数据中的具体索引。`offsets = tl.arange(0, BLOCK_SIZE)`。
 4. `idx`: **表示每个线程在全局数据中的具体索引，用于加载和存储数据，确保每个线程处理唯一的数据元素**。`idx = block_start + offsets`。
@@ -359,11 +233,18 @@ PyTorch 向量加法时间: 95.85 ms
 
 注意，虽然 `TRITON_INTERPRET=1` 设置成解释模式可以打印线程索引等信息，但某些高级的 Triton 操作（如归约、复杂的内存访问模式）在解释模式下可能存在限制或未完全实现，这将导致内核运行报错。
 
-### 3. 融合 Softmax
+### 3. Softmax 算子
 
-本节的例子是实现一个融合的 “Softmax” 操作，对于某类矩阵，其速度明显高于“PyTorch” 的原生操作：那些矩阵的每一行都能存储在 GPU 的 `SRAM` 中。这个例子是让我们学习**内核融合对于带宽受限操作的优势**。
+本节的例子是学习实现一个融合的 “Softmax” 算子：对于某类矩阵，其速度是显著快于 PyTorch 的原生操作，因为这些矩阵的行能够适应 GPU 的 SRAM。
 
-softmax 将向量变换为值为正且和为 1 的概率分布，其公式为：
+这个例子可以学习到：
+
+- 核函数融合对带宽受限操作的好处。
+- Triton 中的归约运算符（Reduction operator）。
+
+#### 原生 softmax 算子
+
+Softmax 函数是一种常用于机器学习，特别是多分类问题中的激活函数。它的作用是将一个任意实数向量转换为一个概率分布，并确保输出的概率和为 1。给定输入 $x\in R^{M\times N}$，执行逐行 “Softmax”，其公式为：
 > pytorch 中 softmax 实现的 c++ 代码在 [Softmax.cpp](https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/SoftMax.cpp)
 
 $$\text{Softmax}(x_i) = \frac{\exp(x_i)}{\sum_{j=1}^{n} \exp(x_j)} \\
@@ -402,12 +283,15 @@ naive_softmax 函数实现了行级（row-wise）的 softmax 计算，通过以�
 4. `denominator = numerator.sum(dim=1)`：计算每一行的和作为分母部分 (denominator)。
 5. `ret = numerator / denominator[:, None]`：分子部分除以分母部分，得到softmax 值 (ret)。
 
-注意，代码中注释提到的数据访问量，计算 `y = naive_softmax(x)` $x\in R^{M\times N}$.总读取：5MN + 2M 个元素，总写入：8MN + 2M 个元素，总数据（内存）访问量（MAC） = 7MN + 4M。
+注意，代码中注释提到的数据访问量，计算 `y = naive_softmax(x)`，总读取：5MN + 2M 个元素，总写入：3MN + 2M 个元素，总数据（内存）访问量（MAC） = 8MN + 4M。
 
-#### 简单 softmax 内核实现
-上述实现明显不够搞笑，MAC 过大，显然不够高效；因此我们更希望使用一个自定义的“融合”内核，仅对 X 进行一次读取，并在芯片上完成所有所需的计算。这样只需要一次读取和写回字节数，理论上可以达到大约 $4 = (8MN + 4M) / 2MN$ 倍的加速效果（即，）。虽然 “torch.jit.script” 标志旨在自动实现这种“内核融合”，但它依然存在一些不足（后面分析）。
+#### 简单 softmax 内核
 
-那么问题来了，和前面处理一维向量不同，二维矩阵数据如何读取和加载呢？办法是让  triton 程序在**给定步幅大小**的情况下迭代每一行。参考前面的向量相加的例子，实现的 softmax 内核及内核调用函数如下所示:
+上述 native 实现 MAC 过大，明显不够高效，因此需要考虑使用一个自定义的“融合”内核，只读取一次 $X$ 并在芯片上完成所有计算。这样只需要一次读取和写回 $X$ 的字节数，理论上可以达到大约 $4 = (8MN + 4M) / 2MN$ 倍的加速效果。虽然 “torch.jit.script” 标志旨在自动实现这种“内核融合”，但它依然存在一些不足（后面分析）。
+
+那么问题来了，和前面处理一维向量不同，二维矩阵数据如何读取和加载呢？办法是让  triton 程序在**给定步幅大小**的情况下迭代每一行。需要注意的是，“Triton” 有一个重要限制：每个块的元素数量必须是 2 的幂次方。因此，如果要处理任意形状的输入矩阵，我们需要在内部对每一行进行“填充”，并确保内存操作的正确性。
+
+参考前面的向量相加的例子，实现的 softmax 内核及内核调用函数如下所示:
 
 ```python
 @triton.jit
@@ -459,16 +343,14 @@ def softmax(x):
 
 #### 优化版 softmax 内核
 
-**优化后的 “Softmax” 内核**的运行方式如下：每个程序会按程序数量为步幅，加载输入矩阵 X 的一组行，对其进行归一化处理后，将结果写回输出矩阵 Y。
-
-需要注意的是，“Triton” 有一个重要限制：每个块的元素数量必须是 2 的幂次方。因此，如果要处理任意形状的输入矩阵，我们需要在内部对每一行进行“填充”，并确保内存操作的正确性。
+**优化版 “Softmax” 内核**的运行机制是：每个计算 `kernel` 会加载输入矩阵 $X$ 中的一组行，组大小就是 `grid_size`。行数据进行归一化处理后，将结果写入输出矩阵 Y。
 
 ```python
 @triton.jit
 def softmax_kernel(input_ptr, output_ptr, input_row_stride, 
                 output_row_stride, n_rows, n_cols, BLOCK_SIZE:: tl.constexpr):
     
-    row_start = tl.program_id(0) # 一个块处理一行元素，idx 表示第几行，每行之间的处理是并行的
+    row_start = tl.program_id(0) # 一个块处理一组行元素，row_start 表示第几组，每行之间的处理是并行的
     row_step = tl.num_programs(0)
     for row_idx in tl.range(row_start, n_rows, row_step,num_stages=num_stages):
         row_start_ptr = row_idx + row_idx * input_row_stride # 行步幅表示我们需要增加指针多少才能前进 1 行
@@ -585,7 +467,7 @@ def softmax(x):
 occupancy = NUM_REGS // (n_regs * WARP_SIZE * num_warps)
 ```
 
-再考虑共享内存限制，每个内核程序 shi li需要 size_smem 共享内存，则一个 SM 支持最多 `SIZE_SMEM // size_smem` 个程序实例（块）。
+再考虑共享内存限制，每个内核程序需要 size_smem 共享内存，则一个 SM 支持最多 `SIZE_SMEM // size_smem` 个程序实例（块）。
 
 ```python
 # 确保共享内存的使用不会超出每个 SM 的最大容量。
