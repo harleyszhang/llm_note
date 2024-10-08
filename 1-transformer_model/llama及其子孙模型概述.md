@@ -5,8 +5,8 @@
   - [1.4 SwiGLU【待修改】](#14-swiglu待修改)
   - [1.5 RoPE旋转位置编码](#15-rope旋转位置编码)
 - [二 代码分析](#二-代码分析)
-  - [3.2 transformers 模型推理](#32-transformers-模型推理)
-  - [3.3 高性能 PyTorch 库-FairScale](#33-高性能-pytorch-库-fairscale)
+  - [2.1 transformers 模型推理](#21-transformers-模型推理)
+  - [2.2 高性能 PyTorch 库-FairScale](#22-高性能-pytorch-库-fairscale)
 - [三 基于开源 LLaMA 微调的模型](#三-基于开源-llama-微调的模型)
 - [参考资料](#参考资料)
 
@@ -219,7 +219,7 @@ LLaMA 模型结构也只使用 `Decoder` 结构。
 
 LLaMA 模型的线性计算层都是使用了 FairScale 库的 `ColumnParallelLinear` 层，它是一个并行的线性层，可以在多个 GPU 上**并行计算**，这个计算速度比 Linear 的 nn.Linear 层速度更快。
 
-### 3.2 transformers 模型推理
+### 2.1 transformers 模型推理
 
 `HuggingFace` 格式的 `LLaMA` 模型权重，可按照如下所示方式加载模型权重。
 
@@ -232,7 +232,7 @@ model = LlamaForCausalLM.from_pretrained("/output/path")
 
 加载 float16 精度的模型权重需要足够的 CPU RAM，对于 65B 参数模型，需要 130GB 的 RAM。
 
-### 3.3 高性能 PyTorch 库-FairScale
+### 2.2 高性能 PyTorch 库-FairScale
 
 1，`FairScale`: 用于在一台或多台机器/节点上进行高性能和大规模训练的 PyTorch库，由 Meta 发布。示例代码：
 
