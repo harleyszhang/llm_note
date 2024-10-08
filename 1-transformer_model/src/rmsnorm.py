@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 
 class RMSNorm(nn.Module):
+    """nlp 领域"""
     def __init__(self, dim, eps=1e-8):
         """
         :param dim: 输入的维度

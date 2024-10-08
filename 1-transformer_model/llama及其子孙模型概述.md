@@ -47,7 +47,7 @@ LayerNorm 通过对输入和权重矩进行重新中心化和重新缩放（`re-
 
 [RMSNorm](https://openreview.net/pdf?id=SygkZ3MTJE)（Root Mean Square Layer Normalization）论文假设 LayerNorm 中的重新中心化不再是必须的，并提出了一种新的归一化方法：均方根层归一化（RMSNorm）。RMSNorm 通过均方根（RMS）对每一层神经元的输入进行归一化，使模型具备重新缩放不变性和隐式学习率调整的能力。相比 LayerNorm，RMSNorm 计算更为简洁，因此效率更高。
 
-对于输入向量 x ，RMSNorm 的计算过程如下：
+对于输入向量 $x$ ，RMSNorm 的计算过程如下：
 
 1. **计算 RMS（均方根值）**：
 
@@ -65,7 +65,7 @@ $$\hat{x}_i = \frac{x_i}{\text{RMS}(x)}$$
 
 $$y = \frac{x}{\sqrt{\text{RMS}[x]} + \epsilon} \times \gamma$$
 
-其中，$\gamma$ 和 $\epsilon$ 是可学习的缩放和偏移参数，与 LayerNorm 类似。
+其中，$\gamma$ 是可学习的缩放参数，transform 模型中形状为 $[h]$。
 
 以下是 RMSNorm 在 PyTorch 中的简单实现，使用了 RMS（均方根）来对输入进行归一化处理。
 
@@ -82,7 +82,7 @@ class RMSNorm(nn.Module):
         super(RMSNorm, self).__init__()
         self.eps = eps
         self.scale = nn.Parameter(torch.ones(dim))  # 可学习的缩放参数
-    
+
     def forward(self, x):
         # x 的形状为 [batch_size, seq_len, dim]
         

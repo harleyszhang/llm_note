@@ -142,7 +142,7 @@ $$O_{dec}=\text{softmax}(\frac{Q_{dec}\cdot K_{cat}^{T}}{\sqrt{d_k}}) * V_{cat }
 
 > 该章节主要参考资料 [Transformer Deep Dive: Parameter Counting](https://orenleung.com/transformer-parameter-counting)
 
-另外，推特上有人研究了 `gpt-like` 模型（`opt`）的参数分布，下面是不同大小模型的一些图。可以看出，随着模型变大，`MLP` 和 `Attention` 层参数量占比越来越大，最后分别接近 `66%` 和 `33%`。这个比例可以通过上面的公式推测出来，估算公式:
+另外，推特上有人研究了 `gpt-like` 模型（`opt`）的参数分布，下面是不同大小模型的一些图。可以看出，随着模型变大，`MLP` 和 `Attention` 层参数量占比越来越大，最后分别接近 `2/3`  和 `1/3`。这个比例可以通过上面的公式推测出来，估算公式:
 
 $$\frac{8nh^2}{12nh^2} = 2/3\cong 66\% \\
 \frac{4nh^2}{12nh^2} = 1/3\cong 33\%$$

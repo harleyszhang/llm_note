@@ -57,7 +57,8 @@ CosineSimilarity = sum(x[i]*y[i])/(sqrt(sum(x[i]*x[i]))*sqrt(sum(y[i]*y[i])))。
 ```
 实际中，为了方便计算，会同时对一组查询（queries）计算注意力函数，将 q、k、v 都是构建成矩阵 $Q$、$K$、$V$（ 维度相等），涉及到两个矩阵乘法。
 
-作者提出的注意力机制算法跟之前的 Dot-Product Attention 相比就是单纯多了 Scaled，除以 $\sqrt{d_k}$ 是为了防止梯度过小不利模型训练。
+作者提到当向量维度变大的时候，softmax 函数会造成梯度消失问题，所以设置了一个 softmax 的 temperature 来缓解这个问题。这里 temperature 被设置为了 $\sqrt{d_k}$。
+> 作者提出的注意力机制算法跟之前的 Dot-Product Attention 相比就是单纯多了 Scaled（除以 $\sqrt{d_k}$）。
 
 另外 decoder 模块的 attention  多了一个 `Mask`，实际是第 $t$ 时刻的 $q$ 只能看前面阶段的对应的 $(k, v)$ 对，计算当中表现就是对于 $q_t$ 和 $k_t$ 及其之后的那些权重值都替换成一个极大的负数，这样经过 `softmax` 后（做指数 $e^{w_t}$），对应位置的 $v$ 就变成了 0。 
 
@@ -96,7 +97,7 @@ $Q$、$K$ 的线性(映射)层的权重维度是 $[d_\text{model}, d_k]$，$V$ �
 
 **`Embedding` 层的作用学习一个长为 $d_{model}$ 的向量来表示 `token`**，编码器和解码器的输入都需要 `embedding` 层，两个嵌入层和 `softmax` 之前的线性变换之间共享相同的权重矩阵重（维度都是一样的），并且将权重值乘以 $\sqrt{d_{model}}$。
 
-学习 embedding 时，可能会把每个向量的 $L2\ norm$ 学得相对较小（维度越大权重值越小），乘以 $\sqrt{d_{model}}$ 后放大，使得和 PE 相加时在 `scale` 上匹配。
+学习 embedding 时，可能会把每个向量的 $\text{L2\ norm}$ 学得相对较小（维度越大权重值越小），乘以 $\sqrt{d_{model}}$ 后放大，使得和 PE 相加时在 `scale` 上匹配。
 
 L2 归一化（L2 Norm）是一种将向量缩放到单位长度的操作，使得向量的模为1。对于一个给定向量  $\mathbf{v}$ ，L2 归一化后的向量 $\mathbf{\hat{v}}$，计算公式如下：
 

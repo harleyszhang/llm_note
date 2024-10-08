@@ -162,3 +162,4 @@ if __name__ == "__main__":
 - [triton tutorial-Layer Normalization](https://triton-lang.org/main/getting-started/tutorials/05-layer-norm.html)
 - [Jimmy Lei Ba and Jamie Ryan Kiros and Geoffrey E. Hinton, “Layer Normalization”, Arxiv 2016](https://arxiv.org/pdf/1607.06450)
 - [Batch Normalization: Accelerating Deep Network Training by Reducing Internal Covariate Shift](https://arxiv.org/pdf/1502.03167)
+- [Group Normalization](https://arxiv.org/pdf/1803.08494)
