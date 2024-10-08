@@ -3,9 +3,9 @@
 
 ### 1. flash-attention 算法原理
 
-对于 FA 的设计思路，2023 年我的建议是不要去读 FA-V1 论文了，推荐学习路线：
+对于 FA 的设计思路, 2023 年我的建议是不要去读 FA-V1 论文了，推荐学习路线：
 
-1. 学习 Online Softmax：[Online normalizer calculation for softmax](https://arxiv.org/abs/1805.02867)
+1. 学习 Online Softmax: [Online normalizer calculation for softmax](https://arxiv.org/abs/1805.02867)
 2. 看 FlashAttention-2 论文。因为 FlashAttention V1 的关键设计在V2中被推翻了，FA-V2 论文也介绍了 FA-V1。
 3. 看 `Flash Decoding`（不在本文介绍范围内）。
 

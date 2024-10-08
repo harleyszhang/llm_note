@@ -1,12 +1,13 @@
 - [triton 定义](#triton-定义)
 - [triton 和 cuda 特性的对比](#triton-和-cuda-特性的对比)
+- [num\_warps 概念作用](#num_warps-概念作用)
 - [triton 编译过程](#triton-编译过程)
 - [张量维度判断](#张量维度判断)
 - [矩阵元素指针算术](#矩阵元素指针算术)
 - [网格、块和内核](#网格块和内核)
 - [cuda 执行模型](#cuda-执行模型)
+  - [Python 与 Triton 中的地址计算对比](#python-与-triton-中的地址计算对比)
 - [参考资料](#参考资料)
-
 
 ### triton 定义
 
@@ -34,6 +35,17 @@ Triton 有以下特点：
 | Vectorization | .8/.16/.32/.64/.128 | Automatic |
 | Async SIMT | Support | Limited |
 | Device Function | Support | Not Walable |
+
+### num_warps 概念作用
+
+**CUDA 采用单指令多线程（SIMT）架构来管理和执行线程，`wrap` 是 CUDA 编程模型中的基本执行单位，一般每 32 个线程为一组且被称为线程束（warp），在硬件 SIMD 单元上一起执行**。
+
+`num_warps` 变量则决定了每个线程块中要使用的 `warp` 数量。线程块中的线程数通常是 warp 数量的倍数，假如 num_warps 是 4，那么每个 block 会包含 4 个 warp，即 block_size = 128 个线程（4 * 32）。
+
+num_warps 的作用：
+- 并行度控制：num_warps 参数让开发者可以更灵活地控制每个线程块的并行度，进而影响并发性能。通过选择合适的 num_warps 值，能够在更好地利用 GPU 资源的同时，避免资源浪费。
+- 硬件利用效率：在不同的 GPU 硬件上，选择适当的 warp 数量，可以有效提升 GPU 核心的利用率。例如，更多的 warp 可以更好地隐藏内存访问延迟，提高并行效率。
+- 与共享内存和寄存器的平衡：Triton 中每个线程块都有一定的共享内存和寄存器资源，num_warps 会影响这些资源的分配。增大 num_warps 会增加并行线程数，但可能导致每个线程可用的共享内存或寄存器变少。选择合适的值，可以在并行度和资源利用之间取得平衡。
 
 ### triton 编译过程
 
@@ -146,7 +158,7 @@ c_idx = C_ptr + offsets_m * N + offsets_n
 tl.store(c_ptr + c_idx, acc, mask = (offsets_m < M) & (offsets < N), other=0.0)
 ```
 
-`META['BLOCK_SIZE']` 表示每个块（block）的大小，这个值很重要，因为它直接影响到内核的并行性和性能。
+`META['BLOCK_SIZE']` 表示每个块（`block`）的大小，这个值很重要，因为它直接影响到内核的并行性和性能。Pytorch 中行步幅通常等于列数。
 
 ### 网格、块和内核
 
@@ -157,6 +169,20 @@ tl.store(c_ptr + c_idx, acc, mask = (offsets_m < M) & (offsets < N), other=0.0)
 ### cuda 执行模型
 
 在执行 CUDA 程序的时候，每个 SP（stream processor） 对应一个 thread，每个 SM（stream multiprocessor）对应一个 Block。
+
+#### Python 与 Triton 中的地址计算对比
+
+以下是图片中表格的 Markdown 源码：
+
+| 步骤 | Python(PyTorch) | Triton |
+| --- | --- | --- |
+| **矩阵存储方式** | 行优先(Row-Major Order) | 行优先(Row-Major Order) |
+| **子块访问方式** | 使用切片操作 `C[m:m+BLOCK_SIZE_M, n:n+BLOCK_SIZE_N]` | 通过线性地址计算 `C_ptr + offs_m*N + offs_n` |
+| **地址计算方法** | 自动管理,无需手动计算 | 手动计算线性地址,需考虑行优先存储和偏移量 |
+| **并行化处理** | 通常在高级抽象层实现并行化 | 通过程序 `ID(pid_m,pid_n)` 映射到特定子块 |
+| **掩码与边界处理** | 自动处理边界(切片超出范围会自动截断) | 需要手动处理边界,使用掩码 `mask=(offs_m < M) & (x_k < K)`|
+| **数据加载与存储** | 直接访问子块数据 | 使用 `t1.load` 和 `t1.store` 进行数据加载与存储 |
+| **子块累加与乘法** | 使用标准的矩阵乘法操作 | 使用 `t1.dot` 进行子块乘法并累加 |
 
 ### 参考资料
 

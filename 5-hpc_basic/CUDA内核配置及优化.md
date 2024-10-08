@@ -8,7 +8,10 @@
   - [1.3 影响 CUDA 内核性能的因素](#13-影响-cuda-内核性能的因素)
 - [二 CUDA 内核优化策略](#二-cuda-内核优化策略)
   - [2.1 优化内存层次结构](#21-优化内存层次结构)
-  - [2.2 最大化并行度和占用率](#22-最大化并行度和占用率)
+  - [2.2 提高并行度](#22-提高并行度)
+    - [2.2.1 避免分支化](#221-避免分支化)
+    - [2.2.2 展开循环](#222-展开循环)
+    - [2.2.3 动态并行](#223-动态并行)
   - [2.3 指令级优化](#23-指令级优化)
   - [2.4 利用流和并发执行](#24-利用流和并发执行)
   - [2.5 Warp 级别优化](#25-warp-级别优化)
@@ -219,9 +222,9 @@ __global__ void matrixMulShared(const float *A, const float *B, float *C, int N)
 }
 ```
 
-### 2.2 最大化并行度和占用率
+### 2.2 提高并行度
 
-**选择合适的块大小**可以提高并行度，确保 GPU 的计算资源被充分利用。通常选择为 `32`（线程束大小 warp size）的倍数，如128、256、512。**内核配置示例**：
+最直接和简单的就是**选择合适的块大小**可以提高并行度，确保 GPU 的计算资源被充分利用。通常选择为 `32`（线程束大小 warp size）的倍数，如128、256、512。**内核配置示例**：
 
 ```cpp
 int blockSize = 256;
@@ -229,9 +232,101 @@ int gridSize = (N + blockSize - 1) / blockSize;
 vectorAdd<<<gridSize, blockSize>>>(A, B, C, N);
 ```
 
-- **优化 SM 资源使用**：平衡寄存器和共享内存的使用，避免资源过度占用。
+#### 2.2.1 避免分支化
 
-- **避免分支发散**：减少线程束内的分支差异，确保线程束内所有线程执行相同指令路径。
+分支化指的是同一线程束（`warp`）内的线程因为**条件语句**（如 if-else、switch 等）执行不同路径，导致这些线程需要分别执行不同的指令，这会降低并行效率，导致内核性能变差。
+
+以数组求和为例，成对的并行求和实现可以被分为以下两种类型:
+- **相邻配对**: 元素与它们直接相邻的元素配对
+- **交错配对**: 根据给定的跨度配对元素
+
+相邻配对法的 `C++` 实现代码如下所示:
+
+```cpp
+#include <stdio.h>
+
+// 相邻配对求和函数
+int adjacent_pair_sum(int* arr, int n) {
+    while (n > 1) {
+        for (int i = 0; i < n / 2; i++) {
+            arr[i] = arr[2 * i] + arr[2 * i + 1];
+        }
+        n /= 2; // 数组长度减半
+    }
+    return arr[0]; // 最终的和
+}
+
+int main() {
+    int arr[] = {1, 2, 3, 4, 5, 6, 7, 8}; // 示例数组
+    int n = sizeof(arr) / sizeof(arr[0]);
+    
+    int result = adjacent_pair_sum(arr, n);
+    printf("Sum of array elements: %d\n", result);
+    
+    return 0;
+}
+```
+
+#### 2.2.2 展开循环
+
+循环展开通过**将循环体中的代码“展开”成多个相似的操作，从而减少循环的执行次数和控制开销**。
+
+如下两个数组求和代码：
+
+```cpp
+for (int i = 0; i<100;i++) {
+	a[i] = b[i] + c[i]
+}
+```
+
+重复操作一次循环体，迭代次数可减少为原来的一半:
+
+```cpp
+for (int i = 0; i<100;i+=2) {
+	a[i] = b[i] + c[i];
+	a[i + 1] = b[i+1] + c[i+1]
+}
+```
+
+高级语言层面上来看，循环展开使性能提高的原因可能不是显而易见的，这种提升来其实是来自于编译器执行循环展开时低级指令的改进和优化。在 GPU 编程中，循环展开的目的是为了优化流水线处理和增加并发操作来提高计算性能。
+
+#### 2.2.3 动态并行
+
+CUDA 的动态并行允许在 GPU 端直接创建和同步新的 GPU 内核。
+
+在动态并行中，内核执行分为两种类型：父母和孩子。父线程、父线程块或父网格启动一个新的网格，即子网格。子线程、子线程块或子网格被父母启动。子网格必须在父线程、父线程块或父网格完成之前完成，只有在所有的子网格都完成之后，父母才会完成。下图说明了父网格和子网格的适用范围。
+
+<img src="../images/cuda_exec_model/father_gird.png" width="60%" alt="父网格和子网格">
+
+在 GPU上 嵌套输出 Hello World 的实例代码:
+
+```cpp
+__global__ void nestedHelloWorld(int const iSize, int iDepth)
+{
+	int tid = threadIdx.x;
+	printf("Recursion=%d: Hello World from thread %d"
+			"block td\n", iDepth, tid, blockIdx.x);
+	// condition to stop recursive execution
+	if(iSize ==1) return;
+	// reduce block size to half
+	int nthreads = iSize>>1;
+	// thread 0 launches child grid recursively
+	if(tid ==0 && nthreads >0){
+		nestedHelloWorld<<<1, nthreads>>>(nthreads, ++iDepth);
+		printf("------> nested execution depth: %d\n" iDepth);
+	}
+```
+
+每个线程的核函数执行，会先输出 “Hello World”。接着，每个线程检查自己是否该停止。如果在这个嵌套层里线程数大于1，线程0就递归地调用一个带有线程数一半的子网格。用以下命令编译代码:
+
+```bash
+nvcc -arch=sm35 -rdc=true nestedHelloWorld.cu -o nestedHelloWorld -lcudadevrt
+```
+因为动态并行是由设备运行时库所支持的，所以 nestedHelloWorld 函数必须在命令行使用 `-lcudadevrt` 进行明确链接。当 `-rdc` 标志为 true 时，它强制生成可重定位的设备代码，这是动态并行的一个要求。程序编译运行后输出如下所示:
+
+<img src="../images/cuda_exec_model/dynamic_exec.png" width="50%" alt="动态嵌套执行">
+
+从输出信息中可见，由主机调用的父网格有1个线程块和8个线程。nestedHelloWorld 核函数递归地调用三次，每次调用的线程数是上一次的一半。
 
 ### 2.3 指令级优化
 
@@ -544,7 +639,7 @@ __global__ void convolutionShared(const float *input, float *output, const float
 
 **性能提升**：
 
-通过使用共享内存缓存图像块及其周围的“halo”区域，减少了全局内存访问次数。此外，选择合适的块大小和优化内核尺寸，提升了内核的并行度和内存带宽利用率。
+通过使用共享内存缓存图像块，减少了全局内存访问次数。此外，选择合适的块大小和优化内核尺寸，提升了内核的并行度和内存带宽利用率。
 
 ## 参考资料
 

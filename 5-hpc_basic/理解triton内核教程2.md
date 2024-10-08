@@ -1,9 +1,11 @@
 - [1. 矩阵乘法](#1-矩阵乘法)
 - [2. 矩阵乘法 kernel](#2-矩阵乘法-kernel)
-  - [2.1 指针算法](#21-指针算法)
-  - [2.2 L2 cache 优化](#22-l2-cache-优化)
-
-缓存命中率（Cache Hit Rate）是衡量缓存系统性能的一个重要指标，表示缓存请求中成功命中的比例，即从缓存中直接读取数据的次数占总访问次数的百分比。
+  - [2.1 block 的计算顺序](#21-block-的计算顺序)
+  - [2.2 block 元素的地址计算](#22-block-元素的地址计算)
+  - [2.3 子块的矩阵乘法](#23-子块的矩阵乘法)
+  - [2.4 算子融合](#24-算子融合)
+- [3. Triton 编程和 CUDA 编程的相同及不同](#3-triton-编程和-cuda-编程的相同及不同)
+- [参考资料](#参考资料)
 
 torch 中 Tensor 的乘法有几种方法，如 *、torch.mul、torch.multiply、torch.dot、torch.mv、torch.mm、torch.matmul、torch.einsum 等，主要分为 3 种：
 1. **逐元素（element-wise）乘法**：对于两个Tensor对象（如矩阵和矩阵、矩阵和实数等，向量也是矩阵的一种），分别按对应元素进行实数普通乘法。\*、torch.mul、torch.multiply 三者操作含义是相同的。torch.multiply 是 torch.mul 的别名，* 是 torch.mul 的简写。
@@ -41,7 +43,7 @@ def matrix_multiply(A, B):
 
     return C
 ```
-虽然经验证，上述矩阵乘法函数结果正确，但是很明显这样的实现性能是不够的。可以考虑**分块矩阵优化**，即将矩阵分块（计算拆分），每次计算一部分内容。分块的目的就是优化访存，通过分块之后让访存都集中在一定区域，能够提高了数据局部性，从而提高 Cache 利用率，性能就会更好。分块矩阵乘法代码如下所示：
+虽然经验证，上述矩阵乘法函数结果正确，但是很明显这样的实现性能是不够的。可以考虑**分块矩阵优化**，即将矩阵分块（计算拆分），每次计算一部分内容。分块的目的就是优化访存，通过分块之后让访存都集中在一定区域，能够提高了数据局部性，从而提高 Cache 利用率，性能就会更好。分块矩阵乘法伪代码如下所示：
 
 ```python
 # Do in parallel
@@ -152,6 +154,7 @@ if __name__ == "__main__":
     print(f"Python block matmul 时间: {block_matmul_time * 1000:.2f} ms")
     print(f"numpy matmul 时间: {np_matmul_time * 1000:.2f} ms")
 ```
+> 缓存命中率（Cache Hit Rate）是衡量缓存系统性能的一个重要指标，表示缓存请求中成功命中的比例，即从缓存中直接读取数据的次数占总访问次数的百分比。
 
 ### 2. 矩阵乘法 kernel
 
@@ -463,7 +466,7 @@ def matmul(a, b, activation=""):
 
 3，Triton 里面我们有 pid = tl.program_id(axis=0) 来定位当前是第几次"循环", CUDA 里面, 这个要复杂一些, 有这么几个变量: threadIdx.x, threadIdx.y, threadIdx.z 分别代表当前 thread 在其所在的 thread block 的 xyz 坐标。blockIdx.x, blockIdx.x,  blockIdx.x  分别代表当前 thread block 在其所在的 thread grid 的 xyz 坐标。blockDim.x, blockDim.x,  blockDim.x  分别代表当前 thread block 在 xyz 维度分别有多少个 threadgridDim.x, gridDim.x,  gridDim.x  分别代表当前 thread grid 在 xyz 维度分别有多少个 thread block 可以看到 CUDA 更加细致些, 直接到 thread 级别, 而 Triton 的思路是, 反正最后都是要一个 block 一个 block 处理的, 所以就把编程接口的级别订到了 block。
 
-## 参考资料
+### 参考资料
 
 - https://arxiv.org/pdf/2204.03826
 - [Matrix Multiplication](https://triton-lang.org/main/getting-started/tutorials/03-matrix-multiplication.html)
