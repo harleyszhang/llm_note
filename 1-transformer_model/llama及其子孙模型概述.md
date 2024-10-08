@@ -1,6 +1,6 @@
 - [一，介绍](#一介绍)
 - [二，模型结构](#二模型结构)
-  - [2.1，RMS Norm](#21rms-norm)
+  - [2.1，RMSNorm](#21rmsnorm)
   - [2.2，SwiGLU](#22swiglu)
   - [2.3，RoPE旋转位置编码](#23rope旋转位置编码)
 - [三，代码分析](#三代码分析)
@@ -35,65 +35,84 @@ LLaMA **优势**在于其**只使用公开可用的数据**，这可以保证论
 3. `Rotary Embeddings` [GPTNeo]. 模型的输入不再使用 `positional embeddings`，而是在网络的每一层添加了 positional embeddings (`RoPE`)，RoPE 方法由Su等人（2021）引入。
 
 模型结构图如下图所示:
-
-![llama_structure](../images/llama/llama_structrue.jpeg)
+<img src="../images/llama/llama_structrue.jpeg" width="40%" alt="BN 和 LN 的区别">
 
 不同模型的超参数详细信息在表 2 中给出。
 
 ![llama_parameters](../images/llama/llama_parameters.png)
 
-### 2.1，RMS Norm
+### 2.1，RMSNorm
 
-LayerNorm 成功的一个众所周知的解释是它的重新居中和重新缩放不变性。 前者使模型对输入和权重上的噪声变化不敏感，后者在输入和权重随机缩放时保持输出表示完整。 在本文中，我们假设重新缩放不变性是 LayerNorm 成功的原因，而不是重新居中不变性。 有[论文](https://openreview.net/pdf?id=SygkZ3MTJE)提出提出 RMSNorm（Root Mean Square Layer Normalization），它只关注重新缩放不变性，并简单地根据均方根 (RMS) 统计量对输入求和进行归一化:
-$$
-\bar{a} = \frac{a_i}{RMS(a)g_i},\; where RMS(a) = \sqrt(\frac{1}{n}\sum_{i=1}^n a_i^2) \nonumber
-$$
-可以看出与 layerNorm 相比，RMS Norm 的主要区别在于**去掉了减去均值的部分**（re-centering），只保留方差部分（re-scaling）。
+LayerNorm 通过对输入和权重矩进行重新中心化和重新缩放（`re-centering 和re-scaling`，即减均值和除方差），来帮助稳定训练并加速模型收敛。
 
-官方实现的代码如下所示:
+[RMSNorm](https://openreview.net/pdf?id=SygkZ3MTJE)（Root Mean Square Layer Normalization）论文假设 LayerNorm 中的重新中心化不再是必须的，并提出了一种新的归一化方法：均方根层归一化（RMSNorm）。RMSNorm 通过均方根（RMS）对每一层神经元的输入进行归一化，使模型具备重新缩放不变性和隐式学习率调整的能力。相比 LayerNorm，RMSNorm 计算更为简洁，因此效率更高。
+
+对于输入向量 x ，RMSNorm 的计算过程如下：
+
+1. **计算 RMS（均方根值）**：
+
+$$\text{RMS}(x) = \sqrt{\frac{1}{n} \sum_{i=1}^{n} x_i^2}$$
+
+这里，n 是输入向量的维度。
+	
+2. **归一化输入**：
+
+$$\hat{x}_i = \frac{x_i}{\text{RMS}(x)}$$
+
+这一步将每个元素 x_i 按照 RMS 归一化。
+
+3. **缩放和偏移**：
+
+$$y = \frac{x}{\sqrt{\text{RMS}[x]} + \epsilon} \times \gamma$$
+
+其中，$\gamma$ 和 $\epsilon$ 是可学习的缩放和偏移参数，与 LayerNorm 类似。
+
+以下是 RMSNorm 在 PyTorch 中的简单实现，使用了 RMS（均方根）来对输入进行归一化处理。
 
 ```python
-class RMSNormLayer(lasagne.layers.Layer):
-    def __init__(self, incoming, b=lasagne.init.Constant(0.), g=lasagne.init.Constant(1.),
-                 W=lasagne.init.Normal(0.05), nonlinearity=relu, **kwargs):
-        super(RMSNormLayer, self).__init__(incoming, **kwargs)
-        self.nonlinearity = nonlinearity
-        k = self.input_shape[1]
-        if b is not None:
-            self.b = self.add_param(b, (k,), name="b", regularizable=False)
-        if g is not None:
-            self.g = self.add_param(g, (k,), name="g")
+import torch
+import torch.nn as nn
 
-        if len(self.input_shape)==4:
-            self.axes_to_sum = (2,3)
-            self.dimshuffle_args = ['x',0,'x','x']
-        else:
-            self.axes_to_sum = 1
-            self.dimshuffle_args = ['x',0]
+class RMSNorm(nn.Module):
+    def __init__(self, dim, eps=1e-8):
+        """
+        :param dim: 输入的维度
+        :param eps: 防止除以0的稳定项
+        """
+        super(RMSNorm, self).__init__()
+        self.eps = eps
+        self.scale = nn.Parameter(torch.ones(dim))  # 可学习的缩放参数
+    
+    def forward(self, x):
+        # x 的形状为 [batch_size, seq_len, dim]
+        
+        # 计算均方根 (RMS)
+        rms = torch.sqrt(torch.mean(x ** 2, dim=-1, keepdim=True) + self.eps)
+        
+        # 归一化，并应用缩放参数
+        return x / rms * self.scale
 
-    def get_output_for(self, input, **kwargs):
-        meanS = T.mean(input ** 2,axis=self.axes_to_sum,keepdims=True)
 
-        norm_input = input / T.sqrt(meanS + 1e-6)
+# 测试 RMSNorm
+batch_size, seq_len, dim = 2, 4, 8
+x = torch.randn(batch_size, seq_len, dim)
 
-        if hasattr(self, 'g'):
-            activation = norm_input*self.g.dimshuffle(*self.dimshuffle_args)
-        else:
-            activation = norm_input
-        if hasattr(self, 'b'):
-            activation += self.b.dimshuffle(*self.dimshuffle_args)
+rmsnorm = RMSNorm(dim)
+output = rmsnorm(x)
 
-        return self.nonlinearity(activation)
+rmsnorm_pytorch = nn.RMSNorm([dim])
+output_pytorch = rmsnorm_pytorch(x)
 
-def rms_norm(layer, b=lasagne.init.Constant(0.), g=lasagne.init.Constant(1.), **kwargs):
-    nonlinearity = getattr(layer, 'nonlinearity', None)
-    if nonlinearity is not None:
-        layer.nonlinearity = lasagne.nonlinearities.identity
-    if hasattr(layer, 'b'):
-        del layer.params[layer.b]
-        layer.b = None
-    return RMSNormLayer(layer, b, g, nonlinearity=nonlinearity, **kwargs)
+print("输入和输出的形状: ", x.shape, output.shape)
+if torch.allclose(output, output_pytorch, atol=1e-6):
+    print("结果验证通过: 自己实的 RMSNorm 和 pytorch nn.RMSNorm 结果一致！")
+else:
+    print("结果验证失败: 自己实的 RMSNorm 和 pytorch nn.RMSNorm 结果不一致。")
 ```
+
+代码运行后输出结果如下所示：
+> 输入和输出的形状:  torch.Size([2, 4, 8]) torch.Size([2, 4, 8])
+结果验证通过: 自己实的 RMSNorm 和 pytorch nn.RMSNorm 结果一致！
 
 ### 2.2，SwiGLU
 
