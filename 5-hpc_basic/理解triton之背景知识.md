@@ -3,10 +3,12 @@
 - [num\_warps 概念作用](#num_warps-概念作用)
 - [triton 编译过程](#triton-编译过程)
 - [张量维度判断](#张量维度判断)
+- [理解维度（dim）](#理解维度dim)
+	- [torch.mean 的 dim 参数详解](#torchmean-的-dim-参数详解)
 - [矩阵元素指针算术](#矩阵元素指针算术)
 - [网格、块和内核](#网格块和内核)
 - [cuda 执行模型](#cuda-执行模型)
-  - [Python 与 Triton 中的地址计算对比](#python-与-triton-中的地址计算对比)
+	- [Python 与 Triton 中的地址计算对比](#python-与-triton-中的地址计算对比)
 - [参考资料](#参考资料)
 
 ### triton 定义
@@ -83,6 +85,38 @@ tensor([[[ 0.6238, -0.9315,  0.2173,  0.1954, -1.1565], ... ]])
 - 第三层 [ 里有 5 个元素 -> 第 2 维大小为 5。
 
 因此，这个张量是 3 维张量，形状为 `[3, 4, 5]`。
+
+### 理解维度（dim）
+
+在 PyTorch 中，张量的维度（或称为“秩”）决定了数据的结构和形状：
+
+- 1D 张量：向量。例如，长度为 5 的向量 [1, 2, 3, 4, 5]。
+- 2D 张量：矩阵。例如，形状为 (3, 4) 的矩阵。
+- 3D 张量：通常用于 NLP，形状为 (batch_size, sequence_length, hidden_size)。
+- 4D 张量：通常用于 CV，形状为 (batch_size, channels, height, width)。
+
+#### torch.mean 的 dim 参数详解
+
+torch.mean 函数用于计算张量沿指定维度的平均值。其基本语法和参数解释如下：
+
+```python
+torch.mean(input, dim, keepdim=False, *, dtype=None) -> Tensor
+```
+- input：输入张量。
+- `dim`：沿哪个维度计算平均值。可以是单个整数或整数元组。
+- keepdim：是否保留被缩减的维度。默认为 False。
+- dtype：输出张量的数据类型。
+
+**mean 函数中 dim 参数的理解：**
+
+1，从计算过程理解：跨 dim 进行操作（算均值）。
+- 常规矩阵操作的 2D 张量，dim = 0 表示跨行操作，即对每一列中的所有元素进行均值计算。
+- NLP 领域的 3D 张量 `(batch_size, sequence_length, embedding_size)`，`dim = 2` 表示跨嵌入层维度算均值，对于每个 (batch, sequence) 位置，计算嵌入维度上的均值，如创建一个形状为 (4, 16, 4) 的 3D 张量计算位置 (0, 0, \:) 的均值 $\text{mean}(x[0, 0:]) = \frac{x[0,0,0] + x[0,0,1] + x[0,0,2] + x[0,0,3]}{4}$。
+- CV 领域的 4D 张量 `(batch_size, channels, height, width)`，`dim = 0` 表示跨 batch_size 维度上计算均值，对一个批次中的所有样本进行平均。如创建一个形状为 (2, 3, 3, 3) 的 4D 张量，计算位置 (0, 0, 0) 的均值 = $\text{mean}(x[:, 0, 0, 0]) = \frac{x[0, 0, 0, 0] + x[1, 0, 0, 0]}{2}$。
+
+2，从输出张量的形状理解：
+- NLP 领域的 3D 张量，dim = 2，输出张量的形状去掉这个 dim 维度，得到输出张量形状为 `(batch_size, sequence_length)`。
+- CV 领域的 4D 张量，dim = 0，输出张量形状为 `(channels, height, width)`。
 
 ### 矩阵元素指针算术
 

@@ -285,7 +285,7 @@ model = fairscale.nn.Pipe(model, balance=[2, 2], devices=[0, 1], chunks=8)
 
 一些 LLM 的论文看下来，发现讲模型结构的内容真的很少，大部分内容都在讲数据集构建方法、模型训练方法、实验报告等内容。
 
-FlashLlamaAttention、LlamaMLP、LlamaRMSNorm、LlamaRMSNorm
+FlashLlamaAttention、LlamaMLP、LlamaRMSNorm、LlamaRMSNorm。
 
 ## 参考资料
 

@@ -1,6 +1,6 @@
 - [1. LN 原理](#1-ln-原理)
-- [2. LN 前向传播内核](#2-ln-前向传播内核)
-- [3. LN 反向传播内核](#3-ln-反向传播内核)
+- [2 BN、LN、IN 和 GN 计算上的区别](#2-bnlnin-和-gn-计算上的区别)
+- [3. LN 前向传播内核](#3-ln-前向传播内核)
 - [参考资料](#参考资料)
 
 ### 1. LN 原理
@@ -10,20 +10,42 @@ LN 作用是减少了不同特征之间的依赖关系，可以使得模型训�
 * `BN`: 对于每个特征维度，计算它在整个批次中的均值和标准差，然后对该特征进行归一化。
 * `LN`: 对每个样本单独计算其所有特征的均值和标准差，然后在该样本内进行归一化。
 
-<!-- <img src="../images/transformer_paper/bn_ln.png" width="40%" alt="BN 和 LN 的区别">
-<img src="../images/triton_tutorials3/BN_LN_GN.png" width="100%" alt="BN 和 LN 的区别"> -->
-
-<div style="display: flex; justify-content: space-around;">
-    <img src="../images/transformer_paper/bn_ln.png" width="40%" alt="BN 和 LN 的区别">
-    <img src="../images/triton_tutorials3/BN_LN_GN.png" width="100%" alt="BN 和 LN 的区别">
-</div>
+<img src="../images/transformer_paper/bn_ln.png" width="40%" alt="BN 和 LN 的区别">
 
 `Layer Norm` 操作具体来说，它接受一个**向量** $\boldsymbol{x}$ 作为输入，输出一个与之形状相同的向量 $\boldsymbol{y}$。归一化通过对 $\boldsymbol{x}$ 减去均值并除以标准差来实现。完成归一化后，再应用具有可学习参数 $\boldsymbol{\gamma}$（权重）和 $\boldsymbol{\beta}$（偏置）的线性变换。前向传播过程可以表示如下：
-$$y = \frac{x - E[x]}{\sqrt{(Var(x) + \epsilon)}} * w + b$$
+$$y = \frac{x - E[x]}{\sqrt{(Var(x) + \epsilon)}} * \gamma + \beta$$
 
 其中 $\epsilon$ 是一个很小的常数添加到分母以实现数值稳定性。
 
-### 2. LN 前向传播内核
+### 2 BN、LN、IN 和 GN 计算上的区别
+
+特征归一化方法家族，包括 BN（批归一化）、LN（层归一化）、IN（实例归一化）和 GN（组归一化），都执行如下计算：
+\[
+\hat{x}_i = \frac{x_i - \mu_i}{\sigma_i}. \tag{1}
+\]
+其中，$x$ 是由某一层计算出的**特征**，$i$ 代表特征的索引。
+
+对于 2D 图像来说，$i = (i_N, i_C, i_H, i_W)$ 是一个 4D 向量，按照 $(N, C, H, W)$ 的顺序索引特征，其中 $N$ 代表批次维度，$C$ 代表通道维度，$H$ 和 $W$ 代表空间高度和宽度。
+
+公式（1）中的 $\mu$ 和 $\sigma$ 分别是均值和标准差，通过以下方式计算：
+
+$$\mu_i = \frac{1}{m} \sum_{k \in S_i} x_k, \quad \sigma_i = \sqrt{\frac{1}{m} \sum_{k \in S_i} (x_k - \mu_i)^2 + \epsilon}, \tag{2}$$
+
+其中 $\epsilon$ 为一个小常数。\(S_i\) 是用于计算均值和标准差的像素集合， \(m\) 是该集合的大小。不同特征归一化方法的主要区别在于如何定义集合 \(S_i\) （公式 2 所示），对于 2D 图像的具体定义如下：
+
+在批归一化（Batch Norm, BN）[26] 中，集合 \(S_i\) 定义为：
+$$S_i = \{k \mid k_C = i_C \}$$其中 \(i_C\) （以及 \(k_C\)）表示 \(i\) （以及 \(k\)）沿着通道维度（C 轴）的子索引。这意味着具有相同通道索引的像素被一同归一化，换句话说，$\text{BN}$ 对每个通道沿着 (N, H, W) 轴计算均值和标准差。
+
+在层归一化（Layer Norm, LN）[3] 中，集合定义为：
+\[
+S_i = \{k \mid k_N = i_N \}
+\]这意味着 $\text{LN}$ 对每个样本沿着 (C, H, W) 轴计算均值和标准差。
+
+在实例归一化（Instance Norm, IN）[61] 中，集合定义为：\[S_i = \{k \mid k_N = i_N, k_C = i_C \}\]这意味着 $\text{IN}$ 对每个样本的每个通道沿着 (H, W) 轴计算均值和标准差。下图显示了 BN、LN 和 IN 之间的关系。
+
+<img src="../images/triton_tutorials3/BN_LN_GN.png" width="100%" alt="BN 和 LN 的区别">
+
+### 3. LN 前向传播内核
 
 结合前面向量相加、softmax 算子、矩阵乘法内核的实现，我们可以自行实现 LN 层的内核代码了。输入 x 是二维的，因此**计算是逐行进行的**。值得说明的是，每行的元素数量（N）是比较多的，一般超过 BLOCK_SIZE，因此需要对一行元素的数量分块计算，在 kernel 内用 for 循环遍历。
 ```python
@@ -135,8 +157,6 @@ def test_layer_norm(M, N, dtype, eps=1e-5, device='cuda'):
 if __name__ == "__main__":
     test_layer_norm(1151, 8192, torch.float16)
 ```
-
-### 3. LN 反向传播内核
 
 ### 参考资料
 - [triton tutorial-Layer Normalization](https://triton-lang.org/main/getting-started/tutorials/05-layer-norm.html)
