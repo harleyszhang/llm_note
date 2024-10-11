@@ -3,8 +3,9 @@
 - [num\_warps 概念作用](#num_warps-概念作用)
 - [triton 编译过程](#triton-编译过程)
 - [张量维度判断](#张量维度判断)
-- [理解维度（dim）](#理解维度dim)
-	- [torch.mean 的 dim 参数详解](#torchmean-的-dim-参数详解)
+- [理解张量](#理解张量)
+- [理解 dim 参数](#理解-dim-参数)
+	- [规约计算](#规约计算)
 - [矩阵元素指针算术](#矩阵元素指针算术)
 - [网格、块和内核](#网格块和内核)
 - [cuda 执行模型](#cuda-执行模型)
@@ -86,7 +87,7 @@ tensor([[[ 0.6238, -0.9315,  0.2173,  0.1954, -1.1565], ... ]])
 
 因此，这个张量是 3 维张量，形状为 `[3, 4, 5]`。
 
-### 理解维度（dim）
+### 理解张量
 
 在 PyTorch 中，张量的维度（或称为“秩”）决定了数据的结构和形状：
 
@@ -95,29 +96,78 @@ tensor([[[ 0.6238, -0.9315,  0.2173,  0.1954, -1.1565], ... ]])
 - 3D 张量：通常用于 NLP，形状为 (batch_size, sequence_length, hidden_size)。
 - 4D 张量：通常用于 CV，形状为 (batch_size, channels, height, width)。
 
-#### torch.mean 的 dim 参数详解
+### 理解 dim 参数
 
-torch.mean 函数用于计算张量沿指定维度的平均值。其基本语法和参数解释如下：
+dim 参数在 pytorch 函数中的定义指**沿着 dim 这个维度进行操作：求和/求平均/求累加，以及删除、增加指定 dim。
+
+#### 规约计算
+
+规约计算一般是指分组聚合计算，表现结果就是会进行维度压缩。
+
+1，torch.mean 函数用于计算张量沿指定维度的平均值。其基本语法和参数解释如下：
 
 ```python
 torch.mean(input, dim, keepdim=False, *, dtype=None) -> Tensor
 ```
-- input：输入张量。
+- `input`：输入张量。
 - `dim`：沿哪个维度计算平均值。可以是单个整数或整数元组。
-- keepdim：是否保留被缩减的维度。默认为 False。
-- dtype：输出张量的数据类型。
+- `keepdim`：是否保留被缩减的维度。默认为 False。
+- `dtype`：输出张量的数据类型。
 
-**mean 函数中 dim 参数的理解：**
+1. 从计算过程理解：**沿着（跨） dim 进行操作（算均值）**。
+   - 常规矩阵操作的 2D 张量，dim = 0 表示跨行操作，即对每一列中的所有元素进行均值计算。
+   - NLP 领域的 3D 张量 `(batch_size, sequence_length, embedding_size)`，`dim = 2` 表示跨嵌入层维度算均值，对于每个 (batch, sequence) 位置，计算嵌入维度上的均值，如创建一个形状为 (4, 16, 4) 的 3D 张量计算位置 (0, 0, \:) 的均值 $\text{mean}(x[0, 0:]) = \frac{x[0,0,0] + x[0,0,1] + x[0,0,2] + x[0,0,3]}{4}$。
+   - CV 领域的 4D 张量 `(batch_size, channels, height, width)`，`dim = 0` 表示跨 batch_size 维度上计算均值，对一个批次中的所有样本进行平均。如创建一个形状为 (2, 3, 3, 3) 的 4D 张量，计算位置 (0, 0, 0) 的均值 = $\text{mean}(x[:, 0, 0, 0]) = \frac{x[0, 0, 0, 0] + x[1, 0, 0, 0]}{2}$。
 
-1，从计算过程理解：跨 dim 进行操作（算均值）。
-- 常规矩阵操作的 2D 张量，dim = 0 表示跨行操作，即对每一列中的所有元素进行均值计算。
-- NLP 领域的 3D 张量 `(batch_size, sequence_length, embedding_size)`，`dim = 2` 表示跨嵌入层维度算均值，对于每个 (batch, sequence) 位置，计算嵌入维度上的均值，如创建一个形状为 (4, 16, 4) 的 3D 张量计算位置 (0, 0, \:) 的均值 $\text{mean}(x[0, 0:]) = \frac{x[0,0,0] + x[0,0,1] + x[0,0,2] + x[0,0,3]}{4}$。
-- CV 领域的 4D 张量 `(batch_size, channels, height, width)`，`dim = 0` 表示跨 batch_size 维度上计算均值，对一个批次中的所有样本进行平均。如创建一个形状为 (2, 3, 3, 3) 的 4D 张量，计算位置 (0, 0, 0) 的均值 = $\text{mean}(x[:, 0, 0, 0]) = \frac{x[0, 0, 0, 0] + x[1, 0, 0, 0]}{2}$。
+2. 从输出张量的形状理解：
+   - NLP 领域的 3D 张量，dim = 2，输出张量的形状去掉这个 dim 维度，得到输出张量形状为 `(batch_size, sequence_length)`。
+   - CV 领域的 4D 张量，dim = 0，输出张量形状为 `(channels, height, width)`。
 
-2，从输出张量的形状理解：
-- NLP 领域的 3D 张量，dim = 2，输出张量的形状去掉这个 dim 维度，得到输出张量形状为 `(batch_size, sequence_length)`。
-- CV 领域的 4D 张量，dim = 0，输出张量形状为 `(channels, height, width)`。
+2，`torch.sum` 沿着指定维度求和。
+```bash
+>>> x = torch.randn([4,5])
+>>> x
+tensor([[ 1.1141,  1.7091, -0.5543,  0.3417, -0.0838],
+        [-0.6697, -0.3165,  0.3772, -0.4377, -0.9850],
+        [-1.3976,  1.3172, -0.6791,  0.1030, -0.5817],
+        [ 0.3079, -0.5911,  1.2357, -1.0891,  0.8422]])
+>>> x.sum(dim=0)
+tensor([-0.6453,  2.1187,  0.3796, -1.0821, -0.8082])
+>>> x.sum(dim=1)
+tensor([ 2.5269, -2.0317, -1.2381,  0.7056])
+```
 
+当 dim = 0 时，就是沿着 `dim = 0`即 `x` 轴进行累加，sum 函数为规约函数会压缩维度，所以x.sum(dim=0) 结果为 tensor([-0.6453,  2.1187,  0.3796, -1.0821, -0.8082])，形状为 `[5]`。
+
+3，`torch.cumprod` 沿着 dim 维度计算累积。`min()` 沿着指定 dim 找
+
+```bash
+>>> x = torch.Tensor([ # shape is [2, 5]
+...     [2,3,4,5,6],
+...     [9,8,7,6,5,]
+... ])
+
+>>> print(torch.cumprod(x, dim = 0))
+tensor([[ 2.,  3.,  4.,  5.,  6.],
+        [18., 24., 28., 30., 30.]])
+
+>>> print(torch.cumprod(x, dim = 1)) # output shape is [2, 5]
+tensor([[2.0000e+00, 6.0000e+00, 2.4000e+01, 1.2000e+02, 7.2000e+02],
+        [9.0000e+00, 7.2000e+01, 5.0400e+02, 3.0240e+03, 1.5120e+04]])
+
+>>> torch.min(x, dim = 0) # output shape is [5]
+torch.return_types.min(
+values=tensor([2., 3., 4., 5., 5.]),
+indices=tensor([0, 0, 0, 0, 1]))
+
+>>> print(torch.max(x, dim = 1)) # output shape is [2]
+torch.return_types.max(
+values=tensor([6., 9.]),
+indices=tensor([4, 0]))
+
+>>> torch.mean(x, dim = 0, keepdim = True) # output shape is [1, 5]
+tensor([[5.5000, 5.5000, 5.5000, 5.5000, 5.5000]]) 
+```
 ### 矩阵元素指针算术
 
 为了访问矩阵中的特定元素，使用指针算术计算其线性地址。对于矩阵 $A$  形状为 $(M, K)$，元素 $A[m, k]$ 的线性地址计算如下：
