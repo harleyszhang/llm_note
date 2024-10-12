@@ -1,6 +1,7 @@
 - [1. 矩阵乘法](#1-矩阵乘法)
-- [2. 矩阵乘法 kernel](#2-矩阵乘法-kernel)
-  - [2.1 block 的计算顺序](#21-block-的计算顺序)
+- [2. 分块矩阵乘法](#2-分块矩阵乘法)
+- [3. 更快的矩阵乘法 kernel](#3-更快的矩阵乘法-kernel)
+  - [3.1 block 的计算顺序](#31-block-的计算顺序)
   - [2.2 block 元素的地址计算](#22-block-元素的地址计算)
   - [2.3 子块的矩阵乘法](#23-子块的矩阵乘法)
   - [2.4 算子融合](#24-算子融合)
@@ -22,7 +23,7 @@ torch 中 Tensor 的乘法有几种方法，如 *、torch.mul、torch.multiply�
 
 $$C[i][j] = \sum_{k=1}^{K} A[i][k] \times B[k][j]$$
 
-<img src="../images/triton_tutorials1/matmul_visual.webp" width="50%" alt="matmul_visual">
+<img src="../images/triton_tutorials2/matmul_visual.webp" width="50%" alt="matmul_visual">
 
 不带任何优化的矩阵乘法 python 代码如下所示:
 
@@ -43,7 +44,24 @@ def matrix_multiply(A, B):
 
     return C
 ```
-虽然经验证，上述矩阵乘法函数结果正确，但是很明显这样的实现性能是不够的。可以考虑**分块矩阵优化**，即将矩阵分块（计算拆分），每次计算一部分内容。分块的目的就是优化访存，通过分块之后让访存都集中在一定区域，能够提高了数据局部性，从而提高 Cache 利用率，性能就会更好。分块矩阵乘法伪代码如下所示：
+
+很明显，在进行矩阵乘法时，要使用三重嵌套循环，将矩阵元素进行正确的组合。实现 GEMM 需要在 $M$ 和  $N$ 维度上迭代，同时在共享维度 $K$ 上共同迭代。
+
+“共同迭代”意味着我们在进行矩阵相乘时，矩阵 A 和 B 在共享的维度 $K$ 上同时进行迭代。根据我们在嵌套循环中选择哪一层进行共同迭代，矩阵乘法的数据流会有所不同：
+
+- 内积法（`IP`，Inner Product）：将共同迭代放在最内层循环。这种方式关注结果矩阵中的单个元素，并通过在共享维度上迭代来累加它的值。此方法一次生成一个完整的结果元素，不需要合并部分和。
+- 外积法（`OP`，Outer Product）：将共同迭代放在最外层循环。此方式从矩阵 A 的一行和矩阵 B 的一列相乘生成一个完整矩阵，然后将多个矩阵结果合并，得到最终结果。此方法一次生成多个部分和，因此需要硬件支持合并，且可能增加内存访问量。
+- Gustavson 算法（`Gust`）：将共同迭代放在中间循环。在这种方式中，当前 A 的一行和 B 的一列的部分和会被计算，随后聚合为最终结果。
+
+除了在共享维度 $K$ 上共同迭代外，遍历 $M$ 和 $N$ 维度的顺序也会影响计算模式。对于每种数据流（IP、OP 和 Gustavson），改变 $M$ 和 $N$ 的循环顺序可以产生两种不同的计算模式。因此总共有六种可能的变体。
+
+选择不同的变体主要取决于“数据重用”的效率。在计算中，重用（reuse）已经加载到高速内存（如缓存）中的数据可以提高效率。通过**优先考虑某个维度的驻留性（即保持其靠近处理单元），可以更好地重用数据，从而使计算更加高效**。下图展示了三种不同的数据流模式。
+
+![三种不同的数据流](../images/triton_tutorials2/three_gemm.png)
+
+### 2. 分块矩阵乘法
+
+虽然经验证，上述矩阵乘法函数结果正确，但是很明显这样的实现性能是不够的。可以考虑**分块矩阵乘法**（Tiled Matrix MultiplicationMultiplication），即将矩阵分块（计算拆分），每次计算一部分内容。分块的目的就是优化访存，通过分块之后让访存都集中在一定区域，能够提高了数据局部性，从而提高 Cache 利用率，性能就会更好。分块矩阵乘法伪代码如下所示：
 
 ```python
 # Do in parallel
@@ -63,8 +81,19 @@ for m in range(0, M, BLOCK_SIZE_M):
 - dot(a, b)：这是两个矩阵子块 a 和 b 的乘积，即矩阵乘法操作。
 - 每次计算的结果累积到 acc 中，确保不同的 k 块对的结果都正确累加到 acc。
 
+```bash
++——--+—-——+     +——--+—-——+     +——————————---+—-—————————-—+
+| A1 | A2 |     | B1 | B2 |     | A1.B1+A2.B3 | A1.B2+A2.B4 |
++——--+—-——+ dot +——--+—-——+  =  +——————————---+—-—————————-—+
+| A3 | A4 |     | B3 | B4 |     | A3.B1+A4.B3 | A3.B2+A4.B4 |
++——--+—-——+     +——--+—-——+     +——————————---+—-—————————-—+
+```
+分块矩阵乘法原理的如下图所示：
+
+![gemm_tiled](../images/triton_tutorials2/gemm_tiled.png)
+
 小块矩阵结果如下所示：
-<img src="../images/triton_tutorials1/block_matmul.png" width="50%" alt="小块矩阵结果">
+<img src="../images/triton_tutorials2/block_matmul.png" width="50%" alt="小块矩阵结果">
 
 Python 完整矩阵乘法及分块矩阵乘法优化的代码如下所示:
 ```python
@@ -156,15 +185,17 @@ if __name__ == "__main__":
 ```
 > 缓存命中率（Cache Hit Rate）是衡量缓存系统性能的一个重要指标，表示缓存请求中成功命中的比例，即从缓存中直接读取数据的次数占总访问次数的百分比。
 
-### 2. 矩阵乘法 kernel
+### 3. 更快的矩阵乘法 kernel
 
-#### 2.1 block 的计算顺序
+#### 3.1 block 的计算顺序
 
 对于矩阵乘法 $A*B=C$，$A$ 的大小是 $M \times K$, $B$ 是 $K\times N$，$C$ 的大小是 $M\times N$, 分块矩阵优化的思路是每次只算出 $C$ 的一部分，假设每次"循环"算的大小是 $\text{BLOCK\_SIZE\_M} \times \text{BLOCK\_SIZE\_N}$ , 那么总共要 "循环" $\frac{M}{BLOCK\_SIZE\_M} \times \frac{N}{BLOCK\_SIZE\_N}$ 次。
 
+<img src="../images/triton_tutorials2/tiled_matrix_multiplication.png" width="70%" alt="tiled_matrix_multiplication">
+
 循环次数（也是 grid 大小，kernel 程序实例数，block 数目）确定了，但是按照什么样的顺序来循环（读区数据的顺序和范围）是有不同选择的，不同的选择会影响 kernel 的内存访问效率。
 
-<img src="../images/triton_tutorials1/super_grouping.png" width="70%" alt="超级分组">
+<img src="../images/triton_tutorials2/super_grouping.png" width="70%" alt="超级分组">
 
 上图中每个黄色小块的大小是 `BLOCK_SIZE_M x BLOCK_SIZE_N`, 也就是一个  `block`。图分别展示了矩阵乘法 kernel 的两种循环方式：
 1. 上面一种叫做 `row-major ordering`（行优先顺序）, 就是最直接的按照行的模型一个block一个block 地往下进行。对应的需要将 90 个块加载到 SRAM 中才能计算出前 9 个输出块。
@@ -192,7 +223,7 @@ pid_m = first_pid_m + ((pid % num_pid_in_group) % group_size_m)
 pid_n = (pid % num_pid_in_group) // group_size_m
 ```
 
-<img src="../images/triton_tutorials1/grouped_ordering.png" width="70%" alt="超级分组遍历顺序">
+<img src="../images/triton_tutorials2/grouped_ordering.png" width="70%" alt="超级分组遍历顺序">
 
 代码变量意义拆解：
 - `num_pid_in_group`: 表示这个红色框 (高是 GROUP_SIZE_M , 宽是 num_pid_n) 里总共有多少黄色小块，一个红色框就是一个 group。
@@ -221,7 +252,7 @@ pid_m = pid % num_pid_n
 
 kernel 函数每次调用都会对应一个 `pid`，前面的内容就是讲怎么找到当前这个 `pid` 对应 `C` 中的哪个 block (黄色小块)。具体到 block 内部，这里假设我们要计算 C 中的第一个 block, block-0，计算这个 block 需要的 A 和 B 矩阵中的 9 个 block。
 
-<img src="../images/triton_tutorials1/grouped_ordering2.png" width="70%" alt="计算 block0">
+<img src="../images/triton_tutorials2/grouped_ordering2.png" width="70%" alt="计算 block0">
 
 **block-0 计算的过程本质上就是分块矩阵的计算过程**，从 A 中取第一行 9 个 block 的第一个，从 B 取第一列9个 block 的第一个，相乘并累加到 accumulator 中, 直到 9 个 block 做完, 就得到了 C 中的第一个 block。
 
@@ -471,3 +502,4 @@ def matmul(a, b, activation=""):
 - https://arxiv.org/pdf/2204.03826
 - [Matrix Multiplication](https://triton-lang.org/main/getting-started/tutorials/03-matrix-multiplication.html)
 - [知乎-如何入门 OpenAI Triton 编程?](https://www.zhihu.com/question/622685131?login=from_csdn)
+- [Dense Matrix Dense Matrix Tiled Multiplication (GEMM)](https://www.cs.sfu.ca/~ashriram/Courses/CS7ARCH/hw/hw4.html)

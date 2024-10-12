@@ -30,7 +30,7 @@ def softmax_triton(X):
     triton_softmax[grid](X, Y, M, N, BLOCK_SIZE=1024)
     return Y
 
-def naive_softmax(x):
+def naive_softmax(x: torch.Tensor) -> torch.Tensor:
     """Compute row-wise softmax of X using native pytorch
 
     We subtract the maximum element in order to avoid overflows. Softmax is invariant to
@@ -38,8 +38,8 @@ def naive_softmax(x):
     # in total: read 5MN + 2M elements ; wrote 3MN + 2M elements
     """
     x_max = x.max(dim=1)[0] # read  MN elements ; write M  elements
-    z = x - x_max[:, None] # read MN + M elements ; write MN elements
-    numerator = torch.exp(z) # read  MN elements ; write MN elements
+    safe_x = x - x_max[:, None] # read MN + M elements ; write MN elements
+    numerator = torch.exp(safe_x) # read  MN elements ; write MN elements
     denominator = numerator.sum(dim=1) # read  MN elements ; write M  elements
     ret = numerator / denominator[:, None]  # read MN + M elements ; write MN elements
     

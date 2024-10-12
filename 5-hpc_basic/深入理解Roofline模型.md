@@ -9,10 +9,10 @@
 
 `Roofline` 性能分析模型是一种用于**衡量和分析计算性能**的工具，通过将应用程序的计算性能与硬件的理论峰值性能进行对比，**以揭示应用是受到计算性能的限制还是受到内存带宽的限制**。Roofline 模型的有两个关键指标：**操作强度** （Operational Intensity, OI， 也称算术强度 Arithmetic Intensity 和性能上限。
 
-1. 操作强度：每访问一个字节的内存所执行的计算量（FLOPs/Byte）。$\text{OI} = \frac{\text{总浮点操作数（FLOPs）}}{\text{总内存访问量（Bytes）}}$
-2. 性能上限：
-   - 内存带宽上限：当操作强度较低时，性能受内存带宽限制。
-   - 计算能力上限：当操作强度较高时，受限于处理器的计算性能（例如每秒执行的 FLOPs 数量）。
+1. 算作强度：每访问一个字节的内存所执行的计算量（FLOPs/Byte）。$\text{OI} = \frac{\text{总浮点操作数（FLOPs）}}{\text{总内存访问量（Bytes）}}$
+2. 性能瓶颈分析：
+   - 内存受限：当算子的算术强度 <  gpu 的 ops/bytes，性能受内存带宽限制。
+   - 计算受限：当算子的算术强度 >  gpu 的 ops/bytes，受限于处理器的计算性能（例如每秒执行的 FLOPs 数量）。
 
 一个 `Naive Roofline` 模型可以表示为如下公式：
 
@@ -33,7 +33,12 @@ $P_{max}$: 性能上限 [操作数/秒]
 
 `Roofline` 可以帮助识别程序的性能瓶颈，并指导优化（减少内存访问次数还是算法计算量 `FLOPs`），以及是否达到了硬件的能力上限。
 
-**性能瓶颈**可能来自计算性能（$P_{peak}$）或数据传输路径（$I*b_{max}$）。**通过 roofline 模型判断应用程序是在内存受限还是计算受限，进而进行有针对性的优化**。
+**性能瓶颈**可能来自计算性能（$P_{peak}$）或数据传输路径（$I*b_{max}$）。**通过 roofline 模型判断应用程序是在内存受限还是计算受限，进而进行有针对性的优化**。举个例子，对于矩阵乘法: $A\times B = C$，其中 $A\in \mathbb{R}^{M\times k}, B \in \mathbb{R}^{M\times N},C \in \mathbb{R}^{M\times N}$，数据类型为 `FP16`，它的 Roofline 性能瓶颈分析如下：
+
+$$\text{OI}_\text{matmul} = \frac{2MNK}{MK + KN +MN} \\
+\text{ops/bytes}_\text{A100} = \frac{312}{2.03} = 153$$
+
+如果 $\text{OI}_\text{matmul} < 153$，则矩阵乘法处于内存受限，反之则计算受限。
 
 下表是 v100、a100、h100 卡的常用性能指标和 `FP16 Tensor` 算力的操作强度 `oi`:
 

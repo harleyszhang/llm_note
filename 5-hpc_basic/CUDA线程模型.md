@@ -29,7 +29,7 @@ GPU 上运行的代码执行层次包含多个层级。对于 “CUDA” 内核�
 
 <img src="../images/cuda_exec_model/cuda_exec_hierarchy.png" width="65%" alt="CUDA Execution Hierarchy">
 
-总结：`Grid，Block，thread` 都是线程的组织形式，最小的逻辑单位是一个thread，最小的硬件执行单位是 `thread warp`，若干个 thread 组成一个block，block 被加载到 SM 上运行，多个 block 组成一个 Grid。
+总结：`Grid，Block，Thread` 都是线程的组织形式，最小的逻辑单位是一个Thread，最小的硬件执行单位是 `thread warp`，若干个 Thread 组成一个Block，Block 被加载到 `SM` 上运行，多个 Block 组成一个 Grid。
 
 **grid 、block 和 thread 的层次关系**。
 

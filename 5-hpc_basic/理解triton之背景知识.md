@@ -2,6 +2,8 @@
 - [triton 和 cuda 特性的对比](#triton-和-cuda-特性的对比)
 - [num\_warps 概念作用](#num_warps-概念作用)
 - [triton 编译过程](#triton-编译过程)
+- [triton 保留关键字](#triton-保留关键字)
+- [triton 算子和 torch eager 算子区别](#triton-算子和-torch-eager-算子区别)
 - [张量维度判断](#张量维度判断)
 - [理解张量](#理解张量)
 - [理解 dim 参数](#理解-dim-参数)
@@ -45,15 +47,41 @@ Triton 有以下特点：
 
 `num_warps` 变量则决定了每个线程块中要使用的 `warp` 数量。线程块中的线程数通常是 warp 数量的倍数，假如 num_warps 是 4，那么每个 block 会包含 4 个 warp，即 block_size = 128 个线程（4 * 32）。
 
-num_warps 的作用：
+`num_warps` 的作用：
 - 并行度控制：num_warps 参数让开发者可以更灵活地控制每个线程块的并行度，进而影响并发性能。通过选择合适的 num_warps 值，能够在更好地利用 GPU 资源的同时，避免资源浪费。
 - 硬件利用效率：在不同的 GPU 硬件上，选择适当的 warp 数量，可以有效提升 GPU 核心的利用率。例如，更多的 warp 可以更好地隐藏内存访问延迟，提高并行效率。
 - 与共享内存和寄存器的平衡：Triton 中每个线程块都有一定的共享内存和寄存器资源，num_warps 会影响这些资源的分配。增大 num_warps 会增加并行线程数，但可能导致每个线程可用的共享内存或寄存器变少。选择合适的值，可以在并行度和资源利用之间取得平衡。
 
 ### triton 编译过程
 
-triton 生成 triton IR 再到 LLVM IR 再到 PTX。
+triton 生成 triton IR 再到 LLVM IR 再到 PTX，最后配合 runtime 运行。
 
+![triton_workflow](../images/triton_tutorials0/triton_workflow.png)
+
+triton 操作 sram 和 pytorch eager 操作 hbm
+
+<img src="../images/triton_tutorials0/triton_sram.jpg" width="60%" alt="triton_sram">
+
+### triton 保留关键字
+
+最新版的 triton3.0.0 有以下几种保留关键字（也称为元参数，kernel 调用的时候看到这些参数无需感到困惑，如果你设置了相关参数，编译器才会启动相关并行优化，没设置，就会自动抛弃这些关键字）。
+```python
+RESERVED_KWS = ["num_warps", "num_stages", "num_ctas", "enable_fp_fusion", "grid", "maxnreg"]
+```
+
+1. `num_warps`: 用于设置 kernel 中线程束（`warp`）的数量。如果 kernel 的 num_warps = 8，那么 kernel 将会使用 256 个线程并行运行。
+2. `num_stages`：决定编译器为软件流水线循环（software-pipelining loops）分配的阶段数。主要用于在 SM80+ GPU（Ampere 架构）上执行矩阵乘法。（所谓流水线化，指的是允许多个循环的迭代同时进行，即后续迭代在前一个迭代尚未完成时就开始，每个迭代可以部分重叠执行以提高计算性能）
+3. `num_ctas`: 每个 SM（流多处理器）上并发执行的线程块（CTA）数量。
+4. `grid`: 控制 Triton 内核的 Grid 结构，代表 block 数目和维度。
+5. `enable_fp_fusion`：启用浮点运算融合，将多个浮点操作融合在同一流水线中执行，进一步提升性能，减少多次执行的开销；
+6. `maxnreg`：用于控制每个线程块（Block）所能使用的最大寄存器数量
+
+### triton 算子和 torch eager 算子区别
+
+1. triton 的操作对象是张量指针，torch 的输入是张量视图。
+	-  张量指针：关心张量布局，使用偏移量访问存储。
+	-  张量视图：关心张量形状，可能在储存上不连续。
+2. 通用算子领域，优化的 triton 算子性能可和 cuda 算子持平；在自定义算子、融合算子领域，短期内 triton 算子性能能更高。
 ### 张量维度判断
 
 在一个 $M$ 行 $N$ 列的二维数组中，$M$ 是第 0 维，即行数；$N$ 是第 1 维，即列数。那么怎么肉眼判断更复杂的张量数据维度呢，举例：

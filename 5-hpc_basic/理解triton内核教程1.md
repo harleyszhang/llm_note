@@ -2,10 +2,11 @@
 - [2. 向量相加](#2-向量相加)
   - [2.1 `BLOCK_SIZE`、`gird` 和 `program_id` 意义](#21-block_sizegird-和-program_id-意义)
 - [3. 理解内核运行的机制](#3-理解内核运行的机制)
-- [3. Softmax 算子](#3-softmax-算子)
-  - [原生 softmax 算子](#原生-softmax-算子)
-  - [简单 softmax 内核](#简单-softmax-内核)
-  - [优化版 softmax 内核](#优化版-softmax-内核)
+  - [3.1 pdb/gdb 调试](#31-pdbgdb-调试)
+- [4. Softmax 算子](#4-softmax-算子)
+  - [4.1 原生 softmax 算子](#41-原生-softmax-算子)
+  - [4.2 一般 softmax 内核](#42-一般-softmax-内核)
+  - [4.3 优化版 softmax 内核](#43-优化版-softmax-内核)
 - [参考资料](#参考资料)
 
 
@@ -233,7 +234,47 @@ PyTorch 向量加法时间: 95.85 ms
 
 注意，虽然 `TRITON_INTERPRET=1` 设置成解释模式可以打印线程索引等信息，但某些高级的 Triton 操作（如归约、复杂的内存访问模式）在解释模式下可能存在限制或未完全实现，这将导致内核运行报错。
 
-### 3. Softmax 算子
+#### 3.1 pdb/gdb 调试
+
+1，pdb 是 python 内置的代码调试工具。在代码中插入 `import pdb; pdb.set_trace()`，程序执行到此会自动进入调试模式。常用命令：
+- `p` 打印变量值
+- `l` 查看当前代码行
+- `n` 跳转到下一行代码，并停留在当前的作用域内（不进入函数）。
+- `s` 进入当前执行代码行的函数内部。
+- `c` 继续执行代码，直到遇到下一个断点。
+- `q` 退出调试模式。
+
+2，gdb 是用于调试 c/c++ 的工具。对于 triton 程序，它的启动命令是 `gbd -args xxx.py`。常用命令：
+- `b` 设置断点。
+- `r` 运行程序。
+- `p` 打印变量值
+- `n` 跳转到下一行代码，并停留在当前的作用域内（不进入函数）。
+- `s` 进入当前执行代码行的函数内部。
+- `c` 继续执行代码，直到遇到下一个断点。
+- `q` 退出 gdb。
+
+先看 debug ops 的用法
+```python
+@triton.jit
+def vector_add_kernel(X_ptr, Y_ptr, Z_ptr, N, BLOCK_SIZE: tl.constexpr):
+    pid = tl.program_id(0)                        # 获取当前块的 ID
+    tl.static_print(f"BLOCK_SIZE: {BLOCK_SIZE}")
+    if pid == 1:
+        tl.device_print("pid: ", pid)
+    ...
+```
+
+在看 pdb 调试
+```python
+def vector_add_kernel(X_ptr, Y_ptr, Z_ptr, N, BLOCK_SIZE: tl.constexpr):
+    ...
+    offsets = tl.arange(0, BLOCK_SIZE)            # 生成当前块的线程偏移量
+    import pdb; pdb.set_trace()
+    idx = block_start + offsets                   # 计算每个线程负责的索引
+```
+
+
+### 4. Softmax 算子
 
 本节的例子是学习实现一个融合的 “Softmax” 算子：对于某类矩阵，其速度是显著快于 PyTorch 的原生操作，因为这些矩阵的行能够适应 GPU 的 SRAM。
 
@@ -242,9 +283,9 @@ PyTorch 向量加法时间: 95.85 ms
 - 核函数融合对带宽受限操作的好处。
 - Triton 中的归约运算符（Reduction operator）。
 
-#### 原生 softmax 算子
+#### 4.1 原生 softmax 算子
 
-Softmax 函数是一种常用于机器学习，特别是多分类问题中的激活函数。它的作用是将一个任意实数向量转换为一个概率分布，并确保输出的概率和为 1。给定输入 $x\in R^{M\times N}$，执行逐行 “Softmax”，其公式为：
+Softmax 函数是一种常用于机器学习，特别是多分类问题中的激活函数。它的作用是将一个任意实数向量转换为一个概率分布，并确保输出的概率和为 1。给定输入 $x\in R^{M\times N}$，执行逐行 “Softmax”（对于 `2D` 张量，逐行计算对应维度 `dim = 1`），其公式为：
 > pytorch 中 softmax 实现的 c++ 代码在 [Softmax.cpp](https://github.com/pytorch/pytorch/blob/main/aten/src/ATen/native/SoftMax.cpp)
 
 $$\text{Softmax}(x_i) = \frac{\exp(x_i)}{\sum_{j=1}^{n} \exp(x_j)} \\
@@ -285,7 +326,7 @@ naive_softmax 函数实现了行级（row-wise）的 softmax 计算，通过以�
 
 注意，代码中注释提到的数据访问量，计算 `y = naive_softmax(x)`，总读取：5MN + 2M 个元素，总写入：3MN + 2M 个元素，总数据（内存）访问量（MAC） = 8MN + 4M。
 
-#### 简单 softmax 内核
+#### 4.2 一般 softmax 内核
 
 上述 native 实现 MAC 过大，明显不够高效，因此需要考虑使用一个自定义的“融合”内核，只读取一次 $X$ 并在芯片上完成所有计算。这样只需要一次读取和写回 $X$ 的字节数，理论上可以达到大约 $4 = (8MN + 4M) / 2MN$ 倍的加速效果。虽然 “torch.jit.script” 标志旨在自动实现这种“内核融合”，但它依然存在一些不足（后面分析）。
 
@@ -341,7 +382,7 @@ def softmax(x):
 
 这里实现的是逐行的 softmax 操作，所以让**每个块负责处理一整行的 softmax 计算**。
 
-#### 优化版 softmax 内核
+#### 4.3 优化版 softmax 内核
 
 **优化版 “Softmax” 内核**的运行机制是：每个计算 `kernel` 会加载输入矩阵 $X$ 中的一组行，组大小就是 `grid_size`。行数据进行归一化处理后，将结果写入输出矩阵 Y。
 
