@@ -106,7 +106,7 @@ $$\begin{aligned}
 
 下图展示 FlashAttention 如何使用在线 softmax 实现分块处理（见图 1），从而减少内存的读写操作。
 
-![figure1](../../images/flashattention-v2/figure1.png)
+![figure1](../../images/flashattention-2/figure1.png)
 
 当键 K 被划分为两个块、值 V 也被划分为两个块时，FlashAttention 的前向传播执行过程的示意图。通过对每个块计算注意力并重新缩放输出，最终可以得到正确的结果，同时避免了对中间矩阵 S 和 P 的昂贵内存读写。为了简化说明，图中省略了 softmax 过程中每个元素减去行最大值的步骤。
 
@@ -155,12 +155,12 @@ $$\begin{aligned}
 
 FlashAttention-2 算法前向传播过程的完整流程在算法 1 中描述。
 
-![algorithm1](../../images/flashattention-v2/algorithm1.png)
+![algorithm1](../../images/flashattention-2/algorithm1.png)
 #### 3.1.2 反向传播
 
 FlashAttention-2 的反向传播与 FlashAttention 基本相同。只做了一个小改动，softmax 中仅使用按行的 logsumexp $L$，而不是同时使用按行最大值和按行指数和。反向传播过程的详细步骤在算法 2 中描述。
 
-![algorithm2](../../images/flashattention-v2/algorithm2.png)
+![algorithm2](../../images/flashattention-2/algorithm2.png)
 
 多查询注意力（MQA）和分组查询注意力（GQA）。多查询注意力（MQA）[15] 和分组查询注意力（GQA）[1] 是注意力机制的变体，在这些变体中，多个查询头共享同一个键和值的头，从而减少推理过程中 KV 缓存的大小。与其为计算复制键和值的头，不如通过隐式操作头部索引来完成相同的计算。在反向传播中，我们需要将那些隐式复制的不同头的 dK 和 dV 梯度相加。
 
@@ -178,7 +178,7 @@ FlashAttention 的第一个版本通过批次大小和头的数量进行并行�
 
 图 2 中描述了这种并行化方案。
 
-![figure2](../../images/flashattention-v2/figure2.png)
+![figure2](../../images/flashattention-2/figure2.png)
 
 在前向传播过程中（左侧），我们并行化了工作线程（线程块），每个线程处理注意力矩阵的一部分行。在反向传播过程中（右侧），每个线程负责处理注意力矩阵的一部分列。
 
@@ -186,7 +186,7 @@ FlashAttention 的第一个版本通过批次大小和头的数量进行并行�
 
 3.2 节介绍了如何调度线程块，但即使在每个线程块内部，我们仍然需要决定如何在不同的 `warps` 之间划分任务。通常情况下，每个线程块会使用 $4$ 或 $8$ 个 `warp`，任务划分如图 3 所示。
 
-![figure3](../../images/flashattention-v2/figure3.png)
+![figure3](../../images/flashattention-2/figure3.png)
 
 **前向传播**。在每个块中，FlashAttention 将 K 和 V 分配给 4 个 warps，同时保持 Q 对所有 warps 都可访问。每个 warp 计算 $QK^T$ 的一部分，随后需要与 V 的一部分相乘，并通过通信汇总结果。这种方案被称为 “split-K” 方案。然而，这种方式效率不高，因为所有 warp 都需要将中间结果写入共享内存，进行同步后再汇总，这些共享内存的读写操作拖慢了前向传播的速度。
 
@@ -200,9 +200,9 @@ FlashAttention-2 优化这一点，改为将 Q 分配给 4 个 warp，同时保�
 
 ## 4. 实验验证
 
-分为两个部分，attention 模块的基准测试和端到端的性能。表2 是无 flashattention、使用flashattention-v1 和 flashattention-v2 在训练 GPT3 模型上的可实现计算性能（$\text{Attainable GFlops/s}$）的对比。
+分为两个部分，attention 模块的基准测试和端到端的性能。表2 是无 flashattention、使用flashattention-v1 和 flashattention-2 在训练 GPT3 模型上的可实现计算性能（$\text{Attainable GFlops/s}$）的对比。
 
-![table1](../../images/flashattention-v2/table1.png)
+![table1](../../images/flashattention-2/table1.png)
 
 ## 5. 讨论与未来方向
 

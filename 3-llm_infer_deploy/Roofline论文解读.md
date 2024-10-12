@@ -61,7 +61,7 @@ $$加速比 = 1 / (S + P/N)$$
 
 > 使用 matplotlib 的 plt.xscale('log') 和 plt.yscale('log') 函数设置 x 和 y 轴的对数刻度。
 
-可以通过绘制一条水平线表示计算机的浮点性能峰值，显然，任何浮点运算的实际性能都不会超越这条线，因为它代表硬件限制。那内存性能峰值如何绘制？由于 X 轴是每字节的 GFlops（GFlops per byte），Y 轴是每秒的 GFlops（GFlops per second），每秒字节（bytes/sec）可以通过 (GFlops/sec)/(GFlops/byte) 计算出来，这是一条 45 度角的直线。因此，我们可以绘制一条斜线，表示该计算机内存系统在不同操作强度下支持的最大浮点性能。公式如下：
+可以通过绘制一条水平线表示计算机的浮点性能峰值，显然，任何浮点运算的实际性能都不会超越这条线，因为它代表硬件限制。那内存性能峰值如何绘制？由于 **X 轴是每字节的 GFlops（GFlops per byte），Y 轴是每秒的 GFlops（GFlops per second），每秒字节（bytes/sec）可以通过 (GFlops/sec)/(GFlops/byte) 计算出来，这是一条 45 度角的直线**。因此，我们可以绘制一条斜线，表示该计算机内存系统在不同操作强度下支持的最大浮点性能。公式如下：
 
 $$\text{可实现的 GFlops/sec} = \text{Min(峰值浮点性能，峰值内存带宽 x 操作强度)}$$
 > $$\text{Attainable GFlops/sec} = \text{Min(Peak Floating Point Performance, Peak Memory Bandwidth} \times \text{Operational Intensity)}$$

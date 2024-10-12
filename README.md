@@ -36,8 +36,8 @@ LLM notes, including model inference, transformer model structure, and lightllm 
 - [CUDA Tutorial](https://cuda-tutorial.github.io/): CUDA 教程，分成四部分：CUDA 基础、GPU 硬件细节、最近的特性和趋势和基于任务的编程实例，提供了完整清晰的 PDF 文档和 cuda 代码实例。**建议当作系统性学习 cuda 编程的教程**。
 - [learn-cuda](https://github.com/rshipley160/learn-cuda?tab=readme-ov-file): 完整的 cuda 学习教程，包含高级异步方法内容，特点是有性能实验的代码实例。建议当作学习 cuda 高级特性的教程。
 - [CUDA C++ Programming Guide](https://docs.nvidia.com/cuda/pdf/CUDA_C_Programming_Guide.pdf)：内容很全，直接上手学习比较难，建议当作查缺补漏和验证细节的 cuda 百科全书，目前版本是 12.6。
-- 《CUDA C编程权威指南》：翻译的国外资料，说实话很多内容翻译的不行，我最开始跟着这个学习的，学了一周，只是了解了线程、内存概念和编程模型的概述，但是细节和系统性思维没学到，而且翻译的不行，内容也比较过时，基本不推荐，除非是实在想看中文教材的才考虑。
-- 《CUDA 编程：基础与实践_樊哲勇》：国内自己写的教材，我查资料时候挑着看了一点，基本逻辑是通的，但是很多原理、概念都讲的特别啰嗦，目录导航还没上一本好，只推荐当作了解一个方向的快速阅读资料。
+- 《CUDA C编程权威指南》：翻译的国外资料，说实话很多内容翻译的非常不行，我最开始跟着这个学习的，学了一周，只是了解了线程、内存概念和编程模型的概述，但是细节和系统性思维没学到，而且翻译的不行，内容也比较过时，完全不推荐，我已经替大家踩过坑了。
+- 《CUDA 编程：基础与实践_樊哲勇》：国内自己写的教材，我查资料时候挑着看了一点，基本逻辑是通的，虽然很多原理、概念都讲的特别啰嗦，但实践需要的关键知识点都有讲到，想学中文教程的，可以当作当作了解一个方向的快速阅读资料。
 
 ## 参考资料
 
@@ -46,3 +46,5 @@ LLM notes, including model inference, transformer model structure, and lightllm 
 - [LLM Inference Unveiled: Survey and Roofline Model Insights](https://arxiv.org/pdf/2402.16363)
 - [CUDATutorial](https://github.com/RussWong/CUDATutorial/tree/main)
 - [NVIDIA CUDA Knowledge Base](https://github.com/rshipley160/learn-cuda/wiki)
+- [cuda_programming](https://github.com/CoffeeBeforeArch/cuda_programming/tree/master)
+- [GitHub Repo for CUDA Course on FreeCodeCamp](https://github.com/Infatoshi/cuda-course/tree/master)

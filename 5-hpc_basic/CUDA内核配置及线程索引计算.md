@@ -3,10 +3,11 @@
 	- [1.1 grid 和 block 大小的限制](#11-grid-和-block-大小的限制)
 - [二 线程全局索引计算](#二-线程全局索引计算)
 - [三 网格和块配置实例](#三-网格和块配置实例)
-	- [3.1 使用块和线程建立矩阵索引](#31-使用块和线程建立矩阵索引)
+	- [3.1 通过全局线程索引访问数据](#31-通过全局线程索引访问数据)
 	- [3.2 使用二维网格和二维块对矩阵求和](#32-使用二维网格和二维块对矩阵求和)
 	- [3.3 使用一维网格和一维块对矩阵求和](#33-使用一维网格和一维块对矩阵求和)
 	- [3.4 总结](#34-总结)
+- [三 通过全局线程索引访问数据](#三-通过全局线程索引访问数据)
 - [参考资料](#参考资料)
 
 ## 前言
@@ -80,7 +81,9 @@ matrixMul<<<blocks, threads>>>(d_a, d_b, d_c, N);
 **kernel 函数中是通过全局线程索引来访问 `1D/2D/3D` 张量元素的**。
 
 前面内容我们知道 CUDA 中每一个线程都有一个唯一的标识 ID—`threadIdx`，`ThreadIdx` 的计算依赖于内核配置 `<<<grid_size, block_size>>>`。而在 kernel 函数内部，
-1. 配置参数的两个变量是赋值给：`gridDim` 和 `blockDim` 内建变量（built-in variable）中。分别表示网格和块尺寸，都是类型为 `dim3` 结构体变量，具有 x、y、z 这 3 个成员。
+1. 配置参数的两个变量是赋值给：`gridDim` 和 `blockDim` 内建变量（built-in variable）中。它们都是类型为 `dim3` 结构体变量，具有 x、y、z 这 3 个成员。
+	- `gridDim` 表示每个维度上的线程块数量，即每个网格的尺寸。
+	- `blockDim` 表示每个维度上的线程数量，即每个线程块的尺寸。
 2. 为了计算 `threadIdx`，还定义了 `blockIdx`, blockIdx 和 threadIdx 都是类型为 `uint3` 的结构体变量，具有 x、y、z 这 3 个成员。其中：
 	- blockIdx.x 取值范围是 [0, gridDim.x - 1];
 	- blockIdx.y 取值范围是 [0, gridDim.y - 1];
@@ -134,6 +137,14 @@ int threadId = threadIdx.z * blockDim.x * blockDim.y + threadIdx.y * blockDim.x 
 int id = blockId * (blockDim.x * blockDim.y * blockDim.z) + threadId;
 ```
 
+或者如下计算方式：
+```cpp
+int blockId = blockIdx.x + blockIdx.y * gridDim.x
+			+ gridDim.x * gridDim.y * blockIdx.z;  
+int threadId = blockId * (blockDim.x * blockDim.y * blockDim.z) 
+			+ (threadIdx.z * (blockDim.x * blockDim.y))
+			+ (threadIdx.y * blockDim.x) + threadIdx.x;
+```
 具体的：
 
 1、 grid 划分成 1 维，block 划分为 1 维
@@ -162,9 +173,37 @@ int id = blockId * (blockDim.x * blockDim.y) + threadId
 - 由二维线程块构成的二维网格
 - 由一维线程块构成的一维网格
 
-### 3.1 使用块和线程建立矩阵索引
+### 3.1 通过全局线程索引访问数据
 
-对于矩阵加法的核函数，首先要完成的任务是使用块和线程索引从全局内存中访问指定的数据。以列优先存储方法的 $nx\times ny$ 矩阵为例:
+以下是如何在核函数中使用线程索引来访问数据的步骤：
+
+1. 确定数据结构：首先，你需要确定你正在处理的数据结构，例如一维数组、二维矩阵（图像）、三维数组（体积数据）等。
+2. **计算全局索引**：每个线程需要计算其全局索引。对于一维数据，全局索引可以通过以下方式计算：
+```bash
+int globalIndex = blockIdx.x * blockDim.x + threadIdx.x;
+```
+对于二维或三维数据，计算会更复杂，需要考虑所有维度。
+3. **使用全局索引访问数据**：一旦线程有了全局索引，就可以使用它来访问设备内存中的数据。例如，如果你有一个一维数组 data，线程可以通过其全局索引访问它：
+```bash
+data[globalIndex];
+```
+4. **考虑数据存储方式**：对于多维数据，需要根据数据在内存中的存储方式（通常是行优先或列优先）来计算索引。例如，对于二维图像数据，如果以行优先方式存储，一个像素的索引可以这样计算：
+```cpp
+int row = blockIdx.y * blockDim.y + threadIdx.y;
+int col = blockIdx.x * blockDim.x + threadIdx.x;
+int globalIndex = row * width + col;
+```
+这里，width 是图像的宽度。
+5. **确保索引在有效范围内**：在访问数据之前，线程需要检查其全局索引是否在数据的有效范围内。这可以通过简单地与数据大小比较来完成：
+```cpp
+if (globalIndex < dataSize) {    
+	// 安全地访问数据    data[globalIndex] = ...;}
+```
+6. **处理数据**：一旦线程通过索引访问了数据，就可以执行所需的操作，如计算、复制或转换。
+
+### 3.2 使用二维网格和二维块对矩阵求和
+
+**使用块和线程建立矩阵索引**: 对于矩阵加法的核函数，首先要完成的任务是使用块和线程索引从全局内存中访问指定的数据。以列优先存储方法的 $nx\times ny$ 矩阵为例:
 
 第一步，可以用以下公式把线程和块索引映射到矩阵坐标上：
 
@@ -184,16 +223,7 @@ idx = iy * nx + ix
 - `iy` 是元素所在的列索引，0 ≤ j < ny
 - `nx` 是矩阵的行数
   
-`printThreadInfo` 函数被用于输出关于每个线程的以下信息：
-- 线程索引
-- 块索引
-- 矩阵坐标
-- 线性全局内存偏移量
-- 相应元素的值
-
-### 3.2 使用二维网格和二维块对矩阵求和
-
-直接创建一个基于二维网格和二维块实现矩阵求和的核函数代码:
+知道了使用块和线程索引从全局内存中访问指定的数据的计算公式，就可以直接创建一个基于二维网格和二维块实现矩阵求和的核函数代码:
 
 ```cpp
 __global__ void sumMatrixOnGPU2D(float *MatA, float *MatB, float *MatC, int nx, int ny)
@@ -257,7 +287,11 @@ dim3 grid ((nx + block.x-1) / block.x, 1);
 - 传统的核函数实现一般不能获得最佳性能；
 - 对于一个给定的核函数，尝试使用不同的网格和线程块大小可以获得更好的性能。
 
+## 三 通过全局线程索引访问数据
+
+
 ## 参考资料
 
 - [极智开发 | CUDA线程模型与全局索引计算方式](https://mp.weixin.qq.com/s/IyQaarSN6V_tukt6KigkGQ)
 - [C++ CUDA 设置线程块尺寸和网格尺寸](https://mp.weixin.qq.com/s/FfMWa94nLFIejilfc3DCxg)
+- [C++ CUDA 核函数中如何通过索引访问数据](https://mp.weixin.qq.com/s/VuGarPnZu56hYNlkRP5cyw)

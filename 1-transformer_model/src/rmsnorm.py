@@ -15,7 +15,7 @@ class RMSNorm(nn.Module):
     def forward(self, x):
         # x 的形状为 [batch_size, seq_len, dim]
         
-        # 计算均方根 (RMS)
+        # 计算均方根 (RMS) shape is [2, 4, 1]
         rms = torch.sqrt(torch.mean(x ** 2, dim=-1, keepdim=True) + self.eps)
         
         # 归一化，并应用缩放参数
