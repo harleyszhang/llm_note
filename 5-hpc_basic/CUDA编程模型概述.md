@@ -88,7 +88,7 @@ CPU/GPU 内存往往存在一种组织结构（hierarchy）。在这种结构中
 
 <img src="../images/cuda_program_model/cuda_thread_structue.png" width="60%" alt="cuda线程层次结构">
 
-不同块内的线程不能协作，每个块和块内的线程都有一个唯一的 ID。线程 ID = $(\text{blockIdx} * \text{blockDim})+\text{threadIdx}$
+不同块内的线程不能协作，每个块和块内的线程都有一个唯一的 ID。线程 ID = $(\text{blockIdx} * \text{blockDim})+\text{threadIdx}$（一维块）
 - `threadIdx` – 线程 ID（块内的线程索引）
 - `blockIdx` – 块 ID（线程块在线程网格内的索引）
 - `blockDim` – 块的尺寸

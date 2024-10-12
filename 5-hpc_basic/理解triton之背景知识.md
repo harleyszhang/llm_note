@@ -1,9 +1,9 @@
 - [triton 定义](#triton-定义)
+- [triton 特性](#triton-特性)
 - [triton 和 cuda 特性的对比](#triton-和-cuda-特性的对比)
 - [num\_warps 概念作用](#num_warps-概念作用)
 - [triton 编译过程](#triton-编译过程)
 - [triton 保留关键字](#triton-保留关键字)
-- [triton 算子和 torch eager 算子区别](#triton-算子和-torch-eager-算子区别)
 - [张量维度判断](#张量维度判断)
 - [理解张量](#理解张量)
 - [理解 dim 参数](#理解-dim-参数)
@@ -20,17 +20,33 @@
 
 Triton 的编程在语法和语义上与 `Numpy` 和 `PyTorch` 非常相似。然而，作为低级语言，开发者需要注意很多细节，特别是在内存加载和存储方面，这对于在低级设备上实现高速计算非常关键。
 
-Triton 有以下特点：
+Triton 定义：
 
-- Intermediate Lauguge：基于Python的DSL
-- tiled Neural Network Compute：面向GPU体系特点，自动分析和实施神经网络计算的分块
+- Intermediate Lauguge：基于 Python 的DSL
+- tiled Neural Network Compute：面向 GPU 体系特点，自动分析和实施神经网络计算的分块
 - Compiler：编译器
 
-**即 Triton 是语言，也是编译器**。
+**一句话总结：Triton 既是语言，也是编译器**。
 
+### triton 特性
+
+Triton 是关心分块（tile）的技术，和 pytorch 的输入是张量视图b不同，triton 的操作对象是张量指针，其更关心张量布局和如何分块（影响 kernel 性能），使用 triton 编写 kernel 性能下限很高，且开发时间大大减少。**Triton 有 3 个重要的特性**：
+1. 粒度为 Block(tile)：更关心 block（即 SM 和 CUDA 的 block 不完全一样），而不是 grid、block、thread 这样严格而又复杂的线程组织结构。
+2. 优化 Pass: 借助一系列的优化 Pass，它可以达到和 cuBLAS 等算子库接近的水平。
+3. 和 pytorch 无缝衔接: 输入是 torch 张量指针。
+
+![Finding the control sweet spot](../images/triton_tutorials0/triton_torch_cuda.png)
+
+**triton 算子和 torch eager 算子区别**：
+
+1. triton 的操作对象是张量指针，torch 的输入是张量视图。
+	-  张量指针：关心张量布局，使用偏移量访问存储。
+	-  张量视图：关心张量形状，可能在储存上不连续。
+2. 通用算子领域，优化的 triton 算子性能可和 cuda 算子持平；在自定义算子、融合算子领域，短期内 triton 算子性能能更高。
+   
 ### triton 和 cuda 特性的对比
 
-下述表格将 Triton 与 CUDA 的关键特性进行了对比，Triton 的编程模型在设计上的一大优势在于无需手动划分块，即 Block-wise 编程，Block 上面的归用户处理，Block 内部的归 Triton compiler 自动化处理。同时Triton 在内存、TensorCore 以及向量化等方面都是自动进行的，可以简化一些 CUDA 编程中的手动优化过程，提供更多的自动化特性以提高开发效率和性能。
+下述表格将 Triton 与 CUDA 的关键特性进行了对比，Triton 的编程模型在设计上的一大优势在于无需手动划分块，即 Block-wise 编程，Block 上面的归用户处理，Block 内部的归 Triton compiler 自动化处理。同时 Triton 在内存、TensorCore 以及向量化等方面都是自动进行的，可以简化一些 CUDA 编程中的手动优化过程，提供更多的自动化特性以提高开发效率和性能。
 
 |  | CUDA | Triton |
 | --- | --- | --- |
@@ -43,7 +59,7 @@ Triton 有以下特点：
 
 ### num_warps 概念作用
 
-**CUDA 采用单指令多线程（SIMT）架构来管理和执行线程，`wrap` 是 CUDA 编程模型中的基本执行单位，一般每 32 个线程为一组且被称为线程束（warp），在硬件 SIMD 单元上一起执行**。
+**`CUDA` 采用单指令多线程（`SIMT`）架构来管理和执行线程，`wrap` 是 CUDA 编程模型中的基本执行单位，一般每 32 个线程为一组且被称为线程束（warp），在硬件 SIMD 单元上一起执行**。
 
 `num_warps` 变量则决定了每个线程块中要使用的 `warp` 数量。线程块中的线程数通常是 warp 数量的倍数，假如 num_warps 是 4，那么每个 block 会包含 4 个 warp，即 block_size = 128 个线程（4 * 32）。
 
@@ -54,7 +70,9 @@ Triton 有以下特点：
 
 ### triton 编译过程
 
-triton 生成 triton IR 再到 LLVM IR 再到 PTX，最后配合 runtime 运行。
+triton kernel -> triton IR -> LLVM IR -> PTX，最后配合 runtime 运行。
+
+上述编译过程通过 `@triton.jit` 装饰器完成，具体来说是遍历提供的 Python 函数的抽象语法树（AST），并使用常见的 `SSA` 构建算法即时生成 `Triton-IR`。然后，编译器后端会简化、优化并自动并行化所产生的 `IR` 代码，再将其转换为高质量的 `LLVM-IR`，最后生成 PTX 并在 NVIDIA GPU 上执行。
 
 ![triton_workflow](../images/triton_tutorials0/triton_workflow.png)
 
@@ -76,12 +94,6 @@ RESERVED_KWS = ["num_warps", "num_stages", "num_ctas", "enable_fp_fusion", "grid
 5. `enable_fp_fusion`：启用浮点运算融合，将多个浮点操作融合在同一流水线中执行，进一步提升性能，减少多次执行的开销；
 6. `maxnreg`：用于控制每个线程块（Block）所能使用的最大寄存器数量
 
-### triton 算子和 torch eager 算子区别
-
-1. triton 的操作对象是张量指针，torch 的输入是张量视图。
-	-  张量指针：关心张量布局，使用偏移量访问存储。
-	-  张量视图：关心张量形状，可能在储存上不连续。
-2. 通用算子领域，优化的 triton 算子性能可和 cuda 算子持平；在自定义算子、融合算子领域，短期内 triton 算子性能能更高。
 ### 张量维度判断
 
 在一个 $M$ 行 $N$ 列的二维数组中，$M$ 是第 0 维，即行数；$N$ 是第 1 维，即列数。那么怎么肉眼判断更复杂的张量数据维度呢，举例：
@@ -338,3 +350,4 @@ tl.store(c_ptr + c_idx, acc, mask = (offsets_m < M) & (offsets < N), other=0.0)
 - [谈谈对OpenAI Triton的一些理解](https://zhuanlan.zhihu.com/p/613244988)
 - [SOTA Deep Learning Tutorials](https://www.youtube.com/@sotadeeplearningtutorials9598)
 - [理解科学计算(numpy,pytorch)中的dim参数](https://nymrli.top/about/)
+- [浅析 Triton 执行流程](https://www.cnblogs.com/BobHuang/p/18324040#scroller-15)
