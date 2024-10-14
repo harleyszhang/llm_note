@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "C/C++ Runner: Debug Session",
+      "type": "lldb",
+      "request": "launch",
+      "args": [],
+      "cwd": "/Users/zhg/llm_inference/5-hpc_basic/src",
+      "program": "/Users/zhg/llm_inference/5-hpc_basic/src/build/Debug/outDebug"
+    }
+  ]
+}
