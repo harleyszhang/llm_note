@@ -1,5 +1,5 @@
 // This program computes matrix multiplication using shared memory tiling
-// By: Nick from CoffeeBeforeArch
+// By: ChatGPT
 
 #include <algorithm>
 #include <cassert>
@@ -8,116 +8,159 @@
 #include <iostream>
 #include <vector>
 
+#include <cuda_runtime.h>
+
 using std::cout;
 using std::generate;
 using std::vector;
 
-// Pull out matrix and shared memory tile size 
-const int N = 1 << 4;
-const int SHMEM_SIZE = 1 << 4;
+// 宏定义tile size
+#define TILE_SIZE 4
 
-__global__ void matrixMul(const int *a, const int *b, int *c) {
-	// Compute each thread's global row and column index
-	int row = blockIdx.y * blockDim.y + threadIdx.y;
-	int col = blockIdx.x * blockDim.x + threadIdx.x;
+// 矩阵大小
+const int N = 8;
 
-	// Statically allocated shared memory
-	__shared__ int s_a[SHMEM_SIZE];
-	__shared__ int s_b[SHMEM_SIZE];
-
-	// Accumulate in temporary variable
-	int tmp = 0;
-
-	// Sweep tile across matrix
-	for (int i = 0; i < N; i += blockDim.x) {
-		// Load in elements for this tile
-		s_a[threadIdx.y * blockDim.x + threadIdx.x] = a[row * N + i + threadIdx.x];
-		s_b[threadIdx.y * blockDim.x + threadIdx.x] = b[i * N + threadIdx.y * N + col];
-		printf("sa is %d\n", a[row * N + i + threadIdx.x]);
-		// Wait for both tiles to be loaded in before doing computation
-		__syncthreads();
-		
-		// Do matrix multiplication on the small matrix
-		for (int j = 0; j < blockDim.x; j++) {
-			tmp += s_a[threadIdx.y * blockDim.x + j] * s_b[j * blockDim.x + threadIdx.x]; // 计算块内元素地址
-		}
-
-		// Wait for all threads to finish using current tiles before loading in new
-		// ones
-		__syncthreads();
-	}
-
-	// Write back results
-	c[row * N + col] = tmp;
+// CUDA 错误检查宏
+#define CHECK_CUDA_ERROR(call) {                                         \
+    cudaError_t err = call;                                              \
+    if(err != cudaSuccess) {                                             \
+        std::cerr << "CUDA Error: " << cudaGetErrorString(err)          \
+                  << " at " << __FILE__ << ":" << __LINE__ << std::endl;\
+        exit(EXIT_FAILURE);                                              \
+    }                                                                    \
 }
 
-// Check result on the CPU
-void verify_result(vector<int> &a, vector<int> &b, vector<int> &c) {
-	// For every row...
-	for (int i = 0; i < N; i++) {
-		// For every column...
-		for (int j = 0; j < N; j++) {
-			// For every element in the row-column pair
-			int tmp = 0;
-			for (int k = 0; k < N; k++) {
-				// Accumulate the partial results
-				tmp += a[i * N + k] * b[k * N + j];
-			}
+// 矩阵乘法核函数
+__global__ void matrixMul(const int *a, const int *b, int *c) {
+    // 计算每个线程的全局行和列索引
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
 
-			// Check against the CPU result
-			assert(tmp == c[i * N + j]);
-		}
-	}
+    // 声明共享内存
+    __shared__ int s_a[TILE_SIZE][TILE_SIZE];
+    __shared__ int s_b[TILE_SIZE][TILE_SIZE];
+
+    // 临时变量用于累加结果
+    int tmp = 0;
+
+    // 按tile划分矩阵
+    for (int i = 0; i < N; i += TILE_SIZE) {
+        // 加载A矩阵的tile到共享内存
+        s_a[threadIdx.y][threadIdx.x] = a[row * N + (i + threadIdx.x)];
+        // 加载B矩阵的tile到共享内存
+        s_b[threadIdx.y][threadIdx.x] = b[(i + threadIdx.y) * N + col];
+
+        // 同步线程，确保所有数据加载完毕
+        __syncthreads();
+
+        // 进行乘法累加
+        for (int j = 0; j < TILE_SIZE; j++) {
+            tmp += s_a[threadIdx.y][j] * s_b[j][threadIdx.x];
+        }
+
+        // 同步线程，确保所有线程完成计算
+        __syncthreads();
+    }
+
+    // 将结果写回全局内存
+    c[row * N + col] = tmp;
+}
+
+// 在CPU上验证结果
+void verify_result(const vector<int> &a, const vector<int> &b, const vector<int> &c) {
+    for (int i = 0; i < N; i++) {
+        for (int j = 0; j < N; j++) {
+            int tmp = 0;
+            for (int k = 0; k < N; k++) {
+                tmp += a[i * N + k] * b[k * N + j];
+            }
+            if (tmp != c[i * N + j]) {
+                std::cerr << "Mismatch at (" << i << ", " << j << "): "
+                          << "CPU = " << tmp << ", GPU = " << c[i * N + j] << std::endl;
+                exit(EXIT_FAILURE);
+            }
+        }
+    }
 }
 
 int main() {
-	// Size (in bytes) of matrix
-	size_t bytes = N * N * sizeof(int);
+    // 矩阵大小（字节）
+    size_t bytes = N * N * sizeof(int);
 
-	// Host vectors
-	vector<int> h_a(N * N);
-	vector<int> h_b(N * N);
-	vector<int> h_c(N * N);
+    // 主机端矩阵
+    vector<int> h_a(N * N);
+    vector<int> h_b(N * N);
+    vector<int> h_c(N * N, 0);
 
-	// Initialize matrices
-	generate(h_a.begin(), h_a.end(), []() { return rand() % 100; });
-	generate(h_b.begin(), h_b.end(), []() { return rand() % 100; });
+    // 初始化矩阵A和B
+    generate(h_a.begin(), h_a.end(), []() { return rand() % 100; });
+    generate(h_b.begin(), h_b.end(), []() { return rand() % 100; });
 
-	// Allocate device memory
-	int *d_a, *d_b, *d_c;
-	cudaMalloc(&d_a, bytes);
-	cudaMalloc(&d_b, bytes);
-	cudaMalloc(&d_c, bytes);
+    // 打印初始化的矩阵（可选）
+    
+    cout << "Matrix A:\n";
+    for(int i = 0; i < N; ++i){
+        for(int j = 0; j < N; ++j){
+            cout << h_a[i * N + j] << "\t";
+        }
+        cout << "\n";
+    }
 
-	// Copy data to the device
-	cudaMemcpy(d_a, h_a.data(), bytes, cudaMemcpyHostToDevice);
-	cudaMemcpy(d_b, h_b.data(), bytes, cudaMemcpyHostToDevice);
+    cout << "\nMatrix B:\n";
+    for(int i = 0; i < N; ++i){
+        for(int j = 0; j < N; ++j){
+            cout << h_b[i * N + j] << "\t";
+        }
+        cout << "\n";
+    }
+    
 
-	// Threads per CTA dimension
-	int THREADS = 4;
+    // 设备端指针
+    int *d_a, *d_b, *d_c;
 
-	// Blocks per grid dimension (assumes THREADS divides N evenly)
-	int BLOCKS = N / THREADS;
+    // 分配设备内存
+    CHECK_CUDA_ERROR(cudaMalloc(&d_a, bytes));
+    CHECK_CUDA_ERROR(cudaMalloc(&d_b, bytes));
+    CHECK_CUDA_ERROR(cudaMalloc(&d_c, bytes));
 
-	// Use dim3 structs for block  and grid dimensions
-	dim3 threads(THREADS, THREADS);
-	dim3 blocks(BLOCKS, BLOCKS);
+    // 将数据从主机复制到设备
+    CHECK_CUDA_ERROR(cudaMemcpy(d_a, h_a.data(), bytes, cudaMemcpyHostToDevice));
+    CHECK_CUDA_ERROR(cudaMemcpy(d_b, h_b.data(), bytes, cudaMemcpyHostToDevice));
 
-	// Launch kernel
-	matrixMul<<<blocks, threads>>>(d_a, d_b, d_c);
+    // 定义每个线程块的线程数
+    dim3 threads(TILE_SIZE, TILE_SIZE);
+    // 定义网格的线程块数
+    dim3 blocks((N + TILE_SIZE - 1) / TILE_SIZE, (N + TILE_SIZE - 1) / TILE_SIZE);
 
-	// Copy back to the host
-	cudaMemcpy(h_c.data(), d_c, bytes, cudaMemcpyDeviceToHost);
+    // 启动核函数
+    matrixMul<<<blocks, threads>>>(d_a, d_b, d_c);
 
-	// Check result
-	verify_result(h_a, h_b, h_c);
+    // 检查核函数是否有错误
+    CHECK_CUDA_ERROR(cudaGetLastError());
 
-	cout << "COMPLETED SUCCESSFULLY\n";
+    // 将结果从设备复制回主机
+    CHECK_CUDA_ERROR(cudaMemcpy(h_c.data(), d_c, bytes, cudaMemcpyDeviceToHost));
 
-	// Free memory on device
-	cudaFree(d_a);
-	cudaFree(d_b);
-	cudaFree(d_c);
+    // 验证结果
+    verify_result(h_a, h_b, h_c);
 
-	return 0;
+    cout << "COMPLETED SUCCESSFULLY\n";
+
+    // 可选：打印结果矩阵
+    
+    cout << "\nMatrix C (Result):\n";
+    for(int i = 0; i < N; ++i){
+        for(int j = 0; j < N; ++j){
+            cout << h_c[i * N + j] << "\t";
+        }
+        cout << "\n";
+    }
+    
+
+    // 释放设备内存
+    CHECK_CUDA_ERROR(cudaFree(d_a));
+    CHECK_CUDA_ERROR(cudaFree(d_b));
+    CHECK_CUDA_ERROR(cudaFree(d_c));
+
+    return 0;
 }
