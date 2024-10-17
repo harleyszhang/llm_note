@@ -1,14 +1,14 @@
 - [1. flash-attention 算法原理](#1-flash-attention-算法原理)
 - [参考资料](#参考资料)
 
+
 ### 1. flash-attention 算法原理
 
-对于 FA 的设计思路, 2023 年我的建议是不要去读 FA-V1 论文了，推荐学习路线：
+标准自注意力的数学表达式如下：
 
-1. 学习 Online Softmax: [Online normalizer calculation for softmax](https://arxiv.org/abs/1805.02867)
-2. 看 FlashAttention-2 论文。因为 FlashAttention V1 的关键设计在V2中被推翻了，FA-V2 论文也介绍了 FA-V1。
-3. 看 `Flash Decoding`（不在本文介绍范围内）。
+$$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V$$
 
+其中，$d_k$ 是键向量的维度，用于缩放点积结果以防止梯度消失。
 
 ### 参考资料
 

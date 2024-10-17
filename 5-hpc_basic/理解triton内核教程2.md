@@ -185,6 +185,123 @@ if __name__ == "__main__":
 ```
 > 缓存命中率（Cache Hit Rate）是衡量缓存系统性能的一个重要指标，表示缓存请求中成功命中的比例，即从缓存中直接读取数据的次数占总访问次数的百分比。
 
+`triton` 版本实现如下所示:
+
+```python
+@triton.jit
+def _fused_linear_kernel_fwd(
+    x_ptr,   # 输入数据矩阵首元素指针
+    w_ptr,   # 权重矩阵首元素指针
+    z_ptr,   # 输出结果地址
+    M, N, K, # Matrix dimensions
+    b_ptr=None,
+    r_ptr=None,
+    apply_gelu=False, # gelu 激活和 dropout
+    dropout_prob=0.0,
+    seed=1337,
+    BLOCK_SIZE_M: tl.constexpr = 128,  # 块大小
+    BLOCK_SIZE_N: tl.constexpr = 128, 
+    BLOCK_SIZE_K: tl.constexpr = 64,
+):
+    # 当前 kernel 在 M/N 方向的程序 id
+    pid_m = tl.program_id(0) # 二维内核允许在行（M）和列（N）两个方向上并行计算，极大地提高了计算效率。
+    pid_n = tl.program_id(1)
+    
+    # 计算行列索引偏移，offs_m: 当前块负责的行索引，形状为 (BLOCK_SIZE_M, 1)。
+    offs_m = pid_m * BLOCK_SIZE_M + tl.arange(0, BLOCK_SIZE_M)[:, None]
+    offs_n = pid_n * BLOCK_SIZE_N + tl.arange(0, BLOCK_SIZE_N)[None, :] # 形状为 (1, BLOCK_SIZE_N)。
+    
+    # 子块的矩阵乘法
+    z = tl.zeros((BLOCK_SIZE_M, BLOCK_SIZE_N), dtype=tl.float32)
+    for k in range(0, K, BLOCK_SIZE_K):
+        x_k = tl.arange(0, BLOCK_SIZE_K)[None,:] + k
+        # (BLOCK_SIZE_M, BLOCK_SIZE_K)
+        x = tl.load(x_ptr + offs_m * K + x_k, mask=(offs_m < M) & (x_k < K), other=0.0)
+        x = x.to(tl.float16)
+        
+        w_k = tl.arange(0, BLOCK_SIZE_K)[:, None] + k
+        # (BLOCK_SIZE_K, BLOCK_SIZE_N)
+        w = tl.load(w_ptr + w_k * N + offs_n, mask=(w_k < K) & (offs_n < N), other=0.0)
+        w = w.to(tl.float16)
+        
+        # (BLOCK_SIZE_M, BLOCK_SIZE_N)
+        z = tl.dot(x, w, acc=z)
+    
+    if b_ptr is not None:
+        b = tl.load(b_ptr + offs_n, mask=(offs_n < N), other=0.0)
+        z += b.to(tl.float32)
+    # (1, BLOCK_SIZE_N)
+    
+    z_offset = offs_m * N + offs_n
+    z_mask = (offs_m < M) & (offs_n < N)
+    
+    if apply_gelu:
+        z = gelu_new(z)
+    if dropout_prob > 0.0:
+        z = dropout(z, dropout_prob, seed, z_offset)
+
+    if r_ptr is not None:
+        r = tl.load(r_ptr + z_offset, mask=z_mask)
+        z += r.to(tl.float32)
+
+    tl.store(z_ptr + z_offset, z, mask=z_mask)
+
+@torch.no_grad()
+def fused_ffn(
+    x,
+    weight,
+    bias=None,
+    residual=None, # 残差输入项
+    add_gelu=False,
+    dropout_prob=0.0,
+):
+    # x: (*, K)
+    # weight: (K, N)
+    # bias: (N,)
+    # f = dropout(gelu(x @ w + b)) + residual
+    
+    # 将 x 形状去除最后一个维度，保存为 out_shape_0
+    out_shape_0 = x.shape[:-1]
+    # 将 x 的所有维度压缩为二维张量, [B, L, K] -> [M, K], K 是隐藏层的维度。
+    x = x.view((-1, x.shape[-1]))
+    M, K = x.shape
+    N = weight.shape[1]
+    
+    # Allocates output.
+    z = torch.empty((M, N), device=x.device, dtype=x.dtype)
+    
+    assert x.shape[1] == weight.shape[0]
+    assert x.is_contiguous()
+    assert weight.is_contiguous()
+
+    if bias is not None:
+        assert bias.is_contiguous()
+        assert weight.shape[1] == bias.shape[0]
+    if residual is not None:
+        residual = residual.view(z.shape)
+        assert residual.is_contiguous()
+        
+    BLOCK_SIZE_M = 64
+    BLOCK_SIZE_N = 64
+    BLOCK_SIZE_K = 32
+    
+    # 2D launch kernel where each block gets its own program.
+    grid = (triton.cdiv(M, BLOCK_SIZE_M), triton.cdiv(N, BLOCK_SIZE_N), 1)
+    _fused_linear_kernel_fwd[grid](
+        x, 
+        weight, 
+        z,
+        M, N, K,
+        apply_gelu=add_gelu,
+        dropout_prob=dropout_prob,
+        b_ptr=bias,
+        r_ptr=residual,
+        BLOCK_SIZE_M=BLOCK_SIZE_M,
+        BLOCK_SIZE_N=BLOCK_SIZE_N,
+        BLOCK_SIZE_K=BLOCK_SIZE_K,
+    )
+    return z.view((*out_shape_0, N))
+```
 ### 3. 更快的矩阵乘法 kernel
 
 #### 3.1 block 的计算顺序
