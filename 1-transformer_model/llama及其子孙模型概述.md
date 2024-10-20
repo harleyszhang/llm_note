@@ -2,7 +2,7 @@
   - [1.1 模型概述](#11-模型概述)
   - [1.2 模型整体结构](#12-模型整体结构)
   - [1.3 LayerNorm 的改进 RMSNorm](#13-layernorm-的改进-rmsnorm)
-  - [1.4 SwiGLU【待修改】](#14-swiglu待修改)
+  - [1.4 FFN【待修改】](#14-ffn待修改)
   - [1.5 RoPE旋转位置编码](#15-rope旋转位置编码)
 - [二 代码分析](#二-代码分析)
   - [2.1 transformers 模型推理](#21-transformers-模型推理)
@@ -125,9 +125,9 @@ else:
 > 输入和输出的形状:  torch.Size([2, 4, 8]) torch.Size([2, 4, 8])
 结果验证通过: 自己实的 RMSNorm 和 pytorch nn.RMSNorm 结果一致！
 
-### 1.4 SwiGLU【待修改】
+### 1.4 FFN【待修改】
 
-Feed Forward 层全称是 Position-wise Feed-Forward Networks（`FPN`），`FFN` 接收一个向量 x（序列中特定位置的隐藏表示），并将其通过两个可学习的**线性变换**（由矩阵 W1 和 W2 以及偏置向量 b1 和 b2 表示）进行处理，在两个线性变换之间应用修正线性（`ReLU`）激活函数。计算过程用数学公式可表达为：
+Feed Forward 层全称是 Position-wise Feed-Forward Networks（`FFN`），`FFN` 接收一个向量 x（序列中特定位置的隐藏表示），并将其通过两个可学习的**线性变换**（由矩阵 W1 和 W2 以及偏置向量 b1 和 b2 表示）进行处理，在两个线性变换之间应用修正线性（`ReLU`）激活函数。计算过程用数学公式可表达为：
 
 $$
 \text{FFN}(x, W_1, W_2, b_1, b_2) = \text{max}(0, xW_1 + b_1 )W_2 + b_2 
