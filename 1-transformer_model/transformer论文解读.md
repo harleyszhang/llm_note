@@ -39,7 +39,7 @@
 
 Layer Norm 层的计算可视化如下图所示:
 
-![Layer Norm](../images/transfomer/layer_norm.jpeg)
+![Layer Norm](../images/transformer_code/layer_norm.jpeg)
 
 ### 4. Encoder 和 Decoder 结构
 
