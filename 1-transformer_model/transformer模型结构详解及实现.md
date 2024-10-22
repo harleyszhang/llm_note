@@ -66,7 +66,7 @@ Transformer 架构更详细的可视化图如下所示:
 
 ### 1.1 tokenizer 预处理
 
-`Transformer` 架构的 `LLM` 的输入通常都是字符串文本，而模型是不能直接处理字符串文本数据，需要通过 `tokenizer` 完成预处理工作，即 tokenized 分词、词元编码以及最后的**转成 input ids 向量**（矩阵）过程，`id` 数值对应的是 `tokenizer` 词汇表中的索引，也叫 `token id`。
+`Transformer` 架构的 `LLM` 的输入通常都是字符串文本，而模型是不能直接处理字符串文本数据，需要通过 `tokenizer` 完成预处理工作，即 tokenized 分词、词元编码以及最后的**转成 input ids 向量**（矩阵）过程，`id` 数值对应的是 `tokenizer` 词汇表中的索引，也叫 `token id`。一句话总结就是，**tokenizer 的作用就是将这些文本/提示词转换为 token-id（词汇表中 token 的索引）**。
 
 这里以 Hugging Face 的 transformers 库为例，展示如何将输入文本处理为 Transformer 模型能够理解的 `input ids` 形式。
 
@@ -167,6 +167,12 @@ $$
 其中，`pos` 表示单词在句子中的位置，$d$ 表示 PE 的维度 (与词 Embedding 一样)，$2i$ 表示偶数的维度，$2i+1$ 表示奇数维度 (即 $2i≤d, 2i+1≤d$)。
 
 #### 1.2.3 TransformerEmbedding 层实现
+
+总结：transformer 输入模块有三个组成部分：文本/提示词、分词器（Tokenizer）和嵌入层（Embeddings）。输入模块的工作流程和代码实现如下所示:
+
+<img src="../images/transformer_code/inpu_block_workflow.webp" width="60%" alt="inpu_block_workflow">
+
+> 矩阵的每一列表示一个 `token` 的嵌入向量。
 
 ```python
 class PositionalEncoding(nn.Module):
