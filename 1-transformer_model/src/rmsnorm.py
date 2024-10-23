@@ -3,20 +3,18 @@ import torch.nn as nn
 
 class RMSNorm(nn.Module):
     """nlp 领域"""
-    def __init__(self, dim, eps=1e-8):
+    def __init__(self, dim):
         """
         :param dim: 输入的维度
-        :param eps: 防止除以0的稳定项
         """
         super(RMSNorm, self).__init__()
-        self.eps = eps
         self.scale = nn.Parameter(torch.ones(dim))  # 可学习的缩放参数
     
     def forward(self, x):
         # x 的形状为 [batch_size, seq_len, dim]
         
         # 计算均方根 (RMS) shape is [2, 4, 1]
-        rms = torch.sqrt(torch.mean(x ** 2, dim=-1, keepdim=True) + self.eps)
+        rms = torch.sqrt(torch.mean(x ** 2, dim=-1, keepdim=True))
         
         # 归一化，并应用缩放参数
         return x / rms * self.scale
@@ -33,8 +31,8 @@ output = rmsnorm(x)
 rmsnorm_pytorch = nn.RMSNorm(dim)
 output_pytorch = rmsnorm_pytorch(x)
     
-print("输入:\n", x)
-print("输出:\n", output)
+# print("输入:\n", x)
+# print("输出:\n", output)
 print("输入和输出的形状: ", x.shape, output.shape)
 
 if torch.allclose(output, output_pytorch, atol=1e-6):
