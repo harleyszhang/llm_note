@@ -20,6 +20,8 @@ RoPE的核心思想是将位置编码与词向量通过旋转矩阵相乘，使�
 2. 无需额外的计算：位置编码与词向量的结合在计算上是高效的。
 3. 适应不同长度的序列：RoPE 可以灵活处理不同长度的输入序列。
 
+> 三角函数、旋转矩阵、欧拉公式、复数等数学背景知识可以参考这篇[文章](./位置编码算法背景知识.md)学习。
+
 ## RoPE 算法推导
 
 ### PE 和 Self-Attention 概述
@@ -203,15 +205,55 @@ $$\mathbf{A} = a \otimes b$$
 
 其中 $a \otimes b$ 生成一个矩阵，行数等于向量 $a$ 的元素数，列数等于向量 $b$ 的元素数。
 
+```bash
+>>> a = torch.tensor([2,3,1,1,2], dtype=torch.int8)
+>>> b = torch.tensor([4,2,3], dtype=torch.int8)
+>>> c = torch.outer(a, b)
+>>> c.shape
+torch.Size([5, 3])
+>>> c
+tensor([[ 8,  4,  6],
+        [12,  6,  9],
+        [ 4,  2,  3],
+        [ 4,  2,  3],
+        [ 8,  4,  6]], dtype=torch.int8)
+```
 2，`torch.matmul`
 
 可以处理更高维的张量。当输入张量的维度大于 2 时，它将执行批量矩阵乘法。
+```bash
+>>> A = torch.randn(10, 3, 4)
+>>> B = torch.randn(10, 4, 7)
+>>> C = torch.matmul(A, B)
+>>> D = torch.bmm(A, B)
+>>> assert C.shape == D.shape # shape is torch.Size([10, 3, 7])
+>>> True
+```
 
+3，`torch.polar`
+
+```python
+# 第一个参数是绝对值（模），第二个参数是角度
+torch.polar(abs, angle, *, out=None) → Tensor
+```
+构造一个复数张量，其元素是极坐标对应的笛卡尔坐标，绝对值为 abs，角度为 angle。
+$$\text{out=abs⋅cos(angle)+abs⋅sin(angle)⋅j}$$
+```python
+# 假设 freqs = [x, y], 则 torch.polar(torch.ones_like(freqs), freqs) 
+# = [cos(x) + sin(x)j, cos(y) + sin(y)j]
+>>> angle = torch.tensor([np.pi / 2, 5 * np.pi / 4], dtype=torch.float64)
+>>> z = torch.polar(torch.ones_like(angle), angle)
+>>> z
+tensor([ 6.1232e-17+1.0000j, -7.0711e-01-0.7071j], dtype=torch.complex128)
+>>> a = torch.tensor([np.pi / 2], dtype=torch.float64) # 数据类型必须和前面一样
+>>> torch.cos(a)
+tensor([6.1232e-17], dtype=torch.float64)
+```
 ### RoPE 代码
 
 通过仔细阅读和一步步分析了 `llama` 官方代码后，会发现作者直接转化为**复数相乘**形式来计算 $f_q(x_m, m) = (W_q x_m) e^{im\theta}$，旋转矩阵定义和各种变换完全没用上（有种前面推导了个寂寞的感觉），但是没办法，虽然直接使用旋转矩阵，更符合线性代数的常规思路，但是这需要手动处理每个维度的旋转矩阵，代码稍微繁琐而且计算效率不如复数乘法高效。
 
-所以，作者在 `RoPE` 算法实现中，没有使用矩阵相乘的形式，而是把旋转角度张量和 $W_qx_mk$ 转为复数形式再相乘，即直接实现公式（6）中的 $f_q(W_q x_m) e^{im\theta}$，因此 `RoPE` 算法实现的流程和代码理解的难点如下：
+所以，作者在 `RoPE` 算法实现中，没有使用矩阵相乘的形式，而是把旋转角度张量和 $W_qx_mk$ 转为复数形式再相乘，即直接实现公式（6）中的 $f_q(W_q x_m) e^{im\theta}$，因此 **`RoPE` 算法实现的流程和代码理解的难点**如下：
 
 1. 如何生成旋转角度 $\theta$ 向量, $\Theta = \left\{ \theta_i = 10000^{-2(i-1)/d}, i \in [1, 2, \dots, d/2] \right\}$;
 2. 如何将旋转角度和 `token` 位置索引相乘，并构造一个矩阵，该矩阵包含了每个位置和每个维度对应的旋转角度。
