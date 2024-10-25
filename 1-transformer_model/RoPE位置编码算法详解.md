@@ -83,6 +83,33 @@ tensor([ 6.1232e-17+1.0000j, -7.0711e-01-0.7071j], dtype=torch.complex128)
 tensor([6.1232e-17], dtype=torch.float64)
 ```
 
+4，`torch.repeat_interleave`
+
+```python
+# 第一个参数是输入张量
+# 第二个参数是重复次数
+# dim: 沿着该维度重复元素。如果未指定维度，默认会将输入数组展平成一维，并返回一个平坦的输出数组。
+torch.repeat_interleave(input, repeats, dim=None, *, output_size=None) → Tensor
+```
+返回一个具有与输入相同维度的重复张量
+
+```bash
+>>> keys = torch.randn([2, 12, 8, 512])
+>>> keys2 = torch.repeat_interleave(keys, 8, dim = 2)
+>>> keys2.shape
+torch.Size([2, 12, 64, 512])
+>>> x
+tensor([[1, 2],
+        [3, 4]])
+>>> torch.repeat_interleave(x, 3, dim=1)
+tensor([[1, 1, 1, 2, 2, 2],
+        [3, 3, 3, 4, 4, 4]])
+>>> torch.repeat_interleave(x, 3)
+tensor([1, 1, 1, 3, 3, 3, 4, 4, 4, 5, 5, 5])
+```
+
+**注意重复后元素的顺序**，以简单的一维为例 `x = [a,b,c,d]`，`torch.repeat_interleave(x, 3)` 后，结果是 `[a,a,a,b,b,b,c,c,c,d,d,d]`。
+
 ## RoPE 算法推导
 
 ### PE 和 Self-Attention 概述
