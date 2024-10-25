@@ -8,6 +8,7 @@
 	- [3.1 MHA(Attention) 层计算量](#31-mhaattention-层计算量)
 		- [3.1.1 prefill 阶段](#311-prefill-阶段)
 		- [3.1.2 decode 阶段](#312-decode-阶段)
+		- [3.1.3 kv cache 节省了多少计算量](#313-kv-cache-节省了多少计算量)
 	- [3.2 MLP 层计算量](#32-mlp-层计算量)
 	- [3.3 模型总计算量](#33-模型总计算量)
 		- [3.3.1 计算量定性和定量结论](#331-计算量定性和定量结论)
@@ -74,9 +75,12 @@
 
 可以看出第 $i$ 轮输入数据只比第 $i+1$ 轮输入数据新增了一个 `token`，其他全部相同！因此第 $i+1$ 轮推理时必然包含了第 $i$ 轮的部分计算。`KV Cache` 优化的起因就在这里，**缓存当前轮可重复利用的计算结果**，下一轮计算时直接读取缓存结果，原理很简单，**本质就是用空间换时间**。
 
-另外，**每一层 decode layer 都需要单独缓存 $K$ 和 $V$，因为每层的 `attention` 运算是独立的，即第 $L$ 层的 $K_L$ 和 $V_L$ 是独立的、与其他层不同的**。如果不缓存每一层的 $K$ 和 $V$，在生成下一个 token 时，模型就需要重新计算之前所有 `token` 的 $K$ 和 $V$，这将导致大量冗余计算，通过缓存，避免了重复计算 $K$ 和 $V$，从而加速了生成过程。
+另外，**每一层 decode layer 都需要单独缓存 $K$ 和 $V$，因为每层的 `attention` 运算是独立的，即第 $L$ 层的 $K_L$ 和 $V_L$ 是独立的、与其他层不同的**。如果不缓存每一层的 $K$ 和 $V$，在生成下一个 token 时，模型就需要重新计算之前所有 `token` 的 $K$ 和 $V$，这将导致大量冗余计算，通过缓存，避免了重复计算 $K$ 和 $V$，从而加速了生成过程。值得注意的是，kv cache 优化是应用在 `decode` 推理阶段过程中的，下图很好的展示了不使用 kv cache 和使用 kv cache 的区别。
 
-单个 `token` 的 `kv` 向量的计算开销，大概占将 `token` 通过整个模型前向计算的 $1/6 = \frac{4nh^2}{24nh^2}$ ，表面上看，使用 kv cache 优化可以节省 1/6 的时间，但实际不是！随着采样的迭代进行，token 数量增加，这个节省的量会随着序列中的 token 数量增加而增加（非常多！），假设输出 tokens 数目为 $o$，即 $o$ 轮迭代 decode 下来，可节省$1/6o$的时间，因此，使用 kv cache 优化是非常有必要的。
+<img src="../images/transformer_params_flops/kv_cache_visual.png" width="100%" alt="ffn_var">
+在 B 区块 中，输出 token 替换了查询嵌入中的输入 token，而 KV 缓存则存储之前生成的 token。在计算注意力分数时，只需要使用一个查询 token，再加上键和值缓存中的已有 token 就可以了。这将矩阵乘法从 A 区块 的 3x3 减少到 B 区块 的 1x3，节省了近 66% 的计算量。在处理大规模序列和批量数据时，这将显著降低计算开销。
+
+> self-attention 中，kv 向量的单个 `token` 的计算开销为 ${4nh^2}$。
 
 ### 1.3 prefill 和 decode 阶段的 kv 计算过程的区别
 
@@ -125,9 +129,9 @@ $$O_{dec}=\text{softmax}(\frac{Q_{dec}\cdot K_{cat}^{T}}{\sqrt{d_k}}) * V_{cat }
 
 3，`LN` 层有两个，分别连接在 `MHA` 和 `MLP` 块的后面，`layer norm` 层有两个可训练参数: $\mu_{\beta}$ 和 $\sigma_{\beta}$（scale factor and offset），参数大小都是 $[h]$。**$2$ 个 `Layer Norm` 层的总参数量 = $4h$**。
 
-4，除了 `decoder block` 有很多参数，`Embedding` 层同样也有参数，`Embedding` 层包括两部分: Token Embedding (`TE`) 和 Positional Embedding (`PE`)。`TE` 层的输入张量形状是 $[b, s, V]$，输出维度是 $[b, s, h]$，对应的 `TE` 层权重矩阵形状为 $V, h$，**即 `TE` 层参数量 = $Vh$**。另外，最后的输出层通常是和 `TE` 层共享权重矩阵的。
+4，除了 `decoder block` 有很多参数，`Embedding` 层同样也有参数，`Embedding` 层包括两部分: Token Embedding (`TE`) 和 Positional Embedding (`PE`)。`TE` 层的输入张量形状是 $[b, s, V]$，输出维度是 $[b, s, h]$，对应的 `TE` 层权重矩阵形状为 $[V, h]$，**即 `TE` 层参数量 = $Vh$**。另外，最后的输出层通常是和 `TE` 层共享权重矩阵的。
 
-位置 Embedding 层的参数量比较小，有时可忽略不计。
+位置 Embedding 层一般使用纯数学计算，无需经过训练，故忽略不计。
 
 综上可知，**参数量和输入序列长度无关。对于有 $n$ 层 `decode block` 块的 `llm` 参数量为 $n(12h^2 + 13h) + Vh$。当 $h$ 较大时，可忽略一次项，`llm` 参数量近似为 $12nh^2$**。
 
@@ -213,6 +217,16 @@ $$y = xW^T + \text{bias}$$
 3，输出线性映射层: 矩阵乘法 `matmul` 的输入输出形状为: $[1, h] \times [h, h]\to [1, h]$，`FLOPs`: $2h^2$。
 
 **综上，decode 阶段 `MHA` 层每一轮解码的 `FLOPs`: $6h^2 + 4(s+o)h + 2h^2= 8h^2 + 4(s+o)h$**。
+
+#### 3.1.3 kv cache 节省了多少计算量
+
+这里，我简单分析，对于上下文长度 $s$，不使用 kv cache d的 self-attention 的总计算量复杂度为：总计算量：$O(s^3h)$，使用后的总计算量近似为 $Os^2h$。计算量节省比率：
+
+$$\text{节省比率} = \frac{O(s^3 h) - O(s^2 h)}{O(s^3 h)} = 1 - \frac{1}{s}$$
+
+当 $s$ 较大时，$\frac{1}{s}$ 接近于 0，节省比率接近于 100%！
+
+换种说法，计算复杂度从 $O(s^3 h)$  降低到 $O(s^2 h)$，**即使用 kv cache 可节省约 $s$ 倍的计算量，输出 tokens 数越多，计算量节省越可观**。
 
 ### 3.2 MLP 层计算量
 
@@ -383,7 +397,7 @@ $$\begin{aligned}\text{inference\_memory} &\simeq [n(12h^2 + 13h) + Vh]*2 + 8bsh
 
 **一些定性结论：**
 1. 参数量和输入序列长度无关。$\text{Parmas} = 12nh^2$。
-2. 每个 `token` 对应的 $\text{Flops} = 24nh^2$，计算量随序列长度呈线性增长。其中 $\text{Prefill flops} = 24nh^2*bs$；$\text{Decode flops} = 24nh^2*b$。
+2. 每个 `token` 对应的 $\text{Flops} = 24nh^2$，计算量随序列长度呈线性增长。其中 $\text{Prefill flops} = 24nh^2*bs$；每轮 decode 的计算量 $\text{Decode flops} = 24nh^2*b$。
 3. 每个 `token` 消耗的 $ \text{memory} = 4nh$，`kv cache` 显存占用量随（输入 + 输出序列长度）以及批量大小 `batch_size` 呈线性增长。kv cache 显存占用量，即 $\text{memory\_kv-cache} = b(s+o)h*n * 2*2 = 4nh*b(s+o)$，单位为字节 `byte`。
 4. `self-attention` 的内存和计算复杂度随序列长度 $s$ 呈二次方增长。注意力输出矩阵 $O = \text{softmax}(QK^T)V$ 要求 $O(N^2d)$ 的 FLOPs，并且除了输入和输出内存之外，需要额外的 $O(N^2)$ 内存
 

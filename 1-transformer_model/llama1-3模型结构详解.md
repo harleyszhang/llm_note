@@ -5,7 +5,8 @@
     - [FFN 发展史](#ffn-发展史)
     - [FFN\_SwiGLU](#ffn_swiglu)
   - [1.4 RoPE 旋转位置编码](#14-rope-旋转位置编码)
-  - [1.5 基于开源 LLaMA 微调的模型](#15-基于开源-llama-微调的模型)
+    - [RoPE 代码实现](#rope-代码实现)
+  - [1.5 基于开源 LLaMA 1 微调的模型](#15-基于开源-llama-1-微调的模型)
 - [二 llama2 模型](#二-llama2-模型)
   - [2.1 llama2 概述](#21-llama2-概述)
   - [2.2 kv cache 优化-GQA](#22-kv-cache-优化-gqa)
@@ -236,7 +237,7 @@ print(out.shape) # torch.Size([1, 128])
 
 ### 1.4 RoPE 旋转位置编码
 
-之所以必须使用位置编码，是因为纯粹的 Attention 模块是无法捕捉输入顺序的，即无法理解不同位置的 token 代表的意义不同。
+之所以必须使用位置编码，是因为纯粹的 Attention 模块是无法捕捉输入顺序的，即无法理解不同位置的 token 代表的意义不同。比如，输入文本为“我爱苹果”或“苹果爱我”，模型会将这两句话视为相同的内容，因为嵌入中并没有明确的顺序信息让模型去学习。
 
 `RoPE`（Rotary Position Embedding）旋转位置编码，由模型 [RoFormer: Enhanced Transformer with Rotary Position Embedding](https://arxiv.org/pdf/2104.09864v5) 提出。RoPE 的核心思想是将位置编码与词向量通过旋转矩阵相乘，使得词向量不仅包含词汇的语义信息，还融入了位置信息，其具有以下优点：
 
@@ -250,73 +251,73 @@ print(out.shape) # torch.Size([1, 128])
 3. 接着对每个 `token` 位置的 query 和 key 向量的元素按照**两两一组**应用旋转变换；
 4. 最后再计算 `query` 和 `key` 之间的内积得到 self-attention 的计算结果。
 
-llama 中代码实现如下:
+#### RoPE 代码实现
+
+最后，如果你直接看 `pytorch` 代码，其实很难理解 `rope` 是如何应用相对位置信息的，这个只能通过前面的公式推导才能理解。
+
+结合 llama 官方实现代码，下述是我修改优化和添加注释后的代码，更容易看懂:
+
 ```python
-# LLaMA 官方实现代码 [4] 如下（经过简化）：
-def precompute_freqs_cis(dim: int, seq_len: int, theta: float = 10000.0):
-    # 计算词向量元素两两分组之后，每组元素对应的旋转角度
-    freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
-    # 生成 token 序列索引 t = [0, 1,..., seq_len-1]
-    t = torch.arange(seq_len, device=freqs.device)
-    # freqs.shape = [seq_len, dim // 2] 
-    freqs = torch.outer(t, freqs).float()
-    # torch.polar 的文档
-    # https://pytorch.org/docs/stable/generated/torch.polar.html
-    # 计算结果是个复数向量
-    # 假设 freqs = [x, y]
-    # 则 freqs_cis = [cos(x) + sin(x)i, cos(y) + sin(y)i]
-    freqs_cis = torch.polar(torch.ones_like(freqs), freqs)
+def compute_theta(dim: int, base: float = 10000.0, device: torch.device = torch.device('cpu')) -> torch.Tensor:
+    """
+    计算旋转位置编码中的 Theta 角度值。
+
+    参数：
+    - d (int): 嵌入向量的维度（必须为偶数）。
+    - base (float): 基础频率参数, 默认为10000.0。
+    - device (torch.device): 计算设备, 默认为CPU。
+
+    返回：
+    - torch.Tensor: 包含Theta值的1D张量, 形状为 [d/2]。
+    """
+    if dim % 2 != 0:
+        print("嵌入维度 dim 必须为偶数")
+    i = torch.arange(1, (dim//2) + 1, dtype=torch.float32, device=device)
+    theta_i = base ** (-2*(i - 1) / dim)
+
+    return theta_i
+
+def precompute_freqs_cis(dim: int, seq_len: int, base: float = 10000.0, device: torch.device = torch.device('cpu')):
+    theta = compute_theta(dim, base, device) # theta 角度值序列，向量, 大小为 dim // 2
+    m = torch.arange(seq_len, device=device) # # token 位置值序列，向量，大小为 seq_len
+    m_theta = torch.outer(m, theta) # 所有 token 位置的所有 Theta 值范围, 矩阵，尺寸为 [seq_len, dim // 2]
+    freqs_cis = torch.polar(torch.ones_like(m_theta), m_theta) # e^{i*m*\theta}，本质上是旋转矩阵
     return freqs_cis
 
-def apply_rotary_emb(
-    xq: torch.Tensor,
-    xk: torch.Tensor,
-    freqs_cis: torch.Tensor,
-) -> Tuple[torch.Tensor, torch.Tensor]:
-    # xq.shape = [batch_size, seq_len, dim]
-    # xq_.shape = [batch_size, seq_len, dim // 2, 2]
-    xq_ = xq.float().reshape(*xq.shape[:-1], -1, 2)
-    xk_ = xk.float().reshape(*xk.shape[:-1], -1, 2)
-    
-    # 转为复数域
-    xq_ = torch.view_as_complex(xq_)
-    xk_ = torch.view_as_complex(xk_)
-    
-    # 应用旋转操作，然后将结果转回实数域
-    # xq_out.shape = [batch_size, seq_len, dim]
-    xq_out = torch.view_as_real(xq_ * freqs_cis).flatten(2)
-    xk_out = torch.view_as_real(xk_ * freqs_cis).flatten(2)
+def reshape_for_broadcast(freqs_cis, x):
+    ndim = x.ndim
+    assert ndim >= 2
+    assert freqs_cis.shape == (x.shape[1],x.shape[-1]), "the last two dimension of freqs_cis, x must match"
+    shape = [d if i==1 or i==ndim-1 else 1 for i,d in enumerate(x.shape)]
+    return freqs_cis.view(*shape)
+
+def apply_rotary_emb(xq: torch.Tensor, xk: torch.Tensor, freqs_cis: torch.Tensor, device: torch.device = torch.device('cpu')):
+    """
+    参数:
+        - x_q(torch.Tensor): 实际上是权重 W_q * 词嵌入向量值, 来自上一个线性层的输出, 形状为 [batch_size, seq_len, n_heads, head_dim]
+        - x_k(torch.Tensor): 实际上是权重 W_k * 词嵌入向量值, 来自上一个线性层的输出, 形状为 [batch_size, seq_len, n_heads, head_dim]
+        - freqs_cis (torch.Tensor): 频率复数张量, 形状为 [max_seq_len, head_dim]
+    返回:
+        - Tuple[torch.Tensor, torch.Tensor]: 旋转编码后的查询和键张量
+    """
+    # 实数域张量转为复数域张量
+    xq_reshape = xq.reshape(*xq.shape[:-1], -1, 2) # [batch_size, seq_len, dim] -> [batch_size, seq_len, dim//2, 2] 
+    xk_reshape = xk.reshape(*xk.shape[:-1], -1, 2) # [batch_size, seq_len, dim] -> [batch_size, seq_len, dim//2, 2] 
+    xq_complex = torch.view_as_complex(xq_reshape) # 复数形式张量
+    xk_complex = torch.view_as_complex(xk_reshape) # 复数形式张量
+
+    # 旋转矩阵（freqs_cis）的维度在序列长度（seq_len，维度 1）和头部维度（head_dim，维度 3）上需要与嵌入的维度一致。
+    # 此外，freqs_cis 的形状必须与 xq 和 xk 相匹配，因此我们需要将 freqs_cis 的形状从 [max_seq_len, head_dim] 调整为 [1, max_seq_len, 1, head_dim]。
+    freqs_cis = reshape_for_broadcast(freqs_cis, xq_complex) # [max_seq_len, 1, 1, dim // 2]
+
+    # 应用旋转操作，并将结果转回实数域
+    xq_out = torch.view_as_real(xq_complex * freqs_cis).flatten(3) # flatten(2) 将后面两个维度压成一个维度
+    xk_out = torch.view_as_real(xk_complex * freqs_cis).flatten(3)
+
     return xq_out.type_as(xq), xk_out.type_as(xk)
-
-class Attention(nn.Module):
-    def __init__(self, args: ModelArgs):
-        super().__init__()
-
-        self.wq = Linear(...)
-        self.wk = Linear(...)
-        self.wv = Linear(...)
-        
-        self.freqs_cis = precompute_freqs_cis(dim, max_seq_len * 2)
-
-    def forward(self, x: torch.Tensor):
-        bsz, seqlen, _ = x.shape
-        xq, xk, xv = self.wq(x), self.wk(x), self.wv(x)
-
-        xq = xq.view(batch_size, seq_len, dim)
-        xk = xk.view(batch_size, seq_len, dim)
-        xv = xv.view(batch_size, seq_len, dim)
-
-        # attention 操作之前，应用旋转位置编码
-        xq, xk = apply_rotary_emb(xq, xk, freqs_cis=freqs_cis)
-        
-        # scores.shape = (bs, seqlen, seqlen)
-        scores = torch.matmul(xq, xk.transpose(1, 2)) / math.sqrt(dim)
-        scores = F.softmax(scores.float(), dim=-1)
-        output = torch.matmul(scores, xv)  # (batch_size, seq_len, dim)
-  # ......
 ```
 
-### 1.5 基于开源 LLaMA 微调的模型
+### 1.5 基于开源 LLaMA 1 微调的模型
 
 > 以下这些项目都可以算是 Meta 发布的 LLaMA（驼马）模型的子子孙孙。
 
@@ -336,7 +337,7 @@ class Attention(nn.Module):
 
 ![Vicuna-demo](../images/llama/Vicuna-demo.png)
 
-**3，Koala**(考拉)
+**3，Koala（考拉）**
 
 一款从 `LLaMA` 模型中对用户分享的对话和开源数据集进行了**精细调优**的聊天机器人，其表现与`Vicuna` 类似。 
 
@@ -358,10 +359,6 @@ class Attention(nn.Module):
 
 整体使用下来，其基本任务没问题，但是涌现能力还是有限的，且会有事实性/数学逻辑错误，另外，Close QA 问题也很一般。`GLM` 模型架构与 BERT、T5 等预训练模型模型架构不同，它采用了一种**自回归**的空白填充方法,。
 
-**个人感想**:
-
-一些 LLM 的论文看下来，发现讲模型结构的内容真的很少，大部分内容都在讲数据集构建方法、模型训练方法、实验报告等内容。
-
 ## 二 llama2 模型
 
 ### 2.1 llama2 概述
@@ -382,11 +379,15 @@ kv cache 优化三种方案：`MHA`、 `MQA` 和 `GQA` 的原理及区别如下�
 2. MQA 则是让 Q 仍然保持原来的头数，但 K 和 V 只有一个头，相当于所有的 Q 头共享一个 K 和 V 头，所以叫做 Multi-Query 了。这直接让 KV cache 内存减少了 head_num 倍。
 3. `GQA` 是 `MHA` 和 `MQA` 的折中，将 Q 分成 8 组，每组共享相同的一个 kv 头，假设 Q 有 64 个头，则使用 `GQA` 技术后，kv 头数 = $64/8 = 8$。这直接让 KV cache 内存减少了 8 倍。
 
+LLaMA2-70b 的模型配置如下图所示：
+
+<img src="../images/llama/llama2_70b_config.png" width="50%" alt="GQA_visual">
+
 `MHA`、 `MQA` 和 `GQA` 原理的可视化对比如下图所示:
 
 <img src="../images/llama/GQA_visual.png" width="70%" alt="GQA_visual">
 
-LLaMA 官方实现的 `GQA` 代如下所示（经过简化）：
+LLaMA2 官方实现的 `GQA` 代如下所示（经过简化）：
 ```python
 def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
     """torch.repeat_interleave(x, dim=2, repeats=n_rep)"""

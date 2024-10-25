@@ -13,6 +13,7 @@ from fairscale.nn.model_parallel.layers import (
 )
 
 class FeedForward(nn.Module):
+    # 支持张量并行
     def __init__(
         self,
         dim: int,
