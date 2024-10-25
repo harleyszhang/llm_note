@@ -107,7 +107,6 @@ $$\frac2{N-1}{\frac{K}{N}}$$
 
 ![pipeline_parallelism_understand](../images/llm_parallelism_overview/pipeline_parallelism_understand.png)
 
-
 ## 参考资料
 
 1. [Colossal-AI文档：并行技术](https://colossalai.org/zh-Hans/docs/concepts/paradigms_of_parallelism/)
