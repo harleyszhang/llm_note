@@ -93,6 +93,7 @@ for m in range(0, M, BLOCK_SIZE_M):
 ![gemm_tiled](../images/triton_tutorials2/gemm_tiled.png)
 
 小块矩阵结果如下所示：
+
 <img src="../images/triton_tutorials2/block_matmul.png" width="50%" alt="小块矩阵结果">
 
 Python 完整矩阵乘法及分块矩阵乘法优化的代码如下所示:
