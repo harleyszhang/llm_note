@@ -1,37 +1,57 @@
-# llm_note overview
+- [一 transformer 模型](#一-transformer-模型)
+  - [1.1 transformer 系列模型](#11-transformer-系列模型)
+  - [1.2 LLM 性能分析](#12-llm-性能分析)
+- [二 大语言模型压缩](#二-大语言模型压缩)
+- [三 大语言模型推理及部署（服务化）](#三-大语言模型推理及部署服务化)
+  - [3.1 LLM 综合性能分析](#31-llm-综合性能分析)
+  - [3.2 LLM 推理优化-算法层面](#32-llm-推理优化-算法层面)
+  - [3.3 LLM 推理服务框架解析](#33-llm-推理服务框架解析)
+  - [3.4 系统优化方法](#34-系统优化方法)
+- [四 高性能计算](#四-高性能计算)
+  - [4.1 triton 笔记](#41-triton-笔记)
+  - [4.2 cuda 笔记](#42-cuda-笔记)
+  - [4.3 高性能编程学习资料推荐](#43-高性能编程学习资料推荐)
+- [参考资料](#参考资料)
+
+
 LLM notes, including model inference, transformer model structure, and lightllm framework code analysis notes.
 
-## 一，transformer 模型结构
+## 一 transformer 模型
+
+### 1.1 transformer 系列模型
 
 - [transformer 论文解读](./1-transformer_model/transformer论文解读.md)
 - [transformer 模型代码实现](./1-transformer_model/transformer模型结构详解及实现.md)
 - [llama1-3 模型结构详解](./1-transformer_model/llama1-3模型结构详解.md)
 - [vit 论文速读](./1-transformer_model/vit论文速读.md)
 - [gpt1-3 论文解读](./1-transformer_model/gpt1-3论文解读.md)
-- [llm 参数量-计算量-显存占用分析](./1-transformer_model/llm参数量-计算量-显存占用分析.md)
-- [llm 推理 latency 分析](1-transformer_model/llm推理latency分析.md)
 - [RoPE 位置编码算法详解](./1-transformer_model/RoPE位置编码算法详解.md)
 - [Sinusoida 位置编码算法详解](./1-transformer_model/Sinusoida位置编码详解.md)
 
-## 二，大语言模型压缩
+### 1.2 LLM 性能分析
+
+- [llm 参数量-计算量-显存占用分析](./1-transformer_model/llm参数量-计算量-显存占用分析.md)
+- [llm 推理 latency 分析](1-transformer_model/llm推理latency分析.md)
+
+## 二 大语言模型压缩
 
 量化、剪枝。
 
-## 三，大语言模型推理及部署（服务化）
+## 三 大语言模型推理及部署（服务化）
 
-### 3.1 LLM 推理优化-算法层面
+### 3.1 LLM 综合性能分析
+
+- [Roofline 论文解读](./3-llm_infer_deploy/Roofline论文解读.md)
+- [llm 推理揭秘论文翻译](3-llm_infer_deploy/llm推理揭秘论文翻译.md)
+- [llm 综合分析论文翻译](3-llm_infer_deploy/llm综合分析论文翻译.md)
+- 
+### 3.2 LLM 推理优化-算法层面
 
 - [online-softmax 论文解读](./3-llm_infer_deploy/fast_algorithm/online-softmax论文解读.md)
 - [flashattention-1 论文解读](./3-llm_infer_deploy/fast_algorithm/flashattention-1论文解读.md)
 - [flashattention-2 论文解读](./3-llm_infer_deploy/fast_algorithm/flashattention-2论文解读.md)
 - [flashattention-3 论文解读](./3-llm_infer_deploy/fast_algorithm/flashattention-3论文解读.md)
 - [flashattention1-2-3 系列总结](./3-llm_infer_deploy/fast_algorithm/flashattention1-2-3系列总结.md)
-
-### 3.2 LLM 综合性能分析
-
-- [Roofline 论文解读](./3-llm_infer_deploy/Roofline论文解读.md)
-- [llm 推理揭秘论文翻译](3-llm_infer_deploy/llm推理揭秘论文翻译.md)
-- [llm 综合分析论文翻译](3-llm_infer_deploy/llm综合分析论文翻译.md)
 
 ### 3.3 LLM 推理服务框架解析
 
@@ -47,13 +67,13 @@ LLM 推理服务框架技术总结和源码解析：
 - [DeepSpeed:通过系统优化和压缩加速大规模模型推理和训练](./3-llm_infer_deploy/deepspeed_note/deepspeed-通过系统优化和压缩加速大规模模型推理和训练.md)
 - [DeepSpeed推理:具有定制推理内核和量化支持的多GPU推理](./3-llm_infer_deploy/deepspeed_note/deepspeed推理-具有定制推理内核和量化支持的多GPU推理.md)
 
-## 四，系统化优化
+### 3.4 系统优化方法
 
 图优化、算子融合、深度学习推理框架系统层面的优化。
 
-## 五，高性能计算
+## 四 高性能计算
 
-### 5.1 triton 笔记
+### 4.1 triton 笔记
 
 - [理解triton之基础知识](./4-hpc_basic/理解triton之基础知识.md)
 - [理解triton内核教程1](./4-hpc_basic/理解triton内核教程1.md)
@@ -61,7 +81,7 @@ LLM 推理服务框架技术总结和源码解析：
 - [理解triton内核教程3](./4-hpc_basic/理解triton内核教程3.md)
 - [理解triton内核教程4](./4-hpc_basic/理解triton内核教程4.md)
 
-### 5.2 cuda 笔记
+### 4.2 cuda 笔记
 
 - [英伟达GPU架构总结](./4-hpc_basic/英伟达GPU架构总结.md)
 - [英伟达GPU通信理解](./4-hpc_basic/英伟达GPU通信理解.md)
@@ -76,7 +96,7 @@ LLM 推理服务框架技术总结和源码解析：
 - [CUDA 内核优化策略](./4-hpc_basic/CUDA内核优化策略.md)
 - [CUDA流介绍](./4-hpc_basic/CUDA流介绍.md)
 
-### 5.3 高性能编程学习资料推荐
+### 4.3 高性能编程学习资料推荐
 
 英伟达 gpu cuda 编程语法和特性学习资料推荐：
 
