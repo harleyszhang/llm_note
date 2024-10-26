@@ -115,9 +115,9 @@ LLM 中，单词 token 需要经过 Embedding 层，`Embedding` 层的作用是�
 
 传统的词嵌入方法（如 Word2Vec、Glove）生成的嵌入是静态的，即每个词汇对应一个固定的向量。而 现代LLM（如 BERT、GPT）采用的是上下文感知的嵌入，即同一个词在不同上下文中可以有不同的向量表示，这是通过使用更复杂的模型架构（如 Transformer）实现的，嵌入层与模型的其他部分协同工作，动态生成词汇的向量表示。
 
-假设输入 token 序列的维度是 `[batch_size, seq_len, vocab_size]`（后续都统一把输入维度写前，输出维度写后），经过词嵌入层后的输出维度是 `[batch_size, seq_len, d_model]`。对应的词嵌入层权重矩阵的大小为：`[vocab_size, d_model]`，即词嵌入层的参数量为**：
+假设输入 token 序列的维度是 `[batch_size, seq_len, vocab_size]`（后续都统一把输入维度写前，输出维度写后），经过词嵌入层后的输出维度是 `[batch_size, seq_len, d_model]`。对应的词嵌入层权重矩阵的大小为：`[vocab_size, d_model]`，即**词嵌入层的参数量为**：
 
-$$\text{param}_\text{TE} = \text{vocab\_size} \cdot \text{d}_\text{model}$$
+$$\text{param}_\text{TE} = \text{vocab\_size} \times \text{d}_\text{model}$$
 
 词 Embedding 层通常使用 `nn.Embedding` 实现。`nn.Embedding` 的输入输出形式:
 - 输入：一个整数张量，表示词表索引（即每个 token 在词表中的位置）。输入形状: `(batch_size, sequence_length)`，其中 batch_size 表示批次中的样本数，sequence_length 表示每个输入序列的长度。

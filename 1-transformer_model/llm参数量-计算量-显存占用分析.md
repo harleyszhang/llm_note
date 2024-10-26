@@ -1,7 +1,7 @@
 - [一 KV cache 原理](#一-kv-cache-原理)
 	- [1.1 背景知识](#11-背景知识)
 	- [1.2 kv cache 原理](#12-kv-cache-原理)
-	- [1.3 prefill 和 decode 阶段的 kv 计算过程的区别](#13-prefill-和-decode-阶段的-kv-计算过程的区别)
+	- [1.3 prefill 和 decode 阶段的 kv 计算](#13-prefill-和-decode-阶段的-kv-计算)
 - [二 模型参数量](#二-模型参数量)
 	- [2.1 CPU 内存使用量](#21-cpu-内存使用量)
 - [三 计算量分析](#三-计算量分析)
@@ -80,9 +80,9 @@
 <img src="../images/transformer_params_flops/kv_cache_visual.png" width="100%" alt="ffn_var">
 在 B 区块 中，输出 token 替换了查询嵌入中的输入 token，而 KV 缓存则存储之前生成的 token。在计算注意力分数时，只需要使用一个查询 token，再加上键和值缓存中的已有 token 就可以了。这将矩阵乘法从 A 区块 的 3x3 减少到 B 区块 的 1x3，节省了近 66% 的计算量。在处理大规模序列和批量数据时，这将显著降低计算开销。
 
-> self-attention 中，kv 向量的单个 `token` 的计算开销为 ${4nh^2}$。
+> self-attention 中，单个 `token` kv 矩阵计算开销为 ${4nh^2}$。
 
-### 1.3 prefill 和 decode 阶段的 kv 计算过程的区别
+### 1.3 prefill 和 decode 阶段的 kv 计算
 
 一个典型的自回归模型的生成式推理过程包含了两个阶段：
 
@@ -116,7 +116,9 @@ $$\text{Query}: Q_{dec}=X_{dec}*W_{q} \\
 
 $$O_{dec}=\text{softmax}(\frac{Q_{dec}\cdot K_{cat}^{T}}{\sqrt{d_k}}) * V_{cat } * W_{o}+X_{dec}$$
 
-其中 MHA 的输出 $O_{dec}\in \mathbb{R}^{1\times h}$ 被传递到 MLP。最后一个 Transformer 层的输出被发送到最终的预测层，以预测下一个 token 。
+其中 MHA 的输出 $O_{dec}\in \mathbb{R}^{1\times h}$ 被传递到 MLP。最后一个 Transformer 层的输出被发送到最终的预测层，以预测下一个 token。
+
+<img src="../images/transformer_params_flops/decode_kv_concat.png" width="55%" alt="decode_kv_concat">
 
 ## 二 模型参数量
 
@@ -398,7 +400,7 @@ $$\begin{aligned}\text{inference\_memory} &\simeq [n(12h^2 + 13h) + Vh]*2 + 8bsh
 **一些定性结论：**
 1. 参数量和输入序列长度无关。$\text{Parmas} = 12nh^2$。
 2. 每个 `token` 对应的 $\text{Flops} = 24nh^2$，计算量随序列长度呈线性增长。其中 $\text{Prefill flops} = 24nh^2*bs$；每轮 decode 的计算量 $\text{Decode flops} = 24nh^2*b$。
-3. 每个 `token` 消耗的 $ \text{memory} = 4nh$，`kv cache` 显存占用量随（输入 + 输出序列长度）以及批量大小 `batch_size` 呈线性增长。kv cache 显存占用量，即 $\text{memory\_kv-cache} = b(s+o)h*n * 2*2 = 4nh*b(s+o)$，单位为字节 `byte`。
+3. 每个 `token` 的 kv cache 占用显存大小是 $4nh$，`kv cache` 显存占用量随（输入 + 输出序列长度）以及批量大小 `batch_size` 呈线性增长。kv cache 显存占用量，即 $\text{memory\_kv-cache} = b(s+o)h*n * 2*2 = 4nh*b(s+o)$，单位为字节 `byte`。
 4. `self-attention` 的内存和计算复杂度随序列长度 $s$ 呈二次方增长。注意力输出矩阵 $O = \text{softmax}(QK^T)V$ 要求 $O(N^2d)$ 的 FLOPs，并且除了输入和输出内存之外，需要额外的 $O(N^2)$ 内存
 
 **定量结论（近似估算）：**
@@ -417,3 +419,4 @@ $$\begin{aligned}\text{inference\_memory} &\simeq [n(12h^2 + 13h) + Vh]*2 + 8bsh
 7.  [大模型推理性能优化之KV Cache解读](https://zhuanlan.zhihu.com/p/630832593)
 8.  [如何生成文本: 通过 Transformers 用不同的解码方法生成文本](https://huggingface.co/blog/zh/how-to-generate)
 9.  [分析transformer模型的参数量、计算量、中间激活、KV cache](https://zhuanlan.zhihu.com/p/624740065)
+10. [github-LLM-Viewer](https://github.com/hahnyuan/LLM-Viewer)
