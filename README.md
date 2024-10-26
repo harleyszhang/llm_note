@@ -3,15 +3,15 @@ LLM notes, including model inference, transformer model structure, and lightllm 
 
 ## 一，transformer 模型结构
 
-- [transformer论文解读](./1_transformer_model/transformer论文解读.md)
-- [transformer模型代码实现](./1-transformer_model/transformer模型结构详解及实现.md)
-- [llama1-3模型结构详解](./1_transformer_model/llama1-3模型结构详解.md)
-- [vit论文速读](1_transformer_model/vit论文速读.md)
-- [gpt1-3论文解读](./1_transformer_model/gpt1-3论文解读.md)
-- [llm参数量-计算量-显存占用分析](./1_transformer_model/llm参数量-计算量-显存占用分析.md)
-- [llm推理latency分析](1_transformer_model/llm推理latency分析.md)
-- [RoPE位置编码算法详解](./1-transformer_model/RoPE位置编码算法详解.md)
-- [Sinusoida位置编码详解](./1-transformer_model/Sinusoida位置编码详解.md)
+- [transformer 论文解读](./1-transformer_model/transformer论文解读.md)
+- [transformer 模型代码实现](./1-transformer_model/transformer模型结构详解及实现.md)
+- [llama1-3 模型结构详解](./1-transformer_model/llama1-3模型结构详解.md)
+- [vit 论文速读](./1-transformer_model/vit论文速读.md)
+- [gpt1-3 论文解读](./1-transformer_model/gpt1-3论文解读.md)
+- [llm 参数量-计算量-显存占用分析](./1-transformer_model/llm参数量-计算量-显存占用分析.md)
+- [llm 推理 latency 分析](1-transformer_model/llm推理latency分析.md)
+- [RoPE 位置编码算法详解](./1-transformer_model/RoPE位置编码算法详解.md)
+- [Sinusoida 位置编码算法详解](./1-transformer_model/Sinusoida位置编码详解.md)
 
 ## 二，大语言模型压缩
 
@@ -21,29 +21,31 @@ LLM notes, including model inference, transformer model structure, and lightllm 
 
 ### 3.1 LLM 推理优化-算法层面
 
-- [online-softmax论文解读](./3-llm_infer_deploy/fast_algorithm/online-softmax论文解读.md)
-- [flashattention-1论文解读](./3-llm_infer_deploy/fast_algorithm/flashattention-1论文解读.md)
-- [flashattention-2论文解读](./3-llm_infer_deploy/fast_algorithm/flashattention-2论文解读.md)
-- [flashattention-3论文解读](./3-llm_infer_deploy/fast_algorithm/flashattention-3论文解读.md)
-- [flashattention1-2-3系列总结](./3-llm_infer_deploy/fast_algorithm/flashattention1-2-3系列总结.md)
+- [online-softmax 论文解读](./3-llm_infer_deploy/fast_algorithm/online-softmax论文解读.md)
+- [flashattention-1 论文解读](./3-llm_infer_deploy/fast_algorithm/flashattention-1论文解读.md)
+- [flashattention-2 论文解读](./3-llm_infer_deploy/fast_algorithm/flashattention-2论文解读.md)
+- [flashattention-3 论文解读](./3-llm_infer_deploy/fast_algorithm/flashattention-3论文解读.md)
+- [flashattention1-2-3 系列总结](./3-llm_infer_deploy/fast_algorithm/flashattention1-2-3系列总结.md)
 
 ### 3.2 LLM 综合性能分析
-- [llm推理揭秘论文翻译](3_llm_infer_deploy/llm推理揭秘论文翻译.md)
-- [llm综合分析论文翻译](3_llm_infer_deploy/llm综合分析论文翻译.md)
+
+- [Roofline 论文解读](./3-llm_infer_deploy/Roofline论文解读.md)
+- [llm 推理揭秘论文翻译](3-llm_infer_deploy/llm推理揭秘论文翻译.md)
+- [llm 综合分析论文翻译](3-llm_infer_deploy/llm综合分析论文翻译.md)
 
 ### 3.3 LLM 推理服务框架解析
 
 LLM 推理服务框架技术总结和源码解析：
 
 - [tgi 框架初步解析](./3-llm_infer_deploy/deepspeed_note/tgi框架解析.md)
-- [vllm优化技术速览](./3-llm_infer_deploy/lightllm_analysis/vllm优化技术速览.md)
+- [vllm 优化技术速览](./3-llm_infer_deploy/lightllm_analysis/vllm优化技术速览.md)
 - [lightllm 框架速览](./3-llm_infer_deploy/lightllm_analysis/lightllm框架速览.md)
 - [lightllm 模型推理概述](./3-llm_infer_deploy/lightllm_analysis/lightllm模型推理概述.md)
 
 **DeepSpeed 框架学习笔记**：
 
-- [DeepSpeed:通过系统优化和压缩加速大规模模型推理和训练](./3_llm_infer_deploy/deepspeed_note/deepspeed-通过系统优化和压缩加速大规模模型推理和训练.md)
-- [DeepSpeed推理:具有定制推理内核和量化支持的多GPU推理](./3_llm_infer_deploy/deepspeed_note/deepspeed推理-具有定制推理内核和量化支持的多GPU推理.md)
+- [DeepSpeed:通过系统优化和压缩加速大规模模型推理和训练](./3-llm_infer_deploy/deepspeed_note/deepspeed-通过系统优化和压缩加速大规模模型推理和训练.md)
+- [DeepSpeed推理:具有定制推理内核和量化支持的多GPU推理](./3-llm_infer_deploy/deepspeed_note/deepspeed推理-具有定制推理内核和量化支持的多GPU推理.md)
 
 ## 四，系统化优化
 
