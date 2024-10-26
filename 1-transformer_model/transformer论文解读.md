@@ -35,7 +35,7 @@
 * `BN`: 对于每个特征维度，计算它在整个批次中的均值和标准差，然后对该特征进行归一化。
 * `LN`: 对每个样本单独计算其所有特征的均值和标准差，然后在该样本内进行归一化。
 
-<img src="../images/transformer_paper/bn_ln.png" width="40%" alt="BN 和 LN 的区别">
+<img src="../images/transformer_paper/bn_ln.png" width="30%" alt="BN 和 LN 的区别">
 
 Layer Norm 层的计算可视化如下图所示:
 
@@ -79,11 +79,11 @@ $Q$、$K$ 的线性(映射)层的权重维度是 $[d_\text{model}, d_k]$，$V$ �
 
 作用：**多头注意力机制可以注意到不同子空间的信息，捕捉到更加丰富的特征信息，实现类似卷积核的多通道机制的效果**。
 
-![从 scaled dot producted attention 到 multi-head attention](../images/transformer_paper/attention.png)
+<img src="../images/transformer_paper/attention.png" width="60%" alt="从 scaled dot producted attention 到 multi-head attention">
 
 ### 7. Transformer 的三个 multi-head attention 的原理和作用
 
-![三个 multi-head attention](../images/transformer_paper/multi-head-attention.png)
+<img src="../images/transformer_paper/multi-head-attention.png" width="60%" alt="三个 multi-head attention">
 
 **原理**：
 1. 解码器中的第二个注意力层，其查询 $q$ 来自前一层的解码器层，但 $k$、$v$ 来自于编码器最后一层的输出。
