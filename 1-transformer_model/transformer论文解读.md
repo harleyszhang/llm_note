@@ -49,13 +49,16 @@ Layer Norm 层的计算可视化如下图所示:
 
 标准自注意力的数学表达式如下：
 
-$$\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V$$
+$$
+\text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V
+$$
 
 1，首先，注意力函数可以描述为将一个查询（query）和一组键-值对（key-value pairs）映射到一个输出 output，$q$、$k$、$v$ 都是向量。输出都是对 `value` 进行加权求和得到的，每个 value 对应的权重 `weight` 是通过 $q$ 和 $k$ 之间的相似度计算得到。
 
 2，将 q 和 k 的内积作为相似度（Dot-Product），然后除以向量的长度 $\sqrt{d_k}$（Scaled），结果再应用 `softmax` 函数，就会得到 $n$ 个非负且相加求和等于 $1$ 的权重向量，最后将权重应用于 value，就得到了最终输出 output。
 
 **余弦相似度常用来比较两个向量的相似度（距离）**，伪代码如下：
+
 ```bash
 CosineSimilarity = sum(x[i]*y[i])/(sqrt(sum(x[i]*x[i]))*sqrt(sum(y[i]*y[i])))。
 ```
@@ -72,8 +75,10 @@ CosineSimilarity = sum(x[i]*y[i])/(sqrt(sum(x[i]*x[i]))*sqrt(sum(y[i]*y[i])))。
 
 与其做单个的注意力函数，不如将 $Q$、$K$、$V$ 投影到一个**低维度**、投影 $h$ 次，然后再做 $h$ 次的自注意力函数，并将这 $h$ 个函数的输出拼接在一起，最后再次进行线性投影回来。
 
-$$\text{Multi-Head Attention} = Concat(head_1,….,head_h) W^o \\
-\text{Where} \ \text{head}_i = Attention (QW_i^Q, KW_i^K, VW_i^V)$$
+$$
+\text{Multi-Head Attention} = Concat(head_1,….,head_h) W^o \\
+\text{Where} \ \text{head}_i = Attention (QW_i^Q, KW_i^K, VW_i^V)
+$$
 
 $Q$、$K$ 的线性(映射)层的权重维度是 $[d_\text{model}, d_k]$，$V$ 的线性(映射)层的权重维度是 $[d_{model}, d_v]$，输出线性(映射)层权重维度是 $[h*d_v, d_{model}]$。
 
@@ -105,7 +110,9 @@ $Q$、$K$ 的线性(映射)层的权重维度是 $[d_\text{model}, d_k]$，$V$ �
 
 L2 归一化（L2 Norm）是一种将向量缩放到单位长度的操作，使得向量的模为1。对于一个给定向量  $\mathbf{v}$ ，L2 归一化后的向量 $\mathbf{\hat{v}}$，计算公式如下：
 
-$$\mathbf{\hat{v}} = \frac{\mathbf{v}}{\|\mathbf{v}\|_2}$$
+$$
+\mathbf{\hat{v}} = \frac{\mathbf{v}}{\|\mathbf{v}\|_2}
+$$
 
 ### 9. Positional Encoding
 
@@ -113,8 +120,10 @@ $$\mathbf{\hat{v}} = \frac{\mathbf{v}}{\|\mathbf{v}\|_2}$$
 
 而 Position encoding 层的作用是使得生成的 embedding vectors 值跟位置相关（加入时序信息），更符合人类文字的意义（文字的位置打乱，相应语义肯定会变化）。它的做法是将位置信息编码为向量，并将这些向量加到输入的嵌入向量中。Positional Encoding 通常通过以下公式计算：
 
-$$PE(pos, 2i) = \sin \left(pos/10000^{2i/d}\right) \\
-PE(pos, 2i+1) = \cos \left(pos/10000^{2i/d}\right)$$
+$$
+PE(pos, 2i) = \sin \left(pos/10000^{2i/d}\right) \\
+PE(pos, 2i+1) = \cos \left(pos/10000^{2i/d}\right)
+$$
 
 ### 10. 为什么使用 self-attention!
 
