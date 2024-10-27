@@ -56,23 +56,23 @@ llama 模型系列的超参数详细信息在表 2 中给出。
 
 LayerNorm 通过对输入和权重矩进行重新中心化和重新缩放（`re-centering 和re-scaling`，即减均值和除方差，也称平移不变性和缩放不变性），来帮助稳定训练并加速模型收敛。
 
-LayerNorm（LN） 主要用于 NLP 领域，它对每个 token 的特征向量进行归一化计算。设某个 token 的特征向量为 \(x \in \mathbb{R}^d\)，LN 运算如下：
+LayerNorm（LN） 主要用于 NLP 领域，它对每个 token 的特征向量进行归一化计算。设某个 token 的特征向量为 $x \in \mathbb{R}^d$，LN 运算如下：
 
-\[
+$$
 \text{LN}(x): \hat{x}_i =  \gamma \odot \frac{x_i - \hat{\mu}}{\hat{\sigma}} + \beta
-\]
+$$
 
-其中 \(\odot\) 表示按位置乘，\(\gamma, \beta \in \mathbb{R}^d\) 是缩放参数（scale）和偏移参数（shift），代表着把第 \(i\) 个特征的 batch 分布的均值和方差移动到 \(\beta^i, \gamma^i\)。\(\gamma\) 和 \(\beta\) 是需要与其他模型参数一起学习的参数。 \(\hat{\mu}\) 和 \(\hat{\sigma}\) 表示特征向量所有元素的均值和方差，计算如下：
+其中 $\odot$ 表示按位置乘，$\gamma, \beta \in \mathbb{R}^d$ 是缩放参数（scale）和偏移参数（shift），代表着把第 $i$ 个特征的 batch 分布的均值和方差移动到 $beta^i, \gamma^i$。$\gamma$ 和 $\beta$ 是需要与其他模型参数一起学习的参数。 $\hat{\mu}$ 和 $\hat{\sigma}$ 表示特征向量所有元素的均值和方差，计算如下：
 
-\[
+$$
 \hat{\mu} = \frac{1}{d} \sum_{x_i \in \textrm{x}} x_i
-\]
+$$
 
-\[
+$$
 \hat{\sigma} = \sqrt{\frac{1}{d} \sum_{x_i \in \textrm{x}} (x_i - \hat{\mu})^2 + \epsilon}
-\]
+$$
 
-注意我们在方差估计值中添加一个小的常量 \(\epsilon\)，以确保我们永远不会尝试除以零。
+注意我们在方差估计值中添加一个小的常量 $\epsilon$，以确保我们永远不会尝试除以零。
 
 **RMSNorm**：
 
@@ -80,7 +80,8 @@ LayerNorm（LN） 主要用于 NLP 领域，它对每个 token 的特征向量�
 
 LayerNorm 和 RMSNorm 都主要用于 NLP 领域，它对每个 `token` 的特征向量进行归一化计算。设某个 token 的特征向量为 $\textrm{x}\in \mathbb{R}$，RMSNorm 的计算如下：
 
-$$\text{RMSNorm}(x): \hat{x}_i = \gamma \odot \frac{x_i}{\text{RMS}(x)} \\
+$$
+\text{RMSNorm}(x): \hat{x}_i = \gamma \odot \frac{x_i}{\text{RMS}(x)} \\
 \text{RMS(x)} = \sqrt{\frac{1}{d} \sum_{x_i \in \textrm{x}} x_i^2}
 $$
 
@@ -181,6 +182,7 @@ $$
 $$
 
 当然，也使用其他激活函数定义 **GLU 变体**，如下所示:
+
 $$
 \text{ReGLU}(x, W, V,b, c) = \text{max}(0, xW+b)\otimes (xV+c) \\
 \text{GEGLU}(x, W, V,b, c) = \text{GELU}(xW+b)\otimes (xV+c) \\
