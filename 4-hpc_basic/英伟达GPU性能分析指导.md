@@ -86,7 +86,7 @@ $$\frac{\text{\#ops}}{\#bytes} > \frac{\text{BW\_math}}{\text{BW\_mem}}$$
 - 如果算法的算术强度高于 GPU 的 `ops:byte ratio`，那么该算法受算力限制的，也称 `math bound`，即**性能受算力 `FLOPS` 限制**（算力受限/计算密集型算子）。
 - 相反，如果算法的算术强度低于 GPU 的 `ops:byte ratio`，则该算法受内存限制，也称 `memory bound`，即**性能受内存带宽限制**（内存受限/访存密集型算子）。
 
-![Figure 4: Roofline Model](../images/gpu_perf/roof_line_model.png)
+![Figure 4: Roofline Model](../images/roofline_model/roofline_model.png)
 
 总结：**应该尽可能让算法/网络层的算术强度高于 GPU 的 `ops:byte ratio`，这样才能充分利用 `gpu` 的算力**。
 

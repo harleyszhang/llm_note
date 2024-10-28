@@ -2,14 +2,19 @@
   - [1.1，TGI 框架特点](#11tgi-框架特点)
   - [1.2，TGI 框架目录结构](#12tgi-框架目录结构)
   - [1.3，TGI 框架架构](#13tgi-框架架构)
-  - [1.2，grpc 接口及数据结构类图](#12grpc-接口及数据结构类图)
+  - [1.4，tgi 起服务的影响的性能参数](#14tgi-起服务的影响的性能参数)
+    - [1.4.1，不同性能参数对实际推理过程 prefill/decode 过程的 batch\_size 大小影响](#141不同性能参数对实际推理过程-prefilldecode-过程的-batch_size-大小影响)
+  - [1.5，grpc 接口及数据结构类图](#15grpc-接口及数据结构类图)
 - [二，launcher 启动器](#二launcher-启动器)
 - [三，router 模块](#三router-模块)
 - [四，server 模块](#四server-模块)
   - [4.1, grpc 子模块](#41-grpc-子模块)
   - [4.2, models 子模块](#42-models-子模块)
+      - [4.2.1，lightllm 模型定义](#421lightllm-模型定义)
   - [4.3，utils 子模块](#43utils-子模块)
-- [五，和壁仞推理库的适配](#五和壁仞推理库的适配)
+- [五，推理优化算法速记](#五推理优化算法速记)
+  - [5.1，pagedattention 原理](#51pagedattention-原理)
+  - [5.2，和壁仞推理库的适配](#52和壁仞推理库的适配)
 - [参考资料](#参考资料)
 
 ## 一，TGI 框架概述
@@ -1067,19 +1072,17 @@ def _top_p_top_k(probs: torch.Tensor, top_ps: torch.Tensor, top_ks: torch.Tensor
     return probs_sort, probs_idx
 ```
 
-## 五，框架推理优化算法速记
+## 五，推理优化算法速记
 
 ### 5.1，pagedattention 原理
 
-1，PagedAttention 是对 kv cache 所占空间的分页管理，是一个典型的**以内存空间换计算开销**的手段，vllm 和 tenorRT-llm 也都应用了这个手段来节约 kv cache 占用的 memory。
-
-2，pagedattention的设计
+PagedAttention 是对 kv cache 所占空间的分页管理，是一个典型的**以内存空间换计算开销**的手段，vllm 和 tenorRT-llm 也都应用了这个手段来节约 kv cache 占用的 memory。
 
 PagedAttention 的核心是一张表，类似于 OS 的 page table，这里叫 `block table` ，记录每个 seq 的 kv 分布在哪个 physical block上，通过把每个 seq 的 kv cache 划分为**固定大小的 physical block**，每个 block 包含了每个句子某几个 tokens 的一部分 kv，允许连续的 kv 可以不连续分布。在 attention compute 的时候，**pagedattention CUDA kernel 就通过 block table 拿到对应的 physical block 序号，然后 CUDA 线程 ID 计算每个 seq 每个 token 的 offset 从而 fetch 相应的 block，拿到 kv，继续做 attention 的计算**。
 
 ![动图](https://pic2.zhimg.com/v2-6035b0440dd9f0eb37bc9c221b977799_b.webp)
 
-### 5.3，和壁仞推理库的适配
+### 5.2，和壁仞推理库的适配
 
 梳理出 `tgi` 服务层和 壁仞推理库的衔接流程，`router` 模块的 `rust`  代码基本不改动。主要是改动 server/text_generation_server/server.pyserver.py 的代码，将 `lightllm` 的模型推理接口换成壁仞的，另外就是 `GeneratedText` 、`PrefillResponse` 等成员的重新封装。
 

@@ -13,7 +13,6 @@
   - [4.3 高性能编程学习资料推荐](#43-高性能编程学习资料推荐)
 - [参考资料](#参考资料)
 
-
 LLM notes, including model inference, transformer model structure, and lightllm framework code analysis notes.
 
 ## 一 transformer 模型
