@@ -9,7 +9,7 @@
   - [2.2 Pipeline](#22-pipeline)
   - [2.3 AutoClass](#23-autoclass)
     - [2.3.1 AutoTokenizer](#231-autotokenizer)
-  - [2.3.2 AutoModel](#232-automodel)
+    - [2.3.2 AutoModel](#232-automodel)
 - [参考链接](#参考链接)
 
 ## 一 Transformers 术语
@@ -233,7 +233,7 @@ pt_batch = tokenizer(
 )
 ```
 
-### 2.3.2 AutoModel
+#### 2.3.2 AutoModel
 
 Transformers 提供了一种简单统一的方式来加载预训练的模型实例，即可以像加载 `AutoTokenizer` 一样加载 `AutoModel`，我们所需要提供的必须参数只有模型名称或者 `checkpoints` 路径，即只需输入初始化的 checkpoint(检查点)或者模型名称就可以返回正确的模型体系结构。示例代码如下所示:
 

@@ -1,3 +1,11 @@
+---
+layout: post
+title: RoPE 位置编码算法详解
+date: 2024-10-24 20:00:00
+summary: 旋转位置编码（Rotary Position Embedding，RoPE）是论文 Roformer Enhanced Transformer With Rotray Position Embedding 提出的一种能够将相对位置信息依赖集成到 self-attention 中并提升 transformer 架构性能的位置编码方式。
+categories: Transformer
+---
+
 - [相关 torch 知识](#相关-torch-知识)
 - [RoPE 算法推导](#rope-算法推导)
   - [PE 和 Self-Attention 概述](#pe-和-self-attention-概述)
@@ -236,9 +244,9 @@ $$R_{\Theta, m}^d =
 
 $R_{\Theta, m}^d$ 的形状是 `[sqe_len, dim//2]`。$可以看出，对于 $d >= 2$ 的通用情况，则是将词嵌入向量元素按照两两一组分组，每组应用同样的旋转操作且每组的旋转角度计算方式如下：
 
-\[
+$$
 \Theta = \left\{ \theta_i = 10000^{-2(i-1)/d}, i \in [1, 2, \dots, d/2] \right\}
-\]
+$$
 
 将 RoPE 应用到前面公式（2）的 Self-Attention 计算，可以得到包含相对位置信息的Self-Attetion：
 
@@ -272,9 +280,9 @@ Rotary Position Embedding(RoPE) 实现的可视化如下图所示:
 
 图中每组的旋转角度计算方式如下：
 
-\[
+$$
 \Theta = \left\{ \theta_i = 10000^{-2(i-1)/d}, i \in [1, 2, \dots, d/2] \right\}
-\]
+$$
 
 在实现 RoPE 算法之前，需要注意：为了方便代码实现，在进行旋转之前，需要将旋转矩阵转换为极坐标形式，嵌入向量（$q$、$k$）需要转换为复数形式。完成旋转后，旋转后的嵌入需要转换回实数形式，以便进行注意力计算。此外，RoPE 仅应用于查询（Query）和键（Key）的嵌入，不适用于值（Value）的嵌入。
 
@@ -284,7 +292,7 @@ Rotary Position Embedding(RoPE) 实现的可视化如下图所示:
 
 所以，作者在 `RoPE` 算法实现中，没有使用矩阵相乘的形式，而是把旋转角度张量和 $W_qx_mk$ 转为复数形式再相乘，即直接实现公式（6）中的 $f_q(W_q x_m) e^{im\theta}$，因此 **`RoPE` 算法实现的流程和代码理解的难点**如下：
 
-1. 如何生成旋转角度 $\theta$ 向量, $\Theta = \left\{ \theta_i = 10000^{-2(i-1)/d}, i \in [1, 2, \dots, d/2] \right\}$;
+1. 如何生成旋转角度 $\theta$ 向量, $\Theta = \{ \theta_i = 10000^{-2(i-1)/d}, i \in \left [1, 2, \dots, d/2 \right ] \}$;
 2. 如何将旋转角度和 `token` 位置索引相乘，并构造一个矩阵，该矩阵包含了每个位置和每个维度对应的旋转角度。
 3. 得到所有 `token` 位置和其对应旋转角度后，如何复数形式 $e^{im\theta}$的旋转矩阵；
 4. 如何对 `RoPE` 函数的输入参数 `x_q` 做性转变换，并将实数张量转换为复数张量形式；
@@ -367,4 +375,3 @@ test_attention passed.
 - [RoFormer: Enhanced Transformer with Rotary Position Embedding](https://arxiv.org/abs/2104.09864)
 - [十分钟读懂旋转编码（RoPE）](https://zhuanlan.zhihu.com/p/647109286)
 - [一文看懂 LLaMA 中的旋转式位置编码（Rotary Position Embedding）](https://zhuanlan.zhihu.com/p/642884818)
-
