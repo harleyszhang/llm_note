@@ -3,7 +3,12 @@
 - [2. 预备知识](#2-预备知识)
 - [3. 量化难点总结](#3-量化难点总结)
 - [4. SmoothQuant 算法](#4-smoothquant-算法)
-- [实验](#实验)
+- [5. 实验](#5-实验)
+	- [5.1 实验设置](#51-实验设置)
+	- [5.2 量化后精度对比实验](#52-量化后精度对比实验)
+	- [5.3 加速和节省内存对比实验](#53-加速和节省内存对比实验)
+	- [5.4 扩展：在单节点内运行 530B 模型](#54-扩展在单节点内运行-530b-模型)
+	- [5.5 消融研究](#55-消融研究)
 - [参考资料](#参考资料)
 
 > 先验知识：激活值是指模型中需要进行量化的计算密集层的输入，典型的就是线性层的输入，self-attention 层的输入等等。
@@ -23,7 +28,7 @@ SmoothQuant 是 PTQ（训练后量化）方案，量化位宽为 `W8A8`，即权
 
 因此，寻找一种高效、对硬件友好且无需训练的量化方案，使得 LLMs 中所有计算密集型操作均采用 INT8，仍然是一个未解决的难题。由此，论文提出了 `SmoothQuant` 量化方案，和过去相比，SmoothQuant 是高效且准确的 PTQ 方案。SmoothQuant 的提出是基于一个关键观察：之所以激活比权重更难量化是因为其存在离群值[(Dettmers et al., 2022)](https://arxiv.org/pdf/2208.07339), 不同 tokens 在其通道上表现出类似的变化。基于这一现象，**SmoothQuant 离线地将量化难度从激活迁移至权重（如下图图 2 所示），并提出了逐通道的等效缩放转换，使跨通道的数值更为平滑，从而显著提升模型的量化友好性**。
 
-![SmoothQuant 迁移量化难度](../images/smoothquant/SmoothQuant.png)
+<img src="../images/smoothquant/SmoothQuant.png" width="50%" alt="SmoothQuant 迁移量化难度">
 
 `SmoothQuant` 的核心思路是：激活 $X$ 之所以难以量化，是因为存在离群值拉伸了量化的线性映射范围，导致大部分数值的有效位数减少。我们在离线阶段将激活中的尺度变化转移到权重 $W$ 上，从而降低激活的量化难度。经过平滑处理的激活 $\hat{X}$ 和调整后的权重 $\hat{W}$ 均易于量化。
 > 到这里可以看出 SmoothQuant 算法有两个难点：如何通过数学上的等效转换将量化的难度从激活迁移至权重上，以及如何实现逐通道的等效缩放转换。
@@ -47,7 +52,7 @@ $$X¯_{\text{INT8}} = \left\lfloor \frac{X_{\text{FP16}}}{\Delta} \right\rceil, 
 常见量化粒度的可视化如图 3 所示，其中逐张量量化是整个矩阵共用一个缩放系数 $\Delta$，而逐 token 量化和逐通道量化则为每个 token 或权重的输出通道设定不同的缩放系数。逐通道量化的粗略形式是分组量化，即通道组之间使用不同缩放系数 (Shen 等，2020；Yao 等，2022)。
 > 论文用 setp size 表示 $\Delta$，这不易理解，所以本文中描述为缩放系数。
 
-<img src="../images/smoothquant/per-channel-quantization.png" width="60%" alt="逐张量、逐 token 和逐通道量化的定义">
+<img src="../images/smoothquant/per-channel-quantization.png" width="50%" alt="逐张量、逐 token 和逐通道量化的定义">
 
 其中逐张量量化实现最简单、效率最高。**为了在向量级量化中充分利用 INT8 GEMM 内核**，我们只能在外部维度（如 token 维度 T 和输出通道维度 Co）上应用缩放因子，而无法在内部维度（如输入通道维度 Ci）上应用。
 
@@ -117,19 +122,71 @@ $$
 
 <img src="../images/smoothquant/smoothquant_compute_process.png" width="70%" alt="SmoothQuant 计算过程">
 
-合适的迁移强度 $\alpha$（最佳平衡点）能够让激活和权重都便于量化。若 $\alpha$ 过大，权重的量化会变得困难；而若 $\alpha$ 过小，激活的量化会受到影响。对于一些激活异常值更显著的模型（如 GLM-130B (Zeng 等，2022)，其异常值约占 30%，使激活量化更具挑战），可以选择更大的 $\alpha$ 值，例如 0.75，以将更多量化难度迁移至权重。作者进行了大量实验，发现对于大多数模型 $0.5$（相当于将离群值减半）是通常情况下最为合适的
+合适的迁移强度 $\alpha$（最佳平衡点）能够让激活和权重都便于量化。若 $\alpha$ 过大，权重的量化会变得困难；而若 $\alpha$ 过小，激活的量化会受到影响。对于一些激活异常值更显著的模型（如 GLM-130B (Zeng 等，2022)，其异常值约占 30%，使激活量化更具挑战），可以选择更大的 $\alpha$ 值，例如 0.75，以将更多量化难度迁移至权重。
 
-<img src="../images/smoothquant/migration_strength_alpha.png" width="60%" alt="不同迁移强度对量化模型精度的影响">
-
-**2，将 SmoothQuant 应用于 Transformer 模型中**。
+**2, 将 SmoothQuant 应用于 Transformer 模型中**。
 
 线性层占据了大型语言模型中大部分的参数量和计算开销。默认情况下，我们对自注意力和前馈层的输入激活进行平滑处理，并将所有线性层量化为 W8A8。同时，我们对注意力机制中的 `BMM` 操作进行量化。图 6 展示了我们针对 Transformer 模块设计的量化流程：对于计算密集的操作（如线性层和注意力层中的 BMM），我们将其输入和权重量化为 INT8，而对于 ReLU、Softmax、LayerNorm 等轻量级元素操作，则保持激活为 FP16。这样的设计使我们在准确性和推理效率间达到了良好的平衡。
 
-<img src="../images/smoothquant/smoothquant_compute_process.png" width="60%" alt="smoothquant_compute_process">
+<img src="../images/smoothquant/smoothquant_in_llm.png" width="50%" alt="smoothquant_compute_process">
 
-## 实验
+## 5. 实验
 
-略
+### 5.1 实验设置
+
+作者在两个后端实现了 SmoothQuant：(1) PyTorch Huggingface，用于概念验证；(2) FasterTransformer，作为高性能生产环境框架的示例。
+
+在 PyTorch Huggingface 和 FasterTransformer 框架中，作者基于 CUTLASS INT8 GEMM 内核实现了 INT8 线性模块和批量矩阵乘法 (BMM) 功能，并直接将原先的浮点（FP16）线性模块和 BMM 函数替换为 INT8 内核，从而构建 INT8 模型推理。
+
+### 5.2 量化后精度对比实验
+
+作者做了大量的实验证明了，SmoothQuant 在不同类型、不同规模的 LLM 上，都能 INT8 量化下保持与 FP16 相当的精度。即使是最新的 Llama-2 (Touvron 等，2023b)、Falcon (Almazrouei 等，2023)、Mistral (Jiang 等，2023) 和 Mixtral (Jiang 等，2024) 模型，也能实现无损的 W8A8 量化，如下表 7 所示:
+
+<img src="../images/smoothquant/table7.png" width="50%" alt="SmoothQuant 在 llama 等新模型上实现 5w8a8 推理精度无损">
+
+> SmoothQuant 中使用逐 token 激活量化和逐通道权重量化。
+
+### 5.3 加速和节省内存对比实验
+
+本节中的实验展示了集成到 PyTorch 和 FasterTransformer 中的 SmoothQuant-O3 的实际加速和内存节省效果。
+
+**Prefill 阶段 PyTorch 实现**。
+
+图 8 展示了基于 PyTorch 实现的推理延迟和峰值内存使用情况。SmoothQuant 一直比 FP16 基线更快，在 OPT-30B 模型（序列长度为 256）上实现了 1.51 倍的加速。同时，观察到，**模型越大，加速越显著**。与之对比，LLM.int8() 几乎总是比 FP16 基线慢，因为它的混合精度激活表示产生了较大的开销。在内存使用上，SmoothQuant 和 LLM.int8() 都能将 FP16 模型的内存占用几乎减半；其中，SmoothQuant 节省的内存略多一些，因为它采用了全 INT8 GEMM 运算。
+
+<img src="../images/smoothquant/latency_memory_save_expriment.png" width="50%" alt="最高1.5x加速和1.92倍节省内存">
+
+**Prefill 阶段 FasterTransformer 实现**
+
+如图 9（顶部）所示，与 FasterTransformer 的 FP16 实现的 OPT 相比，单 GPU 情况下 SmoothQuant-O3 可以进一步减少 OPT-13B 和 OPT-30B 的执行延迟，最高可达 1.56 倍加速。值得一提的是，对于必须分布在多个 GPU 上的大型模型，SmoothQuant 在使用一半 GPU 数量的情况下实现了相似甚至更好的延迟表现。
+
+<img src="../images/smoothquant/latency_memory_save_expriment2.png" width="50%" alt="最高1.5x加速和近 2 倍节省内存">
+
+**decode 阶段**。
+
+表 8 显示 SmoothQuant 可以大幅加速 LLM 的自回归解码阶段。相比 FP16，SmoothQuant 持续降低了逐 token 解码的延迟，**最高达 1.42 倍加速**。此外，SmoothQuant 将 LLM 推理的内存占用减半，使得部署成本大幅降低.
+
+<img src="../images/smoothquant/table8.png" width="40%" alt="SmoothQuant ’s performance in the decoding stage.">
+
+### 5.4 扩展：在单节点内运行 530B 模型
+
+如表 9 和表 10 所示，SmoothQuant 能够在几乎无精度损失的情况下量化 530B 模型。模型尺寸的减小使得我们在相似的延迟下，仅需一半的 GPU 数量（从 16 减至 8）即可运行该模型，从而支持在单个节点（8×A100 80GB GPU）上部署超过 500B 的模型。
+
+<img src="../images/smoothquant/table9.png" width="40%" alt="SmoothQuant can quantize MT-NLG 530B to
+W8A8 with negligible accuracy loss.">
+
+### 5.5 消融研究
+
+**量化方案：量化粒度对延迟的影响**。表 11 显示了基于我们 PyTorch 实现的不同量化方案的推理延迟。可以看到，**量化粒度越粗（从 O1 到 O3），延迟越低**。此外，**静态量化可以显著加速推理，因为不再需要在运行时计算量化步长**。在所有设置下，SmoothQuant 的速度都比 FP16 基线更快，而 LLM.int8() 通常较慢。如果精度允许，我们建议使用较粗的量化方案。
+
+<img src="../images/smoothquant/table11.png" width="50%" alt="量化粒度对延迟的影响">
+
+**迁移强度：$\alpha$ 超参数对精度的影响**。我们需要找到合适的迁移强度 $\alpha$（参见方程 4）来平衡权重和激活的量化难度。图 10 显示了在 OPT-175B 上使用 LAMBADA 测试不同 $\alpha$ 值的效果。当 $\alpha$ 过小（<0.4）时，激活难以量化；当 $\alpha$ 过大（>0.6）时，权重难以量化。只有在选择位于最佳平衡区间（0.4-0.6）的 $\alpha$ 时，才能同时减少权重和激活的量化误差，并在量化后保持模型性能。
+
+<img src="../images/smoothquant/migration_strength_alpha.png" width="50%" alt="不同迁移强度对量化模型精度的影响">
 
 ## 参考资料
-- [模型量化 Quantization](https://banxian-w.com/article/2024/9/11/2772.html#3.2%20%E9%87%8F%E5%8C%96%E6%84%9F%E7%9F%A5%E8%AE%AD%E7%BB%83%20QAT)
+
+- [深入理解SmoothQuant量化技术](https://zhuanlan.zhihu.com/p/703928680)
+- [SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models](https://arxiv.org/pdf/2211.10438)
+- https://github.com/mit-han-lab/smoothquant
