@@ -399,9 +399,9 @@ $$\begin{aligned}\text{inference\_memory} &\simeq [n(12h^2 + 13h) + Vh]*2 + 8bsh
 
 **一些定性结论：**
 1. 参数量和输入序列长度无关。$\text{Parmas} = 12nh^2$。
-2. 每个 `token` 对应的 $\text{Flops} = 24nh^2$，计算量随序列长度呈线性增长。其中 $\text{Prefill flops} = 24nh^2*bs$；每轮 decode 的计算量 $\text{Decode flops} = 24nh^2*b$。
-3. 每个 `token` 的 kv cache 占用显存大小是 $4nh$，`kv cache` 显存占用量随（输入 + 输出序列长度）以及批量大小 `batch_size` 呈线性增长。kv cache 显存占用量，即 $\text{memory\_kv-cache} = b(s+o)h*n * 2*2 = 4nh*b(s+o)$，单位为字节 `byte`。
-4. `self-attention` 的内存和计算复杂度随序列长度 $s$ 呈二次方增长。注意力输出矩阵 $O = \text{softmax}(QK^T)V$ 要求 $O(N^2d)$ 的 FLOPs，并且除了输入和输出内存之外，需要额外的 $O(N^2)$ 内存
+2. 每个 `token` 对应的 $\text{Flops} = 24nh^2$，计算量随序列长度呈线性增长。其中 $\text{Prefill flops} = 24nh^2\cdot bs$；每轮 decode 的计算量 $\text{Decode flops} = 24nh^2\cdot b$。
+3. 每个 `token` 的 kv cache 占用显存大小是 $4nh$，`kv cache` 显存占用量随（输入 + 输出序列长度）以及批量大小 `batch_size` 呈线性增长。kv cache 显存占用量 $= b(s+o)h\cdot n \cdot 2\cdot 2 = 4nh\cdot b(s+o)$，单位为字节 `byte`。
+4. `self-attention` 的内存和计算复杂度随序列长度 $s$ 呈二次方增长。注意力输出矩阵 $O = \text{softmax}(QK^T)V$ 要求 $O(N^2d)$ 的 FLOPs，并且除了输入和输出内存之外，需要额外的 $O(N^2)$ 内存。
 
 **定量结论（近似估算）：**
 1. 一次迭代训练中，对于每个 token 和 每个模型参数，需要进行 6 次浮点数运算。
