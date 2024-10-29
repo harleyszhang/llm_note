@@ -43,7 +43,8 @@ LLM notes, including model inference, transformer model structure, and lightllm 
 - [Roofline 论文解读](./3-llm_infer_deploy/Roofline论文解读.md)
 - [llm 推理揭秘论文翻译](3-llm_infer_deploy/llm推理揭秘论文翻译.md)
 - [llm 综合分析论文翻译](3-llm_infer_deploy/llm综合分析论文翻译.md)
-- 
+-
+
 ### 3.2 LLM 推理优化-算法层面
 
 - [online-softmax 论文解读](./3-llm_infer_deploy/fast_algorithm/online-softmax论文解读.md)
@@ -64,7 +65,7 @@ LLM 推理服务框架技术总结和源码解析：
 **DeepSpeed 框架学习笔记**：
 
 - [DeepSpeed:通过系统优化和压缩加速大规模模型推理和训练](./3-llm_infer_deploy/deepspeed_note/deepspeed-通过系统优化和压缩加速大规模模型推理和训练.md)
-- [DeepSpeed推理:具有定制推理内核和量化支持的多GPU推理](./3-llm_infer_deploy/deepspeed_note/deepspeed推理-具有定制推理内核和量化支持的多GPU推理.md)
+- [DeepSpeed 推理:具有定制推理内核和量化支持的多 GPU 推理](./3-llm_infer_deploy/deepspeed_note/deepspeed推理-具有定制推理内核和量化支持的多GPU推理.md)
 
 ### 3.4 系统优化方法
 
@@ -74,18 +75,18 @@ LLM 推理服务框架技术总结和源码解析：
 
 ### 4.1 triton 笔记
 
-- [理解triton之基础知识](./4-hpc_basic/理解triton之基础知识.md)
-- [理解triton内核教程1](./4-hpc_basic/理解triton内核教程1.md)
-- [理解triton内核教程2](./4-hpc_basic/理解triton内核教程2.md)
-- [理解triton内核教程3](./4-hpc_basic/理解triton内核教程3.md)
-- [理解triton内核教程4](./4-hpc_basic/理解triton内核教程4.md)
+- [理解 triton 之基础知识](./4-hpc_basic/理解triton之基础知识.md)
+- [理解 triton 内核教程 1](./4-hpc_basic/理解triton内核教程1.md)
+- [理解 triton 内核教程 2](./4-hpc_basic/理解triton内核教程2.md)
+- [理解 triton 内核教程 3](./4-hpc_basic/理解triton内核教程3.md)
+- [理解 triton 内核教程 4](./4-hpc_basic/理解triton内核教程4.md)
 
 ### 4.2 cuda 笔记
 
-- [英伟达GPU架构总结](./4-hpc_basic/英伟达GPU架构总结.md)
-- [英伟达GPU通信理解](./4-hpc_basic/英伟达GPU通信理解.md)
-- [英伟达GPU性能分析指导](./4-hpc_basic/英伟达GPU性能分析指导.md)
-- [理解Roofline性能分析模型](./4-hpc_basic/深入理解Roofline模型.md)
+- [英伟达 GPU 架构总结](./4-hpc_basic/英伟达GPU架构总结.md)
+- [英伟达 GPU 通信理解](./4-hpc_basic/英伟达GPU通信理解.md)
+- [英伟达 GPU 性能分析指导](./4-hpc_basic/英伟达GPU性能分析指导.md)
+- [理解 Roofline 性能分析模型](./4-hpc_basic/深入理解Roofline模型.md)
 - [CUDA 背景知识](./4-hpc_basic/CUDA背景知识.md)
 - [CUDA 编程模型概述](./4-hpc_basic/CUDA编程模型概述.md)
 - [CUDA 编程模型进阶](./4-hpc_basic/CUDA编程模型进阶.md)
@@ -93,7 +94,7 @@ LLM 推理服务框架技术总结和源码解析：
 - [CUDA 执行模型](./4-hpc_basic/CUDA执行模型.md)
 - [CUDA 内核执行配置及线程索引计算](./4-hpc_basic/CUDA内核执行配置及线程索引计算.md)
 - [CUDA 内核优化策略](./4-hpc_basic/CUDA内核优化策略.md)
-- [CUDA流介绍](./4-hpc_basic/CUDA流介绍.md)
+- [CUDA 流介绍](./4-hpc_basic/CUDA流介绍.md)
 
 ### 4.3 高性能编程学习资料推荐
 
@@ -103,8 +104,8 @@ LLM 推理服务框架技术总结和源码解析：
 - [CUDA Tutorial](https://cuda-tutorial.github.io/): CUDA 教程，分成四部分：CUDA 基础、GPU 硬件细节、最近的特性和趋势和基于任务的编程实例，提供了完整清晰的 PDF 文档和 cuda 代码实例。**建议当作系统性学习 cuda 编程的教程**。
 - [learn-cuda](https://github.com/rshipley160/learn-cuda?tab=readme-ov-file): 完整的 cuda 学习教程，包含高级异步方法内容，特点是有性能实验的代码实例。建议当作学习 cuda 高级特性的教程。
 - [CUDA C++ Programming Guide](https://docs.nvidia.com/cuda/pdf/CUDA_C_Programming_Guide.pdf)：内容很全，直接上手学习比较难，建议当作查缺补漏和验证细节的 cuda 百科全书，目前版本是 12.6。
-- 《CUDA C编程权威指南》：翻译的国外资料，说实话很多内容翻译的非常不行，我最开始跟着这个学习的，学了一周，只是了解了线程、内存概念和编程模型的概述，但是细节和系统性思维没学到，而且翻译的不行，内容也比较过时，完全不推荐，我已经替大家踩过坑了。
-- 《CUDA 编程：基础与实践_樊哲勇》：国内自己写的教材，我查资料时候挑着看了一点，基本逻辑是通的，虽然很多原理、概念都讲的特别啰嗦，但实践需要的关键知识点都有讲到，想学中文教程的，可以当作当作了解一个方向的快速阅读资料。
+- 《CUDA C 编程权威指南》：翻译的国外资料，说实话很多内容翻译的非常不行，我最开始跟着这个学习的，学了一周，只是了解了线程、内存概念和编程模型的概述，但是细节和系统性思维没学到，而且翻译的不行，内容也比较过时，完全不推荐，我已经替大家踩过坑了。
+- 《CUDA 编程：基础与实践\_樊哲勇》：国内自己写的教材，我查资料时候挑着看了一点，基本逻辑是通的，虽然很多原理、概念都讲的特别啰嗦，但实践需要的关键知识点都有讲到，想学中文教程的，可以当作当作了解一个方向的快速阅读资料。
 - [CUDA-Kernels-Learn-Notes](https://github.com/DefTruth/CUDA-Learn-Notes/tree/main)： CUDA 内核编程笔记及实战代码，有很强的实践性，后期可以重点学习，我也准备认真看下代码和文档。
 
 kernel 编写笔记资料：
