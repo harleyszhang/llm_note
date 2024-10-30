@@ -43,12 +43,17 @@ LLaMA **优势**在于其**只使用公开可用的数据**，这可以保证论
 
 完整的模型结构图如下图所示:
 
-![完整的llama模型结构](../images/llama/llama_architecture2.png)
+<center>
+<img src="../images/llama/llama_architecture2.png" width="60%" alt="完整的llama模型结构">
+</center>
+
 > [processon 在线浏览](https://www.processon.com/view/link/67163481a8011b320f2af67f?cid=67161b027f25232473eba8d3)
 
 llama 模型系列的超参数详细信息在表 2 中给出。
 
-![llama_parameters](../images/llama/llama_parameters.png)
+<center>
+<img src="../images/llama/llama_parameters.png" width="60%" alt="llama_parameters">
+</center>
 
 ### 1.2 RMSNorm
 
@@ -337,7 +342,9 @@ def apply_rotary_emb(xq: torch.Tensor, xk: torch.Tensor, freqs_cis: torch.Tensor
 
 [Vicuna](https://chat.lmsys.org/) 是一款从 LLaMA 模型中对用户分享的对话进行了精细调优的聊天助手，根据的评估，这款聊天助手在 LLaMA 子孙模型中表现最佳，能达到  ChatGPT 90% 的效果。 
 
-![Vicuna-demo](../images/llama/Vicuna-demo.png)
+<center>
+<img src="../images/llama/Vicuna-demo.png" width="60%" alt="Vicuna-demo">
+</center>
 
 **3，Koala（考拉）**
 

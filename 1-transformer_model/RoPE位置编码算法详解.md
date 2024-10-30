@@ -271,12 +271,16 @@ Rotary Position Embedding(RoPE) 实现的可视化如下图所示:
 
 先看旋转矩阵用于旋转一个二维向量过程示例：
 
-![2d_rotation_matrix_derivtion](../images/rope/rotation_matrix.png)
+<center>
+<img src="../images/rope/rotation_matrix.png" width="60%" alt="2d_rotation_matrix_derivtion">
+</center>
 
 但是 Llama 模型的嵌入维度高达 409，比二维复杂得多，如何在更高维度的嵌入上应用旋转操作呢？通过 RoPE 算法原理我们知道，**嵌入向量的旋转实际是将每个嵌入向量元素位置 $m$的值与**每一对**嵌入维度对应的 $\theta$ 相乘**，过程如下图所示：
 > RoPE 通过实现旋转矩阵，**是既捕获绝对位置信息，又结合相对位置信息的方式**（论文公式有更详细体现）。
 
-![nd_rotation_matrix_derivtion](../images/rope/nd_rotation_matrix.png)
+<center>
+<img src="../images/rope/nd_rotation_matrix.png" width="60%" alt="nd_rotation_matrix_derivtion">
+</center>
 
 图中每组的旋转角度计算方式如下：
 
@@ -370,6 +374,7 @@ test_precompute_freqs_cis passed.
 test_apply_rotary_emb passed, xq_out and xq [0][0][0][0]: -1.3532123565673828 -1.3532123565673828.
 test_attention passed.
 ```
+
 ## 参考资料
 
 - [RoFormer: Enhanced Transformer with Rotary Position Embedding](https://arxiv.org/abs/2104.09864)

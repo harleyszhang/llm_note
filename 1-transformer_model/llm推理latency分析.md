@@ -13,6 +13,7 @@
 **解码阶段的每轮 decode latency（非首字时延）的估算公式如下所示**：
 
 1，对于小 batch size（比如为 1），计算和通信的 latency 计算公式如下（来源[Transformer Inference Arithmetic](https://kipp.ly/transformer-inference-arithmetic/)）：
+
 $$
 \begin{align}
 \text{compute} = \frac{2\cdot P}{N\cdot A_{bm}} \nonumber \\
@@ -55,19 +56,23 @@ $$
 $$\text{flops time} = \frac{16h^2s}{N\cdot A_f}$$
 
 举例说明，260B 模型（$n = 80, h=16484$）运行在 16张 A100 卡上。对于小批次，生成每个 token 的时间为 22 毫秒：
+
 $$
 \begin{align}
 \text{compute} = \frac{2\cdot P}{N\cdot A_{bm}} \nonumber = \frac{2\cdot260e9}{16\cdot1.5e12}\simeq 0.0217 \simeq 22 \text{ms}\\
 \text{comms}  = 4\cdot n_{layers}\cdot 8us \nonumber = 4\cdot 80\cdot8us = 2560us\simeq 3\text{ms}\\
 \end{align}
 $$
+
 对于一个批次大小为 512 的大批次，每个 token 生成的计算总时间为 53 ms，加上卡间通信时间 18 ms，总耗时为 71 ms（即在 71 ms 内生成 512 个 token）：
+
 $$
 \begin{align}
 \text{compute} = B\frac{2\cdot P}{N\cdot A_{f}} \nonumber = 512\cdot\frac{2\cdot260e9}{16\cdot 312e12}\simeq 0.053 \simeq 53 \text{ms}\\
 \text{comms} = B\cdot \frac{2\cdot 4\cdot n_{layers}\cdot h}{A_c} = 512\cdot \frac{8\cdot 80\cdot 16384}{300e9} = \simeq 18\text{ms} \nonumber
 \end{align}
 $$
+
 对于自回归模型的推理来说就是，**固定 seq_len**， 如果 seq_len * bs < ops:byte ratio * gpu_num，即**小 `batch_size` 范围 的 latency 不明显增加的**。
 
 ## 二 理论 latency 和实际 latency 的差距
@@ -115,7 +120,9 @@ $$
 
 另外，假设在推理系统中我们能实现计算和 GPU 通信并行处理，则可以得到了一个更为复杂的比率：每字节通信的 flops（前面的 A100 的操作强度对应的是每字节内存访问的 flops）。以下使用张量并行的主要 layer 的通信量、计算量和每字节通信 flops 值表：
 
-![flops_per_byte_comms](../images/transformer_latency/flops_per_byte_comms.png)
+<center>
+<img src="../images/transformer_latency/flops_per_byte_comms.png" width="60%" alt="flops_per_byte_comms">
+</center>
 
 这是我们 A100 GPU 的每字节通信 flops 值。我们希望上述表格最后一行的值大于硬件的每字节 flops 计算值，这样可以确保系统保持在计算（flops）受限状态（这里先假设内存带宽不是限制因素）。对于 $d_{model} > 1024$ 的模型运行在 A100 上来说，我们的推理是安全高效的！但对于维度为 512 的情况，情况就有些不理想了。
 
@@ -125,15 +132,23 @@ batch_size、内存带宽限制 vs 计算限制对 Latency 会有什么影响呢
 
 **自回归模型的推理实验**。**固定 seq_len=8/20**， 如果 seq_len * bs < ops:byte ratio * gpu_num，即**小 `batch_size` 范围 的 latency 不明显增加的**。从实验测试结果看，**使用 4/8 个 V100 硬件做模型推理（张量并行），输入长度固定，在 batch_size < 16/32，其 latency 不明显增加**。且有以下实验结果：
 
-![bs_latency2](../images/transformer_latency/bs_latency2.png)
-![bs_latency](../images/transformer_latency/bs_latency.png)
+<center>
+<img src="../images/transformer_latency/bs_latency2.png" width="60%" alt="bs_latency2">
+</center>
+<center>
+<img src="../images/transformer_latency/bs_latency.png" width="60%" alt="bs_latency">
+</center>
 
 **`Latency` 的理论分析**：对于自回归模型的推理，默认推理配置是 `use_cache=True`，**固定 seq_len**，batch_size 较小时，模型的算术强度较低，模型受到内存带宽限制，`Latency` 取决于内存读取和 gpu 通信时间，而 `batch_size` 较小时，kv cache 读写时间和较小，而 gpu 通信时间又是固定的，故 latency 不明显增加；当 batch_size 增加到一定程度，模型的算术强度增加，模型受到算力 `FLOPS` 限制，故此时 `Latency` 与 batch_size 几乎成正比。
 
 另外，基于上述分析和前面 decode 阶段 `mha` 层的计算量估计也可知，当 batch_size 和 output_ids_len 比较大时，**迭代生成 token 的过程中，后面 token 的 Latency 会大于前面的**。
 
-![token latency](../images/transformer_latency/every_token_latency.png)
-![token latency](../images/transformer_latency/every_token_latency2.png)
+<center>
+<img src="../images/transformer_latency/every_token_latency.png" width="60%" alt="token latency">
+</center>
+<center>
+<img src="../images/transformer_latency/every_token_latency2.png" width="60%" alt="token latency">
+</center>
 
 ## 参考资料
 - [Transformer Inference Arithmetic](https://kipp.ly/transformer-inference-arithmetic/)

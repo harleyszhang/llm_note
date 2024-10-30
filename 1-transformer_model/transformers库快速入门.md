@@ -96,7 +96,9 @@ tensor([[1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
 """
 ```
 
-![attention_mask](../images/transformers_basic/attention_mask.png)
+<center>
+<img src="../images/transformers_basic/attention_mask.png" width="60%" alt="attention_mask">
+</center>
 
 ### 1.4 特殊 tokens 的意义
 

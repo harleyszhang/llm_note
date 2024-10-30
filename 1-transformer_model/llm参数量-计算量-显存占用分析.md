@@ -35,12 +35,18 @@
 
 与正常的 `Attention` 允许一个位置关注/看见到它两边的 `tokens` 不同，`Masked Attention` 只让模型看到左边的 `tokens`：
 
-![masked Self Attention](../images/transformer_params_flops/4-mask.png)
+<center>
+<img src="../images/transformer_params_flops/4-mask.png" width="60%" alt="masked Self Attention">
+</center>
+
 > 图： self attention vs mask self attention
 
 这里以 `gpt1` 模型为例，其模型结构如下所示:
 
-![decoder-only-model](../images/transformer_params_flops/decoder-only-model.png)
+<center>
+<img src="../images/transformer_params_flops/decoder-only-model.png" width="60%" alt="decoder-only-model">
+</center>
+
 > gpt 模型结构，llama 在细节上会有所区别，但是主要网络层不会变。
 
 ```bash
@@ -57,7 +63,10 @@
 - $n$：模型中 decoder layers 层数，对应 hf 模型配置文件中的 num_hidden_layers。
 
 这些变量值都可以在模型配置文件中找到，以 `llama-13b` 模型配置文件为例，主要字段解释如下：
-![llama-13b-config](../images/transformer_params_flops/llama-13b-config.png)
+
+<center>
+<img src="../images/transformer_params_flops/llama-13b-config.png" width="60%" alt="llama-13b-config">
+</center>
 
 - `vocab_size`：词汇表中标记的数量，也是嵌入矩阵的第一个维度。
 - `hidden_​​size`：模型的隐藏层大小，其实就是 $d_\text{model}$。
@@ -67,7 +76,9 @@
 
 注意，很多 `decoder-only` 架构的自回归模型的全连接层的偏置 `bias` 都设置为 False，故这里的计算公式中没有考虑偏置参数。
 
-![LlamaForCausalLM architecture](../images/transformer_params_flops/llama-model-params.png)
+<center>
+<img src="../images/transformer_params_flops/llama-model-params.png" width="60%" alt="LlamaForCausalLM architecture">
+</center>
 
 ### 1.2 kv cache 原理
 
@@ -153,7 +164,9 @@ $$O_{dec}=\text{softmax}(\frac{Q_{dec}\cdot K_{cat}^{T}}{\sqrt{d_k}}) * V_{cat }
 $$\frac{8nh^2}{12nh^2} = 2/3\cong 66\% \\
 \frac{4nh^2}{12nh^2} = 1/3\cong 33\%$$
 
-![gpt-like 模型（`opt`）的参数分布](../images/transformer_params_flops/opt-prams-dist.png)
+<center>
+<img src="../images/transformer_params_flops/opt-prams-dist.png" width="60%" alt="gpt-like 模型（`opt`）的参数分布">
+</center>
 
 ### 2.1 CPU 内存使用量
 
@@ -278,7 +291,10 @@ $$6 \times 12850 \times 10^6 \times 300 \times 10^9 = 2.313 \times 10^{22}$$
 
 计算结果和下表所示结果相符合。
 
-![llm_params_flops](../images/transformer_params_flops/llm_params_flops.png)
+<center>
+<img src="../images/transformer_params_flops/llm_params_flops.png" width="60%" alt="llm_params_flops">
+</center>
+
 > 估算训练一个 transformer 模型所需的算力成本的公式可参考文章[Transformer 估算 101](https://mp.weixin.qq.com/s/MFgTUDAOODgMDb59eZC9Cw)。本章主要参考 [Transformer Inference Arithmetic](https://kipp.ly/blog/transformer-inference-arithmetic/) 以及 [分析transformer模型的参数量、计算量、中间激活、KV cache](https://zhuanlan.zhihu.com/p/624740065)。
 
 这个表总结了常见大型语言模型（LLM）的**参数数量、序列长度、批次大小、隐藏层大小、层数和每次前向推理的浮点操作数总量（FLOPs）**，`FLOPs` 以 T（万亿）为单位。

@@ -264,7 +264,9 @@ Encoder 和 Decoder 结构中公共的 `layer` 之一是 `Multi-Head Attention`�
 
 `Self-Attention` 中文翻译为**自注意力机制**，论文中叫作 `Scale Dot Product Attention`，它是 Transformer 架构的核心，其结构如下图所示：
 
-![../images/transformer_code/scale_dot_product_attention.jpeg](../images/transformer_code/scale_dot_product_attention.jpeg)
+<center>
+<img src="../images/transformer_code/scale_dot_product_attention.jpeg" width="60%" alt="../images/transformer_code/scale_dot_product_attention.jpeg">
+</center>
 
 那么重点来了，第一个问题：Self-Attention 结构的最初输入 **Q(查询), K(键值), V(值)** 这三个矩阵怎么理解呢？其代表什么，通过什么计算而来？
 
@@ -335,7 +337,9 @@ Multi-Head Attention (`MHA`) 是基于 Self-Attention (`SA`) 的一种变体。M
 
 下图是论文中 Multi-Head Attention 的结构图。
 
-![multi_head_attention](../images/transformer_code/multi-head-attention3.png)
+<center>
+<img src="../images/transformer_code/multi-head-attention3.png" width="60%" alt="multi_head_attention">
+</center>
 
 从图中可以看出， `MHA` 结构的计算过程可总结为下述步骤:
 
@@ -437,7 +441,9 @@ $$
 $$
 Add 比较简单，这里重点讲下 Layer Norm 层。Layer Norm 是一种常用的神经网络归一化技术，可以使得模型训练更加稳定，收敛更快。它的主要作用是对每个样本**在特征维度上进行归一化**，减少了不同特征之间的依赖关系，提高了模型的泛化能力。Layer Norm 层的计算可视化如下图所示:
 
-![Layer Norm](../images/transformer_code/layer_norm.jpeg)
+<center>
+<img src="../images/transformer_code/layer_norm.jpeg" width="60%" alt="Layer Norm">
+</center>
 
 Layer Norm 层的 Pytorch 实现代码如下所示:
 

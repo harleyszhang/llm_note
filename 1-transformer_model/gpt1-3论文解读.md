@@ -91,7 +91,9 @@ $$
 
 如何把 NLP 的子任务表示成我们想要的形式，即表示成一个序列 $(x_1, \dots, x_m)$ 和对应的标签 $y$。
 
-![nlp 子任务的转换](../images/gpt1-3/nlp_task_transformation.png)
+<center>
+<img src="../images/gpt1-3/nlp_task_transformation.png" width="60%" alt="nlp 子任务的转换">
+</center>
 
 通过上述图转换，主要是在输入序列上加入开始符号、中间符号和终止符号，这是 `gpt1` 论文的最核心创新点之一，无论输入序列怎么变换、输出线性怎么变换，中间的 `transformer` 模型都没有变化。
 
@@ -102,8 +104,9 @@ $$
 
 GPT1 的模型结构如下图所示:
 
-<!-- ![gpt1模型结构](../images/gpt1-3/gpt1-model-architecture.png) -->
+<center>
 <img src="../images/gpt1-3/gpt1-model-architecture.png" width="40%" alt="gpt1模型结构">
+</center>
 
 **模型架构 + 自监督细节**：
 
@@ -143,7 +146,9 @@ gpt2 提出 `zero-shot` 泛化到新的 nlp 下游子任务是无需成本的！
 
 新的模型包含了 4 种不同的尺寸：
 
-![ 4 种 gpt2 参数](../images/gpt1-3/gpt2-Parameters.png)
+<center>
+<img src="../images/gpt1-3/gpt2-Parameters.png" width="50%" alt=" 4 种 gpt2 参数">
+</center>
 
 ## 三 GPT3 论文解析
 
@@ -185,7 +190,9 @@ GPT-3 强调了 “few-shot” 学习能力，即通过少量的示例来完成�
 
 下图通过示例对比描述了 `Fine-Tuning (FT)`、`Few-Shot (FS)`、`One-Shot (1S)`、`Zero-Shot (0S)` 的区别和原理：
 
-![Zero-shot, one-shot and few-shot, contrasted with traditional fine-tunin](../images/gpt1-3/few-zero-one-shot-eg.png)
+<center>
+<img src="../images/gpt1-3/few-zero-one-shot-eg.png" width="50%" alt="Zero-shot, one-shot and few-shot, contrasted with traditional fine-tunin">
+</center>
 
 零样本、单样本和少样本（这些是我们在这项工作中研究的）方法和传统的微调（fine-tuning）方法的区别就是**要求模型在测试时仅通过前向传播来完成任务，而不再对预训练模型进行权重更新**。我们通常在少样本设置中向模型提供几十个示例。
 
@@ -198,7 +205,9 @@ and reversible tokenization described therein）。
 
 GPT3 设计了 8 个不同尺度的模型：
 
-![8种不同尺寸的 gpt3 模型](../images/gpt1-3/8-gpt-parameters.png)
+<center>
+<img src="../images/gpt1-3/8-gpt-parameters.png" width="60%" alt="8种不同尺寸的 gpt3 模型">
+</center>
 
 #### 训练数据集
 
@@ -213,7 +222,9 @@ GPT3 设计了 8 个不同尺度的模型：
 
 值得注意的是，**在训练期间，数据集的抽样并不按照其大小的比例进行，而是我们视为高质量的数据集被更频繁地抽样**，这样 Common Crawl 和 Books2 数据集在训练过程中被抽样的次数少于一次，而其他数据集被抽样 2-3 次。这基本上接受了一小部分过拟合，以换取更高质量的训练数据。
 
-![gpt3训练数据集](../images/gpt1-3/gpt3-dataset.png)
+<center>
+<img src="../images/gpt1-3/gpt3-dataset.png" width="60%" alt="gpt3训练数据集">
+</center>
 
 #### 评估
 
