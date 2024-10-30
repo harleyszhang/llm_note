@@ -120,7 +120,9 @@ __host__ ​cudaError_t cudaFuncSetCacheConfig (const void* func, cudaFuncCache 
 
 下表总结了 CUDA 变量声明和它们相应的存储位置、作用域、生命周期和修饰符。
 
-![cuda变量声明](../images/cuda_memory_model/cuda_variable.png)
+<div align="center">
+<img src="../images/cuda_memory_model/cuda_variable.png" width="60%" alt="cuda变量声明">
+</div>
 
 ### 1.4 SM 及其占有率
 
@@ -359,7 +361,9 @@ __host__ ​cudaError_t cudaMallocManaged (void** devPtr, size_t size, unsigned 
 
 下图所示为理想情况：**对齐与合并内存访问**。线程束请求的字节总数为 128 个字节中，所有线程请求的地址也都在 `128` 字节的缓存行范围内。完成内存加载操作只需要一个 `128` 字节的事务。总线的使用率为 `100%`，在这个事务中没有未使用的数据。
 
-![内存对齐与合并内存访问](../images/cuda_memory_model/memory_alignment.png)
+<div align="center">
+<img src="../images/cuda_memory_model/memory_alignment.png" width="60%" alt="内存对齐与合并内存访问">
+</div>
 
 CPU 和 GPU 一级缓冲的区别：CPU 一级缓存优化了时间和空间局部性。GPU 一级缓存是专为空间局部性而不是为时间局部性设计的。频繁访问一个一级缓存的内存位置不会增加数据留在缓存中的概率。
 
@@ -369,7 +373,9 @@ CPU 和 GPU 一级缓冲的区别：CPU 一级缓存优化了时间和空间局�
 
 下图说明了一种情况：线程束中所有线程请求相同的数据。地址落在一个内存段内，总线的利用率是请求的4字节/加载的32字节 ＝ 12.5%（> 4/128 = 3.125%），在这种情况下，非缓存加载性能也是优于缓存加载的性能。
 
-![内存非合并访问](../images/cuda_memory_model/no_cache_read.png)
+<div align="center">
+<img src="../images/cuda_memory_model/no_cache_read.png" width="60%" alt="内存非合并访问">
+</div>
 
 ### 3.3 全局内存写入
 
@@ -377,7 +383,9 @@ CPU 和 GPU 一级缓冲的区别：CPU 一级缓存优化了时间和空间局�
 
 下图所示为理想情况：内存访问是对齐的，并且线程束里所有的线程访问一个连续的 128 字节范围。**内存存储/写入请求由一个四段事务实现**。
 
-![内存访问对齐](../images/cuda_memory_model/memory_write_alignment.png)
+<div align="center">
+<img src="../images/cuda_memory_model/memory_write_alignment.png" width="60%" alt="内存访问对齐">
+</div>
 
 ### 3.4 数组结构体（AoS）和结构体数组（SoA）
 

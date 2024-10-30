@@ -20,7 +20,9 @@ CUDA 是 NVIDIA 的通用并行计算架构（编程模型），是在 C 语言�
 
 CUDA 编程的一个关键是内存管理，，CUDA运行时除了负责分配与释放设备内存，也负责在主机内存和设备内存之间传输数据。表2-1 列出了标准的 C 函数以及相应地针对内存操作的 CUDA C 函数。
 
-![cuda 内存操作函数](../images/cuda_program_model/cuda_memory_manage.png)
+<div align="center">
+<img src="../images/cuda_program_model/cuda_memory_manage.png" width="60%" alt="cuda 内存操作函数">
+</div>
 
 1，`cudaMalloc`: 负责分配 GPU 内存，函数原型为：
 ```cpp
@@ -229,7 +231,9 @@ void main(){
 kernel_name<<<4, 8>>>(argument list); 
 ```
 
-![线程布局可视化](../images/cuda_program_model/thread_layout.png)
+<div align="center">
+<img src="../images/cuda_program_model/thread_layout.png" width="60%" alt="线程布局可视化">
+</div>
 
 一个完整的 cuda 核函数定义及调用如下所示：
 ```c
@@ -257,7 +261,9 @@ int main(void) {
 ```bash
 nvcc -o helloCuda helloCuda.cu -arch sm_20
 ```
-![hello world 内核函数调用](../images/cuda_program_model/kernel_func_call.png)
+<div align="center">
+<img src="../images/cuda_program_model/kernel_func_call.png" width="60%" alt="hello world 内核函数调用">
+</div>
 
 `CUDA` 程序能够编译运行，但是结果不一定正确，那么如何验证核函数是否正确运行呢？首先可以通过在核函数中添加 `printf` 函数打印相关信息，其次是将执行参数设置为 `<<<1，1>>>`，强制用一个块和一个线程执行核函数，模拟串行执行程序，方便调试和验证结果是否正确。
 

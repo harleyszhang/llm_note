@@ -16,11 +16,15 @@
 
 GPU的微观结构因不同厂商、不同架构都会有所差异，但核心部件、概念、以及运行机制大同小异，NVidia Tesla 微观架构如下图所示:
 
-![Tesla 微观架构](../images/cuda_exec_model/tesla_architecture.webp)
+<div align="center">
+<img src="../images/cuda_exec_model/tesla_architecture.webp" width="60%" alt="Tesla 微观架构">
+</div>
 
 下表是一份粗略的总结，介绍了不同计算能力如何对应于各个架构代际，以及它们在相应时代的 GPU 型号中引入的一些关键功能。
 
-![Tesla 微观架构](../images/cuda_exec_model/compute_capabilities.png)
+<div align="center">
+<img src="../images/cuda_exec_model/compute_capabilities.png" width="60%" alt="Tesla 微观架构">
+</div>
 
 GV100 GPU 由多个 GPU 处理集群 (GPC)、纹理处理集群 (TPC)、流式多处理器 (`SM`-STREAMING MULTIPROCESSOR) 和内存控制器组成。**完整的 GV100 GPU 包括**: 
 
@@ -41,12 +45,16 @@ GV100 GPU 由多个 GPU 处理集群 (GPC)、纹理处理集群 (TPC)、流式�
 
 下图显示了具有 84 个 `SM` 的完整 GV100 GPU（注意，不同的产品可以使用不同配置的 GV100）。Tesla V100 加速器使用 80 个 SM。 
 
-![具有 84 个 SM 单元的 Volta GV100 全 GPU](../images/nvidia_gpu/GV100_GPU_hardware_structure.png)
+<div align="center">
+<img src="../images/nvidia_gpu/GV100_GPU_hardware_structure.png" width="60%" alt="具有 84 个 SM 单元的 Volta GV100 全 GPU">
+</div>
 表 1 比较了过去五年的 NVIDIA Tesla GPU。
 
 下表展示了 NVIDIA Tesla GPU 的比较。
 
-![nvidia_tesla_gpu](../images/nvidia_gpu/nvidia_tesla_gpu.png)
+<div align="center">
+<img src="../images/nvidia_gpu/nvidia_tesla_gpu.png" width="60%" alt="nvidia_tesla_gpu">
+</div>
 
 ### 1.1 Volta SM 硬件结构
 
@@ -59,7 +67,9 @@ GV100 GPU 由多个 GPU 处理集群 (GPC)、纹理处理集群 (TPC)、流式�
 
 Volta GV100 流式多处理器(SM)架构如下图像所示：
 
-![Volta GV100 流式多处理器(SM)架构](../images/nvidia_gpu/Volta_sm.png)
+<div align="center">
+<img src="../images/nvidia_gpu/Volta_sm.png" width="60%" alt="Volta GV100 流式多处理器(SM)架构">
+</div>
 
 ### 1.2 归约操作
 

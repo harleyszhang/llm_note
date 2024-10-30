@@ -22,25 +22,35 @@
 1，之前的问题是因为 Prometheus 工具是 Python 工具没办法统计异步时间，而 cuda 流是异步的，所以统计的 kernel 时间不对。启用 CUDA_LAUNCH_BLOCKING 变量后，可以得到更准确的算子维度的性能数据。
 2，A40 机器的简单拓扑互联结构图，卡间互联通信速度对比，注意 A40 机器的 NVLINK 是阉割版的！理论值为 112.5 GB/s。
 
-![A40_Topology](../../images/lightllm_analysis/A40_Topology.png)
+<div align="center">
+<img src="../../images/lightllm_analysis/A40_Topology.png" width="60%" alt="A40_Topology">
+</div>
 
 3，备注：集群不稳定的两束证据，尤其是 decode 阶段的 all_duce 通信时间，这个问题很重要！！！如果集群不解决，我们集群的性能数据都得重复测好几次，且结果不稳定。
 
-![cluster_problem](../../images/lightllm_analysis/cluster_problem.png)
+<div align="center">
+<img src="../../images/lightllm_analysis/cluster_problem.png" width="60%" alt="cluster_problem">
+</div>
 
 ## 一、Prefill/Decode 阶段算子执行时间占比情况
 
 1，将 LLaMA2-70B 模型分别在 4/8 卡 A100-40GB 上部署，设置 batch_size=20, input_length=1024, output_length=1024，统计 prefill/decode 阶段各算子的执行时间占比：
 
-![pie_chart](../../images/lightllm_analysis/pie_chart.png)
+<div align="center">
+<img src="../../images/lightllm_analysis/pie_chart.png" width="60%" alt="pie_chart">
+</div>
 
 2，将 LLaMA2-70B 模型分别在 4/8 卡 A40-48GB 上部署，设置 batch_size=20, input_length=1024, output_length=1024，统计 prefill/decode 阶段各算子的执行时间占比：
 
-![pie_chart2](../../images/lightllm_analysis/pie_chart2.png)
+<div align="center">
+<img src="../../images/lightllm_analysis/pie_chart2.png" width="60%" alt="pie_chart2">
+</div>
 
 3，将 LLaMA2-7B 模型分别在 4/8 卡 T4-16GB 上部署，设置 batch_size=32, input_length=1024, output_length=1024，统计 prefill/decode 阶段各算子的执行时间占比：
 
-![pie_chart3](../../images/lightllm_analysis/pie_chart3.png)
+<div align="center">
+<img src="../../images/lightllm_analysis/pie_chart3.png" width="60%" alt="pie_chart3">
+</div>
 
 **算子开销实验结论：对于 Prefill 阶段**：
 
@@ -59,7 +69,9 @@
 
 ### 2.2、推理性能分析结果
 
-![4a100_4a40](../../images/lightllm_analysis/4a100_4a40.png)
+<div align="center">
+<img src="../../images/lightllm_analysis/4a100_4a40.png" width="60%" alt="4a100_4a40">
+</div>
 
 结果分析：在推理层，无论是 prefill 阶段还是 decode 阶段，4 卡 A100 的推理性能都优于 4 卡 A40 的性能。这是符合预期的，因为 A100 在算力、显存带宽、卡间通信方面都优于 A40。
 
@@ -67,7 +79,9 @@
 
 `A100` 和 `A40` 卡的各算子的总耗时情况对比如下图所示，图中也展示了 A100 相对于 A40 的[加速比](https://www.jendow.com.tw/wiki/%E5%8A%A0%E9%80%9F%E6%AF%94)。
 
-![算子性能分析结果](../../images/lightllm_analysis/op_perf1.png)
+<div align="center">
+<img src="../../images/lightllm_analysis/op_perf1.png" width="60%" alt="算子性能分析结果">
+</div>
 
 结果分析：
 
@@ -82,11 +96,15 @@
 
 ### 3.2、推理性能分析结果
 
-![4a40_8a40](../../images/lightllm_analysis/4a40_8a40.png)
+<div align="center">
+<img src="../../images/lightllm_analysis/4a40_8a40.png" width="60%" alt="4a40_8a40">
+</div>
 
 ### 3.3、算子性能分析结果
 
-![算子性能分析结果](../../images/lightllm_analysis/op_perf2.png)
+<div align="center">
+<img src="../../images/lightllm_analysis/op_perf2.png" width="60%" alt="算子性能分析结果">
+</div>
 
 **结果分析**:
 
@@ -99,11 +117,15 @@
 
 ### 4.1、推理性能分析结果
 
-![4a100_8a100](../../images/lightllm_analysis/4a100_8a100.png)
+<div align="center">
+<img src="../../images/lightllm_analysis/4a100_8a100.png" width="60%" alt="4a100_8a100">
+</div>
 
 ### 4.2、算子性能分析结果
 
-![算子性能分析结果](../../images/lightllm_analysis/op_perf3.png)
+<div align="center">
+<img src="../../images/lightllm_analysis/op_perf3.png" width="60%" alt="算子性能分析结果">
+</div>
 
 **结果分析**：
 
@@ -125,11 +147,15 @@
 
 ### 5.1、推理性能分析结果
 
-![2a40_pcie_nvlink](../../images/lightllm_analysis/2a40_pcie_nvlink.png)
+<div align="center">
+<img src="../../images/lightllm_analysis/2a40_pcie_nvlink.png" width="60%" alt="2a40_pcie_nvlink">
+</div>
 
 ### 5.2、算子性能分析结果
 
-![算子性能分析结果](../../images/lightllm_analysis/op_perf4.png)
+<div align="center">
+<img src="../../images/lightllm_analysis/op_perf4.png" width="60%" alt="算子性能分析结果">
+</div>
 
 **结果分析**：
 - `Prefill` 阶段通信量很大，对于 all_reduce 算子来说，实验中，`NVLink` 互连的卡的 all_reduce 算子时间是 PCIe 的一半，即 A40 的 NVLink 比 PCIe4.0 的实际带宽的加速比为 $2$，而两者的理论带宽加速比是 1.76x。之所以实际加速比超过理论值，是因为，A40 机器的 GPU0 和 GPU3 是 PXB 连接方式【跨过多个 PCIE bridges】，其通信速度略低于 `PIX`  模式，即低于理论的 PCIE4.0 的通信带宽。实验结果和理论预估几乎一致。

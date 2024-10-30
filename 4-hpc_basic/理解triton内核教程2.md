@@ -57,7 +57,9 @@ def matrix_multiply(A, B):
 
 选择不同的变体主要取决于“数据重用”的效率。在计算中，重用（reuse）已经加载到高速内存（如缓存）中的数据可以提高效率。通过**优先考虑某个维度的驻留性（即保持其靠近处理单元），可以更好地重用数据，从而使计算更加高效**。下图展示了三种不同的数据流模式。
 
-![三种不同的数据流](../images/triton_tutorials2/three_gemm.png)
+<div align="center">
+<img src="../images/triton_tutorials2/three_gemm.png" width="60%" alt="三种不同的数据流">
+</div>
 
 ### 2. 分块矩阵乘法
 
@@ -90,7 +92,9 @@ for m in range(0, M, BLOCK_SIZE_M):
 ```
 分块矩阵乘法原理的如下图所示：
 
-![gemm_tiled](../images/triton_tutorials2/gemm_tiled.png)
+<div align="center">
+<img src="../images/triton_tutorials2/gemm_tiled.png" width="60%" alt="gemm_tiled">
+</div>
 
 小块矩阵结果如下所示：
 

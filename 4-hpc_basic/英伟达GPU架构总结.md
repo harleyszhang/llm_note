@@ -69,7 +69,9 @@
 
 英伟达 GPU 架构简要发展史如下图所示。
 
-![architecture_develop](../images/nvidia_gpu/architecture_develop.png)
+<div align="center">
+<img src="../images/nvidia_gpu/architecture_develop.png" width="60%" alt="architecture_develop">
+</div>
 
 - **Kepler 架构里**，FP64单元和FP32单元的比例是1:3或者1:24；K80。
 - **Maxwell 架构里**，这个比例下降到了只有1:32；型号M10/M40。
@@ -110,7 +112,9 @@ Volta 多进程服务 (MPS) 是 `Volta GV100` 架构的一项新功能，可为 
 
 基于 Volta 架构的 Tesla V100 加速器的主要新技术如下图所示：
 
-![Tesla V100 加速器的主要新技术](../images/nvidia_gpu/v100_new_technologies.png)
+<div align="center">
+<img src="../images/nvidia_gpu/v100_new_technologies.png" width="60%" alt="Tesla V100 加速器的主要新技术">
+</div>
 
 总结：个人认为 `Volta` 架构的最主要新特性是，在传统的单双精度计算之外还增加了专用的**Tensor Core** 张量单元，用于深度学习的 `GEMM` 计算。
 
@@ -135,12 +139,16 @@ Volta 多进程服务 (MPS) 是 `Volta GV100` 架构的一项新功能，可为 
 
 下图显示了具有 84 个 `SM` 的完整 GV100 GPU（注意，不同的产品可以使用不同配置的 GV100）。Tesla V100 加速器使用 80 个 SM。 
 
-![具有 84 个 SM 单元的 Volta GV100 全 GPU](../images/nvidia_gpu/GV100_GPU_hardware_structure.png)
+<div align="center">
+<img src="../images/nvidia_gpu/GV100_GPU_hardware_structure.png" width="60%" alt="具有 84 个 SM 单元的 Volta GV100 全 GPU">
+</div>
 表 1 比较了过去五年的 NVIDIA Tesla GPU。
 
 下表展示了 NVIDIA Tesla GPU 的比较。
 
-![nvidia_tesla_gpu](../images/nvidia_gpu/nvidia_tesla_gpu.png)
+<div align="center">
+<img src="../images/nvidia_gpu/nvidia_tesla_gpu.png" width="60%" alt="nvidia_tesla_gpu">
+</div>
 
 ### 2.3，Volta SM 硬件结构
 
@@ -153,7 +161,11 @@ Volta 多进程服务 (MPS) 是 `Volta GV100` 架构的一项新功能，可为 
 
 Volta GV100 流式多处理器(SM)架构如下图像所示：
 
-<!-- ![Volta GV100 流式多处理器(SM)架构](../images/nvidia_gpu/Volta_sm.png) -->
+<!-- 
+<div align="center">
+<img src="../images/nvidia_gpu/Volta_sm.png" width="60%" alt="Volta GV100 流式多处理器(SM)架构">
+</div>
+ -->
 <img src="../images/nvidia_gpu/Volta_sm.png" width="70%" alt="Volta GV100 流式多处理器(SM)架构">
 
 #### 2.3.1，Volta 和 Pascal 在内存层次的比较
@@ -170,11 +182,15 @@ Tesla V100 GPU 包含 `640` 个 Tensor Core：每个 SM 有 `8` 个 Tensor Core�
 
 Tensor Cores 在具有 FP32 累加的 FP16 输入数据上运行。FP16 乘法产生全精度乘积，然后使用 FP32 加法与其他中间乘积进行累加，以实现 4x4x4 矩阵乘法，计算过程如下图所示。在实际项目中，Tensor Core 是用于执行更大的 2D 或更高维的矩阵运算，这些运算又由这些较小的元素块构建而成。
 
-![Tensor 核心中的混合精度乘加运算](../images/nvidia_gpu/mixed_mula_tensor_core.png)
+<div align="center">
+<img src="../images/nvidia_gpu/mixed_mula_tensor_core.png" width="60%" alt="Tensor 核心中的混合精度乘加运算">
+</div>
 
 如果使用 CUDA 核心，对于 4x4 矩阵乘法需要执行 64 次浮点运算来生成 4x4 输出矩阵，而具有 Tensor Core 的基于 Volta 的 V100 GPU 执行此类计算的速度比基于 Pascal 的 Tesla P100 会快 12 倍。4x4 矩阵乘法使用cuda核心和tensor核心计算过程对比如下图所示。
 
-![4x4 矩阵乘法使用cuda核心和tensor核心计算过程对比](../images/nvidia_gpu/Volta-Tensor-Core_30fps_FINAL_994x559.gif)
+<div align="center">
+<img src="../images/nvidia_gpu/Volta-Tensor-Core_30fps_FINAL_994x559.gif" width="60%" alt="4x4 矩阵乘法使用cuda核心和tensor核心计算过程对比">
+</div>
 
 Volta 架构的 Tensor Core 的特性已经在 `CUDA9` C++ API 提供，公开了专门的矩阵加载、矩阵乘法和累加以及矩阵存储操作，在 CUDA 级别，warp 级接口假设 16x16 大小的矩阵跨越 warp 的所有 32 个线程。
 
@@ -189,7 +205,11 @@ NVIDIA TESLA V100 芯片是用于 `HPC`（高性能计算）的**专业卡**，�
 
 更加详细的规格如下图所示:
 
-<!-- ![NVIDIA®Tesla®V100规格](../images/nvidia_gpu/v100_format.png) -->
+<!-- 
+<div align="center">
+<img src="../images/nvidia_gpu/v100_format.png" width="60%" alt="NVIDIA®Tesla®V100规格">
+</div>
+ -->
 
 <img src="../images/nvidia_gpu/v100_format.png" width="60%" alt="NVIDIA®Tesla®V100规格">
 
@@ -259,7 +279,9 @@ Turing TU102 和 TU104 GPU 采用 NVIDIA NVLink™ 高速互联技术，可在�
 
 Turing TU102 GPU 的内部结构图如下所示。
 
-![Turing TU102 GPU 的内部结构](../images/nvidia_gpu/TURING_TU102_GPU.png)
+<div align="center">
+<img src="../images/nvidia_gpu/TURING_TU102_GPU.png" width="60%" alt="Turing TU102 GPU 的内部结构">
+</div>
 
 图 2. 含 72 个 SM 单元的完整 Turing TU102 GPU 内部构造。
 
@@ -283,8 +305,12 @@ Turing TU102/TU104/TU106 流式多元处理器 (`SM`)结构图如下所示：
 
 2，更详细的 NVIDIA Pascal GP102 与 Turing TU102 对比表如下所示:
 
-![NVIDIA Pascal GP102 与 Turing TU102 对比表](../images/nvidia_gpu/pscal_turing_compare.png)
-![NVIDIA Pascal GP102 与 Turing TU102 对比表2](../images/nvidia_gpu/pscal_turing_compare2.png)
+<div align="center">
+<img src="../images/nvidia_gpu/pscal_turing_compare.png" width="60%" alt="NVIDIA Pascal GP102 与 Turing TU102 对比表">
+</div>
+<div align="center">
+<img src="../images/nvidia_gpu/pscal_turing_compare2.png" width="60%" alt="NVIDIA Pascal GP102 与 Turing TU102 对比表2">
+</div>
 
 ### 3.5，基于 TURING GPU 架构的专业推理卡对比-T4 卡
 
@@ -304,7 +330,9 @@ Tesla T4 采用的 TU104 芯片包含 5 个 GPC、20 个 TPC、`40` 个 SM 以�
 
 Pascal Tesla P4 专业推理卡和 Turing Tesla T4 专业推理卡的规格对比如下图所示： 
 
-![P4 专业推理卡和 T4 专业推理卡的规格对比](../images/nvidia_gpu/p4_t4_compare.png)
+<div align="center">
+<img src="../images/nvidia_gpu/p4_t4_compare.png" width="60%" alt="P4 专业推理卡和 T4 专业推理卡的规格对比">
+</div>
 
 ## 四，Ampere 架构
 
@@ -356,7 +384,9 @@ NVIDIA Ampere 架构中的第三代 NVIDIA® NVLink® 将 GPU 到 GPU 的直接�
 
 图 4 展示了一颗带有 128 个 SM 的完整 GA100 GPU，值得注意的是，基于 GA100 的 **A100 只有 108 个 SM**。
 
-![GA100 GPU 完整结构图](../images/nvidia_gpu/ga100-full-gpu-128-sms.png)
+<div align="center">
+<img src="../images/nvidia_gpu/ga100-full-gpu-128-sms.png" width="60%" alt="GA100 GPU 完整结构图">
+</div>
 
 ### 4.3，A100 流处理器（SM）结构
 
@@ -380,7 +410,9 @@ NVIDIA Ampere 架构中的第三代 NVIDIA® NVLink® 将 GPU 到 GPU 的直接�
 
 下图为 V100 和 A100 FP16/FP32/FP64/INT8 Tensor Core 计算对比示意图。
 
-![V100 和 A100 FP16/FP32/FP64/INT8 Tensor Core 计算对比示意图](../images/nvidia_gpu/Sparse-Tensor-Core-Quad-White.png)
+<div align="center">
+<img src="../images/nvidia_gpu/Sparse-Tensor-Core-Quad-White.png" width="60%" alt="V100 和 A100 FP16/FP32/FP64/INT8 Tensor Core 计算对比示意图">
+</div>
 
 #### 4.3.1，L1 Data Cache 和 Shared Memory
 
@@ -490,7 +522,9 @@ PCIe 5.0 的总带宽为 `128GB/s`（每个方向 64GB/s），而 PCIe 4.0 的�
 
 配备 144 个 SM 的完整 GH100 GPU 核心的架构图如下所示：
 
-![配备 144 个 SM 的完整 GH100 GPU 核心](../images/nvidia_gpu/hopper_gpu_architecture.png)
+<div align="center">
+<img src="../images/nvidia_gpu/hopper_gpu_architecture.png" width="60%" alt="配备 144 个 SM 的完整 GH100 GPU 核心">
+</div>
 
 ### 5.3，Hopper SM 架构总结
 
@@ -512,7 +546,9 @@ Tensor Core 是专门用于矩阵乘积累加 (`MMA`) 数学运算的高性能�
 
 `NVIDIA Hopper™` 架构通过使用新的 `8` 位浮点精度 (`FP8`) 的 Transformer Engine 改进了第四代 Tensor Cores，H100 FP16 Tensor Core 的吞吐量是 A100 FP16 Tensor Core 的 3 倍。
 
-![Tensor Core 的吞吐量](../images/nvidia_gpu/tensorcore-gen4-fp16-2c50-d@2x.png)
+<div align="center">
+<img src="../images/nvidia_gpu/tensorcore-gen4-fp16-2c50-d@2x.png" width="60%" alt="Tensor Core 的吞吐量">
+</div>
 
 ### 5.5，NVIDIA H100 芯片
 
@@ -535,7 +571,11 @@ H100 提供了高达 `80GB` 的 GPU 显存和 `3.35TB/s`（H100 SXM）的显存�
 
 更加详细的规格如下图所示:
 
-<!-- ![H100 产品规格](../images/nvidia_gpu/H100_format.png) -->
+<!-- 
+<div align="center">
+<img src="../images/nvidia_gpu/H100_format.png" width="60%" alt="H100 产品规格">
+</div>
+ -->
 <img src="../images/nvidia_gpu/H100_format.png" width="60%" alt="H100 产品规格">
 
 ## 六，V100/A100/H100 计算能力对比
@@ -548,7 +588,9 @@ H100 提供了高达 `80GB` 的 GPU 显存和 `3.35TB/s`（H100 SXM）的显存�
 
 英伟达不同架构的 `Tensor Core` 特性对比如下表所示：
 
-![Tensor Core](../images/nvidia_gpu/tensor_core_summary.png)
+<div align="center">
+<img src="../images/nvidia_gpu/tensor_core_summary.png" width="60%" alt="Tensor Core">
+</div>
 
 ## 参考资料
 

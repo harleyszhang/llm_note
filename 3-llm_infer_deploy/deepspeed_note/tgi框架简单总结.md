@@ -68,7 +68,9 @@ Text-Generation-Inferenc（简称 TGI）框架特点：
 
 TGI 框架架构图如下所示:
 
-![tgi_framework](../../images/tgi/tgi_framework.png)
+<div align="center">
+<img src="../../images/tgi/tgi_framework.png" width="60%" alt="tgi_framework">
+</div>
 
 `TGI` 框架主要由三部分组成：
 
@@ -129,7 +131,9 @@ let min_size = if waiting_tokens >= max_waiting_tokens {
 - 排队时间过长的根本原因是没有足够的 tokens 预算去做 prefill。
 - 性能瓶颈分析实验中，发现 prefill 过程中的实际 batch_size 偏小，不利于发挥出算力。
 
-![tgi_router_pipeline](../../images/tgi/tgi_router_pipeline.png)
+<div align="center">
+<img src="../../images/tgi/tgi_router_pipeline.png" width="60%" alt="tgi_router_pipeline">
+</div>
 
 #### 1.4.1，不同性能参数对实际推理过程 prefill/decode 过程的 batch_size 大小影响
 
@@ -144,7 +148,9 @@ let min_size = if waiting_tokens >= max_waiting_tokens {
 
 随着后期并发数目的增加，推理 decode 过程的 batch_size 越来越大（偶尔减小），prefill 过程的 batch_size 越来越小，后期趋向于稳定在 1 。
 
-![image-20240112122341879](../../../../Library/Application%20Support/typora-user-images/image-20240112122341879.png)
+<div align="center">
+<img src="../../../../Library/Application%20Support/typora-user-images/image-20240112122341879.png" width="60%" alt="image-20240112122341879">
+</div>
 
 ```bash
 --model-id /data/models/Antelope-L2-70B-1-02 \
@@ -155,9 +161,13 @@ let min_size = if waiting_tokens >= max_waiting_tokens {
 --port 3006 --sharded true
 ```
 
-![image-20240112122440747](../../../../Library/Application%20Support/typora-user-images/image-20240112122440747.png)
+<div align="center">
+<img src="../../../../Library/Application%20Support/typora-user-images/image-20240112122440747.png" width="60%" alt="image-20240112122440747">
+</div>
 
-![image-20240112171022876](../../../../Library/Application%20Support/typora-user-images/image-20240112171022876.png)
+<div align="center">
+<img src="../../../../Library/Application%20Support/typora-user-images/image-20240112171022876.png" width="60%" alt="image-20240112171022876">
+</div>
 
 ### 1.5，grpc 接口及数据结构类图
 
@@ -572,7 +582,9 @@ launcher 启动器，就是负责启动程序，主要做以下工作(实现在 
 
 **右边图对应的是 `queue.rs` 文件的 `next_batch` 函数，左边图对应的是 `infer.rs` 的 `batching_task` 函数**。
 
-![tgi_router_pipeline](../../images/tgi/tgi_router_pipeline.png)
+<div align="center">
+<img src="../../images/tgi/tgi_router_pipeline.png" width="60%" alt="tgi_router_pipeline">
+</div>
 
 组 `batch` 任务中有个关键参数 `waiting_served_ratio`，其意义是等待的请求与正在运行批处理请求的比率，默认值是 1.2，**意味着当有 12 个请求在等待，而当当前批次中只剩下 10 个请求时，我们会检查是否可以将这 12 个等待查询纳入到批处理策略中**（看剩余 `tokens` 预算），如果可以，批处理就会发生，通过 `prefill` 运行延迟了这 10 个正在运行的查询。此设置仅在批次中有空间，如 `max_batch_total_tokens` 定义的那样时才会应用。
 
@@ -610,7 +622,9 @@ launcher 启动器，就是负责启动程序，主要做以下工作(实现在 
 
 `TGI ` 框架定义的 `api` 接口如下所示:
 
-![inference api](../../images/tgi/inference_api.png)
+<div align="center">
+<img src="../../images/tgi/inference_api.png" width="60%" alt="inference api">
+</div>
 
 `api` 接口提供了在线的 [swagger-ui 页面](https://huggingface.github.io/text-generation-inference/#/)（utoipa 库），`server.rs` 文件定义了 `text-generation-inference` REST `API`。
 
@@ -1080,7 +1094,9 @@ PagedAttention 是对 kv cache 所占空间的分页管理，是一个典型的*
 
 PagedAttention 的核心是一张表，类似于 OS 的 page table，这里叫 `block table` ，记录每个 seq 的 kv 分布在哪个 physical block上，通过把每个 seq 的 kv cache 划分为**固定大小的 physical block**，每个 block 包含了每个句子某几个 tokens 的一部分 kv，允许连续的 kv 可以不连续分布。在 attention compute 的时候，**pagedattention CUDA kernel 就通过 block table 拿到对应的 physical block 序号，然后 CUDA 线程 ID 计算每个 seq 每个 token 的 offset 从而 fetch 相应的 block，拿到 kv，继续做 attention 的计算**。
 
-![动图](https://pic2.zhimg.com/v2-6035b0440dd9f0eb37bc9c221b977799_b.webp)
+<div align="center">
+<img src="https://pic2.zhimg.com/v2-6035b0440dd9f0eb37bc9c221b977799_b.webp" width="60%" alt="动图">
+</div>
 
 ### 5.2，和壁仞推理库的适配
 

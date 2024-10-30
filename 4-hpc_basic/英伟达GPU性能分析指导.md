@@ -27,14 +27,18 @@
 
 GPU 是一种**高度并行的处理器架构**，由处理元件和内存层次结构组成。在较高层面上，NVIDIA® GPU 由多个流式多处理器（Streaming Multiprocessors，`SMs`）、片上 L2 缓存和高带宽 `DRAM` 组成。`SMs` 执行算术和其他指令，数据和代码通过 L2 缓存从 DRAM 中访问。举个例子，NVIDIA A100 GPU 包含 108 个 SMs，一个 40MB 的 L2 缓存，以及 80 GB HBM2 内存并提供高达 2039 GB/s 的带宽。
 
-![simple-gpu-arch](../images/gpu_perf/simple-gpu-arch.svg)
+<div align="center">
+<img src="../images/gpu_perf/simple-gpu-arch.svg" width="60%" alt="simple-gpu-arch">
+</div>
 图1. GPU 架构的简化视图
 
 每个 `SM` 都有自己的指令调度器和各种指令执行管道。乘加运算是现代神经网络中最常见的运算，是全连接层和卷积层的构建块，这两个层都都可以看作是一组向量点乘的集合。 
 
 下表显示了 NVIDIA 最新 GPU 架构上，不同数据类型的单个 SM 每个时钟周期的乘加操作次数。每个乘加操作都包含两个运算，因此将表中的吞吐量乘以 2，即可获得每个时钟的 FLOP 计数。要获得 GPU 的 `FLOPS` 速率，需要将其乘以 SM 数量和 SM 时钟速率。 例如，具有 108 个 SM 和 1.41 GHz 时钟频率的 A100 GPU 的峰值密集吞吐量为 156 TF32 TFLOPS 和 312 FP16 TFLOPS（应用程序实现的吞吐量取决于本文档中讨论的许多因素）。
 
-![multi-add-op](../images/gpu_perf/multi-add-op.svg)
+<div align="center">
+<img src="../images/gpu_perf/multi-add-op.svg" width="60%" alt="multi-add-op">
+</div>
 图 2. SM 每个时钟的乘加运算
 
 如图2所示，`FP16` 操作可以在 Tensor Cores 或 NVIDIA CUDA® 核心中执行。此外，NVIDIA Turing™ 架构可以在 Tensor Cores 或 CUDA 核心中执行 `INT8` 操作。`Tensor Cores` 是在NVIDIA Volta™ GPU 架构中引入的，用于加速机器学习和科学应用中的矩阵乘法和累加操作。这些指令对小矩阵块（例如 4x4 块）进行操作。值得注意的是，Tensor Cores 可以以比输入更高的精度计算和累加乘积。例如，在使用 FP16 输入进行训练时，Tensor Cores 可以在不丢失精度的情况下计算乘积，并以 FP32 累加。**当数学运算无法用矩阵块表示时，它们将在其他 CUDA 核心中执行**。例如，两个半精度张量的逐元素加法将由 CUDA 核心执行，而不是 Tensor Cores。
@@ -50,7 +54,9 @@ GPU 是一种**高度并行的处理器架构**，由处理元件和内存层次
 
 2 级线程层次结构是因为 GPU 内部有很多 SM，**每个 SM 又具有用于执行多个线程的流水线**，并通过共享内存和同步来实现线程间的通信。GPU 运行时，线程块（thread block）是放在 SM 上执行，这使得线程块中的所有线程都能够高效地通信和同步。因为使用单个线程块启动函数将只有一个 SM 被分配工作，因此要充分利用具有多个 SM 的 GPU，就需要启动多个线程块。又因为一个 SM 可以同时执行多个线程块，通常希望线程块的数量是 SM 数量的几倍。这样做的原因是为了最大限度地减少“尾部”效应，即在函数执行结束时，只有少数活动线程块保留，从而导致该时间段内 GPU 利用率不足，如图 3 所示。
 
-![utilize-8sm-gpu](../images/gpu_perf/utilize-8sm-gpu.svg)
+<div align="center">
+<img src="../images/gpu_perf/utilize-8sm-gpu.svg" width="60%" alt="utilize-8sm-gpu">
+</div>
 
 图3. 当一次占用 1 个块/SM 的 12 个线程块启动执行时，8-SM GPU 的利用率。 此处，块分 2 波执行，第一波利用 100% 的 GPU，而第二波仅利用 50%。
 
@@ -86,7 +92,9 @@ $$\frac{\text{\#ops}}{\#bytes} > \frac{\text{BW\_math}}{\text{BW\_mem}}$$
 - 如果算法的算术强度高于 GPU 的 `ops:byte ratio`，那么该算法受算力限制的，也称 `math bound`，即**性能受算力 `FLOPS` 限制**（算力受限/计算密集型算子）。
 - 相反，如果算法的算术强度低于 GPU 的 `ops:byte ratio`，则该算法受内存限制，也称 `memory bound`，即**性能受内存带宽限制**（内存受限/访存密集型算子）。
 
-![Figure 4: Roofline Model](../images/roofline_model/roofline_model.png)
+<div align="center">
+<img src="../images/roofline_model/roofline_model.png" width="60%" alt="Figure 4: Roofline Model">
+</div>
 
 总结：**应该尽可能让算法/网络层的算术强度高于 GPU 的 `ops:byte ratio`，这样才能充分利用 `gpu` 的算力**。
 
@@ -104,13 +112,17 @@ $$\frac{\text{\#ops}}{\#bytes} > \frac{\text{BW\_math}}{\text{BW\_mem}}$$
 
 $$\frac{2MKN}{2(MK + KN + MN)}$$
 
-![tiled_matrix_multiplication](../images/gpu_perf/tiled_matrix_multiplication.webp)
+<div align="center">
+<img src="../images/gpu_perf/tiled_matrix_multiplication.webp" width="60%" alt="tiled_matrix_multiplication">
+</div>
 
 具体示例在下表 1 中。对于这些例子，我们将比较算法的算术强度与 NVIDIA Volta V100 PCle GPU 的 ops:byte ratio。V100 PCle GPU  的峰值算力为 112 FP16 Tensor TFLOPS，**片外内存带宽**约为 900 GB/s，芯片上 L2 缓存的带宽为 3.1 TB/s，因此其 `ops:byte ratio` 在 40 到 124.4 之间，取决于操作数据的来源（片内或片外存储器）。
 
 假设 GPU 在 FP16 输入上进行 Tensor Core 操作，并使用 FP32 累积，如果数据从 GPU 的内存加载，则 `FLOPS：B`（**ops:byte ratio**）为 `124.4 = 112 / 0.9`。下表显示了一些常见网络层的算术强度。
 
-![memory_math_bound](../images/gpu_perf/memory_math_bound.png)
+<div align="center">
+<img src="../images/gpu_perf/memory_math_bound.png" width="60%" alt="memory_math_bound">
+</div>
 
 上述表格第一行的计算过程如下:
 
@@ -130,7 +142,9 @@ $$
 2. count `ops:byte ratio`: $BW\_math/BW\_mem$
 3. 比较 (1) 和 (2)
 
-![analyzing_performance](../images/gpu_perf/analyzing_performance.webp)
+<div align="center">
+<img src="../images/gpu_perf/analyzing_performance.webp" width="60%" alt="analyzing_performance">
+</div>
 
 ## 五，DNN 操作类别 
 

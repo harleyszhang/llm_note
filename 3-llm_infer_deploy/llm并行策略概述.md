@@ -55,7 +55,9 @@
 
 本文中 Ring AllReduce 的应用场景是在服务器内将8张加速卡组环通信进行分布式训练。每个 XPU 都是这个主机内互联环上的一个计算节点，每个节点都有一个前向和一个后向，它只会向它的前向接收数据，并向它的右向发送数据，如下图所示， 8 张 XPU 通过主机内的私有互联网络组成一个环，当然因为这些通信网络是双工的，这 8 张XPU 训练加速卡也可以看成是通过多个逻辑环互联起来的，同时缺点是，如果这个 ring 太大，Ring Allreduce 的效率也会变得很低。
 
-![ring拓扑](https://wuchangping.oss-cn-hangzhou.aliyuncs.com/aitraining/4/image-ring-topo.png)
+<div align="center">
+<img src="https://wuchangping.oss-cn-hangzhou.aliyuncs.com/aitraining/4/image-ring-topo.png" width="60%" alt="ring拓扑">
+</div>
 
 `Ring Allreduce` 有两种组合实现策略:
 
@@ -64,7 +66,9 @@
 
 在分布式训练中，这两个策略执行后都会让每个 XPU 节点得到一样的平均梯度，具体执行过程如下图所示
 
-![allreduce](https://wuchangping.oss-cn-hangzhou.aliyuncs.com/aitraining/4/image-allreduce.png)
+<div align="center">
+<img src="https://wuchangping.oss-cn-hangzhou.aliyuncs.com/aitraining/4/image-allreduce.png" width="60%" alt="allreduce">
+</div>
 
 `Ring AllReduce` 的最佳组合是 `ScatterReduce` + `AllGather` 方法。
 
@@ -93,7 +97,9 @@ $$\frac2{N-1}{\frac{K}{N}}$$
 2. 将 A 与每个设备上 B 中的每一列相乘，我们将得到 [AB0 AB1 AB2 ... ABn]；此时，每个设备只持有部分结果，例如设备(rank=0)持有 AB0；
 3. 最后，我们需要收集全部的结果，并沿列维串联张量。
 
-![tensor_parallelism_overview](../images/llm_parallelism_overview/tensor_parallelism_overview.png)
+<div align="center">
+<img src="../images/llm_parallelism_overview/tensor_parallelism_overview.png" width="60%" alt="tensor_parallelism_overview">
+</div>
 
 典型的张量并行实现：Megatron-LM（1D）、Colossal-AI（2D、2.5D、3D）。
 
@@ -103,9 +109,13 @@ $$\frac2{N-1}{\frac{K}{N}}$$
 
 大模型分布式训练中的流水线并行的合适思想是，模型按层分割成若干块，每块都交给一个设备。在前向传递过程中，每个设备将中间的激活传递给下一个阶段。在后向传递过程中，每个设备将输入张量的梯度传回给前一个流水线阶段。这允许设备同时进行计算，并增加了训练的吞吐量。流水线并行训练的一个缺点是，会有一些设备参与计算的冒泡时间，导致计算资源的浪费。
 
-![pipeline_parallelism_overview2](../images/llm_parallelism_overview/pipeline_parallelism_overview2.png)
+<div align="center">
+<img src="../images/llm_parallelism_overview/pipeline_parallelism_overview2.png" width="60%" alt="pipeline_parallelism_overview2">
+</div>
 
-![pipeline_parallelism_understand](../images/llm_parallelism_overview/pipeline_parallelism_understand.png)
+<div align="center">
+<img src="../images/llm_parallelism_overview/pipeline_parallelism_understand.png" width="60%" alt="pipeline_parallelism_understand">
+</div>
 
 ## 参考资料
 

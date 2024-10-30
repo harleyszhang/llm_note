@@ -234,14 +234,18 @@ block online softmax 与 PyTorch softmax 结果一致!
 
 $$\text{S = QK}^\text{T} \in \mathbb{R}^{N\times N},\quad \text{P = softmax(S)} \in \mathbb{R}^{N\times N},\quad \text{O = PV}\in \mathbb{R}^{N\times d}$$
 
-![标准 attention算法](../../images/flash_attention/standard_attention_imple.png)
+<div align="center">
+<img src="../../images/flash_attention/standard_attention_imple.png" width="60%" alt="标准 attention算法">
+</div>
 
 标准的 `Attention` 运算大致可以描述为以下三个步骤：
 1. 将 $Q, K$ 矩阵以块的形式从 `HBM` 中加载到 `SRAM` 中，计算 $S=QK^T$，将 $S$ 写入到 `HBM` 中。
 2. 将 $S$ 矩阵从 `HBM` 中加载到 `SRAM` 中，计算 $P = Softmax(S)$，将 $P$写入到 HBM 中。
 3. 将 $P, V$ 矩阵以块的形式从 HBM 中加载到 SRAM 中，计算 $O=PV$, 将 $O$ 写入到 HBM 中。
 
-![self-attention 与 HBM 的交互](../../images/flash_attention/standard_attention_mac.png)
+<div align="center">
+<img src="../../images/flash_attention/standard_attention_mac.png" width="60%" alt="self-attention 与 HBM 的交互">
+</div>
 
 self-attention 算子涉及到的和 HBM 数据传输过程如上图所示，很明显需要从HBM 中读取 5次，写入 HBM 3 次，`HBM` 访存量 $MAC = 3N^2 + 4Nd$，很明显标准注意力的 HBM 随序列长度增加呈二次方增长。
 
@@ -581,7 +585,9 @@ $1: 设置块大小\;B_c = \left\lceil \frac{M}{4d} \right\rceil ,  B_r = \min \
 15: \text{end for} \\
 16: 返回\; O$
 
-![flash attention 算法步骤](../../images/flash_attention/flash_attention_algorithm1.png)
+<div align="center">
+<img src="../../images/flash_attention/flash_attention_algorithm1.png" width="60%" alt="flash attention 算法步骤">
+</div>
 
 上面的是纯 python 代码，下面我们继续优化，利用 triton 框架写出极度优化的  FlashAttention-1 内核代码。
 
@@ -695,7 +701,9 @@ FlashAttention-2 的缺陷是对训练提速较多，对推理加速不大：主
 
 Flash-Decoding 在前作对 `batch size` 和 `query length` 并行的基础上增加了一个新的并行化维度：`keys/values` 的序列长度，代价是最后一个小的归约步骤。
 
-![flashattention_kv](../../images/flashattention-3/parallelization_kv.gif)
+<div align="center">
+<img src="../../images/flashattention-3/parallelization_kv.gif" width="60%" alt="flashattention_kv">
+</div>
 
 Flash-Decoding 的工作流程分为三个步骤：
 1. 首先，将键/值拆分成更小的块。

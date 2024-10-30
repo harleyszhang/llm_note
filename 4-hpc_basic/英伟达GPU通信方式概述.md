@@ -76,7 +76,9 @@ GPU 之间互联通信的技术发展：`PCIE—>NVLink—>NVSwitch`。在 nvidi
 
 第四代 NVIDIA® NVLink® 技术可为多 GPU 系统配置提供高于以往 1.5 倍的带宽，以及增强的可扩展性。单个 NVIDIA H100 Tensor Core GPU 支持多达 18 个 NVLink 连接，总带宽为 900 GB/s，是 PCIe 5.0 带宽的 7 倍。NVIDIA DGX™ H100 等服务器可利用这项技术来提高可扩展性，进而实现超快速的深度学习训练。
 
-![NVSwitch_types](../images/pcie_nvlink/NVSwitch_types.png)
+<div align="center">
+<img src="../images/pcie_nvlink/NVSwitch_types.png" width="60%" alt="NVSwitch_types">
+</div>
 
 1，将 GPU 与 NVIDIA NVSwitch 完全连接：
 
@@ -92,7 +94,9 @@ NVSwitch 可连接多个 NVLink，在单节点内和节点间实现以 NVLink 
 
 4，NVLINK 和 NVSwitch 规格对比。
 
-![nvlink_compare_with_nvswitch](../images/pcie_nvlink/nvlink_compare_with_nvswitch.png)
+<div align="center">
+<img src="../images/pcie_nvlink/nvlink_compare_with_nvswitch.png" width="60%" alt="nvlink_compare_with_nvswitch">
+</div>
 
 ## 二，单机多卡的 NVLINK 互联拓扑结构
 
@@ -101,7 +105,9 @@ NVSwitch 可连接多个 NVLink，在单节点内和节点间实现以 NVLink 
 下图是 HGX-1/DGX-1 使用的 8 个 V100 的混合立方网格拓扑结构，混合立方-网格拓扑结构（见下图）可以被视为一个立方体，其顶点是 GPU，并且通过 NVLink 连接了所有 $12$ 条边（一些边有两个 NVLink 连接），其中两个六面体的对角线也连接在一起。该拓扑结构还可以被视为三个交织的单 NVLink 连接环。
 > 参考资料 NVIDIA DGX-1 With Tesla V100 System Architectur。
 
-![nvlink_topology](../images/pcie_nvlink/nvlink_topology.png)
+<div align="center">
+<img src="../images/pcie_nvlink/nvlink_topology.png" width="60%" alt="nvlink_topology">
+</div>
 
 上图可以看到**虽然 V100 理论上支持 6 个 NVlink 通道，但是实际上因为无法做到全连接，所以 2 个 GPU 间最多只能有 2 个 NVLink 通道，即任意两个 GPU 的双向互连带宽只有 $100GB/s$**。而 GPU 与 CPU 间通信仍然使用 PCIe 总线。CPU 间通信使用 QPI 总线。这个拓扑虽然有一定局限性，但依然大幅提升了同一 CPU Node 和跨 CPU Node 的 GPU 间通信带宽。
 
@@ -121,10 +127,14 @@ HGX A100 8-GPU 基板是 HGX A100 服务器平台的关键构建模块。 图 1 
 这种**完全连接的网状拓扑结构使得任何 A100 都能够以 600 GB/s 的完整 NVLink3.0 速度与任何其他 A100 GPU 通信**，这是最快 PCIe Gen4 x16 总线带宽的 10 倍。 两个底板还可以使用 NVSwitch 至 NVLink 进行背对背连接，从而实现 16 个 A100 GPU 的完全连接。
 > 参考资料：[Introducing NVIDIA HGX A100: The Most Powerful Accelerated Server Platform for AI and High Performance Computing](https://developer.nvidia.com/blog/introducing-hgx-a100-most-powerful-accelerated-server-platform-for-ai-hpc/)
 
-![HGX_A100_8-GPU](../images/pcie_nvlink/HGX_A100_8-GPU.png)
+<div align="center">
+<img src="../images/pcie_nvlink/HGX_A100_8-GPU.png" width="60%" alt="HGX_A100_8-GPU">
+</div>
 > 图 1. HGX A100 8-GPU 基板的逻辑图。图 2.HGX A100 8-GPU 物理视图。
 
-![A100HGX_A100_8-GPU_Diagram](../images/pcie_nvlink/HGX_A100_A100_8-GPU_Diagram.png)
+<div align="center">
+<img src="../images/pcie_nvlink/HGX_A100_A100_8-GPU_Diagram.png" width="60%" alt="A100HGX_A100_8-GPU_Diagram">
+</div>
 > 图 3 HGX A100 8-GPU 系统拓结构图。
 
 > NVIDIA DGX 与 NVIDIA HGX 有什么区别? 简单理解就是 NVIDIA HGX 是一个计算平台，通过 NVLink 和 NVSwitch 将多个 GPU 串连起来，提供强大的 AI 运算能力。NVIDIA DGX 是 AI 超级计算机。硬件方面包含：GPU、CPU、内存、硬盘、散热系统、软件、操作系统等等，也就是说，除了显示器、键盘、鼠标，它全都有。即 HGX 是一个计算模组，DGX 是一个完整的主机。
@@ -134,7 +144,9 @@ HGX A100 8-GPU 基板是 HGX A100 服务器平台的关键构建模块。 图 1 
 GPU 基板上的四个 A100 GPU **只通过 4 条 NVLink 链路两两连接，没有实现全连接**，所以两张 A100 卡的双向互连带宽为 $50 \times 4 = 200GB/s$，比最快的 PCIe Gen4 x16 总线快 3 倍以上。
 > 每个 A100 与其他 A100 的 NVLink 端口只有 4 个。
 
-![HGX_A100_4-GPU](../images/pcie_nvlink/HGX_A100_4-GPU.png)
+<div align="center">
+<img src="../images/pcie_nvlink/HGX_A100_4-GPU.png" width="60%" alt="HGX_A100_4-GPU">
+</div>
 
 > 图 4. 系统架构示例，其中 HGX A100 4-GPU 基板可实现简单高效的设计，最大限度地减少系统 BOM 并降低系统功耗。图 5.HGX A100 4-GPU 物理视图。
 
@@ -148,7 +160,9 @@ GPU 基板上的四个 A100 GPU **只通过 4 条 NVLink 链路两两连接，�
 
 NVIDIA NVLink 是一种高速点对点对等传输连接，其中一个 GPU 可以向另一个 GPU 传输数据并从另一个 GPU 接收数据。 NVIDIA **A40 卡只支持与单个相邻 A40 卡进行 NVLink 桥接连接**。
 
-![A40_P2P](../images/pcie_nvlink/A40_P2P.png)
+<div align="center">
+<img src="../images/pcie_nvlink/A40_P2P.png" width="60%" alt="A40_P2P">
+</div>
 
 如 8 卡 A40 机器，其简单拓扑图如下所示。其中NVIDIA® NVLink® 112.5 GB/s (bidirectional)3 PCIe Gen4: 64GB/s。
 
@@ -191,7 +205,9 @@ Legend:
 
 以及 8张 T4 卡机器的 GPU 拓扑结构:
 
-![T4_8GPU_PCIE](../images/pcie_nvlink/T4_8GPU_PCIE.png)
+<div align="center">
+<img src="../images/pcie_nvlink/T4_8GPU_PCIE.png" width="60%" alt="T4_8GPU_PCIE">
+</div>
 
 从上图可以看出，英伟达给出了 6 中 GPU 卡的物理通信方式，下面我们可以结果上面的 PCIe 物理结构图来了解这些通信方式：
 - `SYS`: 通过 QPI（PCIe + QPI总线）跨 NUMA node 间 GPU 通信，相当于上上图中的 GPU1 到 GPU5；
@@ -205,7 +221,9 @@ Legend:
 
 从上面的例子可以直观地看出，两个 GPU 卡的物理距离越近（如 GPU1 到 GPU2），则通信效率越高，距离越远效率越低，此处的效率一般体现在通信时延上。几种 PCIE 模式通信速度的对比。
 
-![PCIE_MODE](../images/pcie_nvlink/PCIE_MODE.png)
+<div align="center">
+<img src="../images/pcie_nvlink/PCIE_MODE.png" width="60%" alt="PCIE_MODE">
+</div>
 
 ### 2.5，SXM 和 PCIE 模组连接方式的区别
 
@@ -220,7 +238,9 @@ GPU 的内存（显存）带宽决定了它将数据从内存 (vRAM) 移动到�
 
 下图是一个简化的系统内存与设备内存架构示意图（来源）：
 
-![HOST_BUS](../images/pcie_nvlink/HOST_BUS.png)
+<div align="center">
+<img src="../images/pcie_nvlink/HOST_BUS.png" width="60%" alt="HOST_BUS">
+</div>
 
 内存数据传输通道划分：
 

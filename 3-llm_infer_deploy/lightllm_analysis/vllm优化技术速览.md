@@ -30,7 +30,9 @@ class Attention(nn.Module):
 
 具体来说，PagedAttention 将每个序列从逻辑上划分为一定数量的 `blocks`（块），每个 block 包含每个 seq 一定数量 tokens 的 key 和 value，并把这些逻辑 blocks 通过 block table 映射到固定大小的 物理 blocks 上，物理 blocks 可能不连续，即 kv 可能不连续分布。一句话总结就是构建 blocks 表， 并将 seq 的 kv tokens 划分成逻辑 blocks 并映射到物理 blocks 上。使用 PagedAttention 的请求的生成过程如下图所示：
 
-![pagedattention_workflow](../../images/vllm_technology/pagedattention_workflow.gif)
+<div align="center">
+<img src="../../images/vllm_technology/pagedattention_workflow.gif" width="60%" alt="pagedattention_workflow">
+</div>
 
 这种方式带来的内存浪费仅出现在序列的最后一个块中，实际中带来了近乎最优的内存使用，浪费不到 4%。这种内存效率的提升大大提高了系统能够同时处理的序列数量，增加了 GPU 的利用率，并显著提升了处理吞吐量。
 
@@ -40,13 +42,17 @@ PagedAttention 这种结构类似于操作系统中的虚拟内存，其中将�
 
 PagedAttention 还具备高效的内存共享能力。例如，在**并行采样**中，多个输出序列可以从同一个 prompt 生成。在这种情况下，prompt 的计算和内存可以在输出序列之间共享。PagedAttention 通过其块表自然地实现了内存共享，类似于进程共享物理页的方式。不同的序列可以通过将它们的逻辑块映射到相同的物理块来实现共享。为了确保共享的安全，PagedAttention 通过引用计数跟踪物理块，并实现了“写时复制”（Copy-on-Write）机制。
 
-![并行采样示例](../../images/vllm_technology/parallel_sampling.gif)
+<div align="center">
+<img src="../../images/vllm_technology/parallel_sampling.gif" width="60%" alt="并行采样示例">
+</div>
 
 PagedAttention 的内存共享显著降低了复杂采样算法（如并行采样和束搜索）的内存开销，可将其内存使用降低最多 55%，吞吐量提升最高可达 2.2 倍。这使得这些采样方法在 LLM 服务中变得更加实用。
 
 PagedAttention 借助块表实现了灵活的内存共享机制。类似于进程间共享物理页面的方式，PagedAttention 中的不同序列可以通过将各自的逻辑块映射到相同的物理块来共享内存资源。为了确保共享的安全性，PagedAttention 跟踪物理块的引用次数，并采用写时复制策略以防止数据冲突。
 
-![Example generation process for a request that samples multiple outputs.](../../images/vllm_technology/multiple_outputs.gif)
+<div align="center">
+<img src="../../images/vllm_technology/multiple_outputs.gif" width="60%" alt="Example generation process for a request that samples multiple outputs.">
+</div>
 
 ## 二 连续批处理
 
