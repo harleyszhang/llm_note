@@ -1,3 +1,11 @@
+---
+layout: post
+title: 理解 triton 内核教程 3
+date: 2024-09-24 20:00:00
+summary: layernorm 算子 triton 编程总结
+categories: Hpc
+---
+
 - [1. LN 原理](#1-ln-原理)
 - [2 其他 Norm 介绍](#2-其他-norm-介绍)
   - [2.1 种类介绍](#21-种类介绍)
@@ -12,7 +20,9 @@ LN 作用是减少了不同特征之间的依赖关系，可以使得模型训�
 * `BN`: 对于每个特征维度，计算它在整个批次中的均值和标准差，然后对该特征进行归一化。
 * `LN`: 对每个样本单独计算其所有特征的均值和标准差，然后在该样本内进行归一化。
 
+<div align="center">
 <img src="../images/transformer_paper/bn_ln.png" width="40%" alt="BN 和 LN 的区别">
+</div>
 
 `Layer Norm` 操作具体来说，它接受一个**向量** $\boldsymbol{x}$ 作为输入，输出一个与之形状相同的向量 $\boldsymbol{y}$。归一化通过对 $\boldsymbol{x}$ 减去均值并除以标准差来实现。完成归一化后，再应用具有可学习参数 $\boldsymbol{\gamma}$（权重）和 $\boldsymbol{\beta}$（偏置）的线性变换。前向传播过程可以表示如下：
 $$y = \frac{x - E[x]}{\sqrt{(Var(x) + \epsilon)}} * \gamma + \beta$$
@@ -34,9 +44,11 @@ SwitchableNorm是将BN、LN、IN结合，赋予权重，让网络自己去学习
 #### 2.2 BN、LN、IN 和 GN 计算上的区别
 
 特征归一化方法家族，包括 BN（批归一化）、LN（层归一化）、IN（实例归一化）和 GN（组归一化），都执行如下计算：
-\[
+
+$$
 \hat{x}_i = \frac{x_i - \mu_i}{\sigma_i}. \tag{1}
-\]
+$$
+
 其中，$x$ 是由某一层计算出的**特征**，$i$ 代表特征的索引。
 
 对于 2D 图像来说，$i = (i_N, i_C, i_H, i_W)$ 是一个 4D 向量，按照 $(N, C, H, W)$ 的顺序索引特征，其中 $N$ 代表批次维度，$C$ 代表通道维度，$H$ 和 $W$ 代表空间高度和宽度。
@@ -47,15 +59,23 @@ $$\mu_i = \frac{1}{m} \sum_{k \in S_i} x_k, \quad \sigma_i = \sqrt{\frac{1}{m} \
 
 其中 $\epsilon$ 为一个小常数。\(S_i\) 是用于计算均值和标准差的像素集合， \(m\) 是该集合的大小。不同特征归一化方法的主要区别在于如何定义集合 \(S_i\) （公式 2 所示），对于 2D 图像的具体定义如下：
 
-在批归一化（Batch Norm, BN）[26] 中，集合 \(S_i\) 定义为：
-$$S_i = \{k \mid k_C = i_C \}$$其中 \(i_C\) （以及 \(k_C\)）表示 \(i\) （以及 \(k\)）沿着通道维度（C 轴）的子索引。这意味着具有相同通道索引的像素被一同归一化，换句话说，$\text{BN}$ 对每个通道沿着 (N, H, W) 轴计算均值和标准差。
+在**批归一化**（Batch Norm, BN）[26] 中，集合 \(S_i\) 定义为：
 
-在层归一化（Layer Norm, LN）[3] 中，集合定义为：
-\[
-S_i = \{k \mid k_N = i_N \}
-\]这意味着 $\text{LN}$ 对每个样本沿着 (C, H, W) 轴计算均值和标准差。
+$$S_i = \{k \mid k_C = i_C \}$$
 
-在实例归一化（Instance Norm, IN）[61] 中，集合定义为：\[S_i = \{k \mid k_N = i_N, k_C = i_C \}\]这意味着 $\text{IN}$ 对每个样本的每个通道沿着 (H, W) 轴计算均值和标准差。下图显示了 BN、LN 和 IN 之间的关系。
+其中 \(i_C\) （以及 \(k_C\)）表示 \(i\) （以及 \(k\)）沿着通道维度（C 轴）的子索引。这意味着具有相同通道索引的像素被一同归一化，换句话说，$\text{BN}$ 对每个通道沿着 (N, H, W) 轴计算均值和标准差。
+
+在**层归一化**（Layer Norm, LN）[3] 中，集合定义为：
+
+$$S_i = \{k \mid k_N = i_N \}$$
+
+这意味着 $\text{LN}$ 对每个样本沿着 (C, H, W) 轴计算均值和标准差。
+
+在**实例归一化**（Instance Norm, IN）[61] 中，集合定义为：
+
+$$S_i = \{k \mid k_N = i_N, k_C = i_C \}$$
+
+这意味着 $\text{IN}$ 对每个样本的每个通道沿着 (H, W) 轴计算均值和标准差。下图显示了 BN、LN 和 IN 之间的关系。
 
 <img src="../images/triton_tutorials3/BN_LN_GN.png" width="100%" alt="BN 和 LN 的区别">
 

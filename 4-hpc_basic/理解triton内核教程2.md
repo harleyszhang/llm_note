@@ -311,7 +311,7 @@ def fused_ffn(
 
 #### 3.1 block 的计算顺序
 
-对于矩阵乘法 $A*B=C$，$A$ 的大小是 $M \times K$, $B$ 是 $K\times N$，$C$ 的大小是 $M\times N$, 分块矩阵优化的思路是每次只算出 $C$ 的一部分，假设每次"循环"算的大小是 $\text{BLOCK\_SIZE\_M} \times \text{BLOCK\_SIZE\_N}$ , 那么总共要 "循环" $\frac{M}{BLOCK\_SIZE\_M} \times \frac{N}{BLOCK\_SIZE\_N}$ 次。
+对于矩阵乘法 $A*B=C$，$A$ 的大小是 $M \times K$, $B$ 是 $K\times N$，$C$ 的大小是 $M\times N$, 分块矩阵优化的思路是每次只算出 $C$ 的一部分，假设每次"循环"算的大小是 $\text{BLOCK\_SIZE\_M} \times \text{BLOCK\_SIZE\_N}$，那么总共要“循环” $\frac{M}{\text{BLOCK\_SIZE\_M}} \times \frac{N}{\text{BLOCK\_SIZE\_N}}$ 次。
 
 <img src="../images/triton_tutorials2/tiled_matrix_multiplication.png" width="70%" alt="tiled_matrix_multiplication">
 
