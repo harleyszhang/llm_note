@@ -35,11 +35,15 @@
 * `BN`: 对于每个特征维度，计算它在整个批次中的均值和标准差，然后对该特征进行归一化。
 * `LN`: 对每个样本单独计算其所有特征的均值和标准差，然后在该样本内进行归一化。
 
+<center>
 <img src="../images/transformer_paper/bn_ln.png" width="30%" alt="BN 和 LN 的区别">
+</center>
 
 Layer Norm 层的计算可视化如下图所示:
 
-![Layer Norm](../images/transformer_code/layer_norm.jpeg)
+<center>
+<img src="../images/transformer_code/layer_norm.jpeg" width="60%" alt="Layer Norm">
+</center>
 
 ### 4. Encoder 和 Decoder 结构
 
@@ -62,6 +66,7 @@ $$
 ```bash
 CosineSimilarity = sum(x[i]*y[i])/(sqrt(sum(x[i]*x[i]))*sqrt(sum(y[i]*y[i])))。
 ```
+
 实际中，为了方便计算，会同时对一组查询（queries）计算注意力函数，将 q、k、v 都是构建成矩阵 $Q$、$K$、$V$（ 维度相等），涉及到两个矩阵乘法。
 
 作者提到当向量维度变大的时候，softmax 函数会造成梯度消失问题，所以设置了一个 softmax 的 temperature 来缓解这个问题。这里 temperature 被设置为了 $\sqrt{d_k}$。

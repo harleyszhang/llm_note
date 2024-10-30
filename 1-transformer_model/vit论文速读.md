@@ -17,7 +17,9 @@ META 于 2020 年发表 `DETR` 论文，紧跟着谷歌从**特征编码的角�
 
 ## ViT 模型结构
 
-![ViT 模型结构概览](../images/vit/vit-model-overview.png)
+<center>
+<img src="../images/vit/vit-model-overview.png" width="60%" alt="ViT 模型结构概览">
+</center>
 
 模型概述：作者将输入的图像划分为固定大小的图像块，对**每个图像块**都进行线性嵌入，添加位置嵌入，并将生成的向量序列输入到标准的 Transformer 编码器中。为了进行分类，参考前人经验，使用标准方法，即**在序列中添加一个额外的可学习“分类令牌”**。
 
