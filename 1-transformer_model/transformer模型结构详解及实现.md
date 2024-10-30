@@ -514,7 +514,7 @@ class PositionwiseFeedForward(nn.Module):
 
 基于前面 Multi-Head Attention, Feed Forward, Add & Norm 的内容我们可以完整的实现 Encoder 结构。
 
-<img src="../images/transformer_code/decoders.png" alt="decoders" style="zoom: 50%;" />
+<img src="../images/transformer_code/decoders.png" alt="decoders" style="zoom: 50%;" >
 
 Encoder 组件的 Pytorch 实现代码如下所示:
 

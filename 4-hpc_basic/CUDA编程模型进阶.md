@@ -51,7 +51,9 @@ PTX 和 gpu 上实际运行的指令集在架构上有一定相似性，不同�
 - 相对高级
 - 具备详尽的文档支持
 
-![code_perf](../images/cuda_program_model_advanced/code_perf.webp)
+<div align="center">
+<img src="../images/cuda_program_model_advanced/code_perf.webp" width="60%" alt="code_perf">
+</div>
 
 在 CUDA 编程中接触到的第二种汇编语言是 `SASS`，表示特定 GPU 上实际执行的**机器指令**。我们可以使用 nvdisasm 工具将 CUDA 二进制文件反汇编为 SASS。和 PTX 不同，SASS 的文档非常少，甚至它的名称 “shader assembly”（着色器汇编）的缩写也是推测得来的。
 

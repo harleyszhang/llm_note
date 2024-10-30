@@ -68,15 +68,21 @@ throughput_request_rate: = round(total_num_requests / benchmark_time, 2) # 请�
 
 1，llama13b 模型性能测试结果：
 
-![llama13b 关键性能矩阵](../../images/llm_perf_ret/llama13b_perf.png)
+<div align="center">
+<img src="../../images/llm_perf_ret/llama13b_perf.png" width="60%" alt="llama13b 关键性能矩阵">
+</div>
 
 2，llama65b 模型性能测试结果：
 
-![llama65b 关键性能矩阵](../../images/llm_perf_ret/llama65b_perf.png)
+<div align="center">
+<img src="../../images/llm_perf_ret/llama65b_perf.png" width="60%" alt="llama65b 关键性能矩阵">
+</div>
 
 3，llama70b 模型性能测试结果：
 
-![llama70b 关键性能矩阵](../../images/llm_perf_ret/llama70b_perf.png)
+<div align="center">
+<img src="../../images/llm_perf_ret/llama70b_perf.png" width="60%" alt="llama70b 关键性能矩阵">
+</div>
 
 ### 2.2、部署方案
 
@@ -142,11 +148,15 @@ throughput_request_rate: = round(total_num_requests / benchmark_time, 2) # 请�
 
 1，llama2-7b 长上下文关键性能矩阵测试结果：
 
-![llama70b_perf_long_context](../../images/llm_perf_ret/llama70b_perf_long_context.png)
+<div align="center">
+<img src="../../images/llm_perf_ret/llama70b_perf_long_context.png" width="60%" alt="llama70b_perf_long_context">
+</div>
 
 2，internlm-20b 长上下文关键性能矩阵测试结果：
 
-![internlm-20b_perf_long_context](../../images/llm_perf_ret/internlm-20b_perf_long_context.png)
+<div align="center">
+<img src="../../images/llm_perf_ret/internlm-20b_perf_long_context.png" width="60%" alt="internlm-20b_perf_long_context">
+</div>
 
 长上下文数据集和聊天数据集对比并发测试的一些结论：
 

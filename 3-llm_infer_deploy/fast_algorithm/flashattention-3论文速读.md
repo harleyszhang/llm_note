@@ -20,7 +20,9 @@ flashattention-2 虽然减少了非矩阵乘法的计算量，提高了运行速
 
 的情况下，FlashAttention1-2 的注意力计算的并行过程可视化如下图所示：
 
-![flashattention](../../images/flashattention-3/flashattention_parallelization.gif)
+<div align="center">
+<img src="../../images/flashattention-3/flashattention_parallelization.gif" width="60%" alt="flashattention">
+</div>
 
 可以看出，FlashAttention **只在查询块和批次大小维度上进行并行处理**，因此在解码过程中无法充分利用 GPU 的全部计算资源。
 
@@ -30,7 +32,9 @@ flashattention-2 虽然减少了非矩阵乘法的计算量，提高了运行速
 
 Flash-Decoding 在前作对 `batch size` 和 `query length` 并行的基础上增加了一个新的并行化维度：`keys/values` 的序列长度，代价是最后一个小的归约步骤。
 
-![flashattention_kv](../../images/flashattention-3/parallelization_kv.gif)
+<div align="center">
+<img src="../../images/flashattention-3/parallelization_kv.gif" width="60%" alt="flashattention_kv">
+</div>
 
 Flash-Decoding 的工作流程分为三个步骤：
 1. 首先，将键/值拆分成更小的块。

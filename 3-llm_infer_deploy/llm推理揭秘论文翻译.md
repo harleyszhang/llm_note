@@ -55,7 +55,9 @@
 
 现在，大多数大型语言模型（LLM）都采用 Transformer 解码器架构。本文只提供基本结构的简要概述，更详细内容可参考 [Zhao et al. [2023]](https://arxiv.org/pdf/2303.18223) 这篇综述。该结构由**一个嵌入层**、**一系列连续的 Transformer 层**和**一个预测头**组成。图 3 展示了这一架构。
 
-![LLMs 架构](../images/llm_inference_unveiled_paper/llama_architecture.png)
+<div align="center">
+<img src="../images/llm_inference_unveiled_paper/llama_architecture.png" width="60%" alt="LLMs 架构">
+</div>
 
 **Embedding 层将输入 token 序列（整数序列）转化为 embedding 向量/张量（大小为 $d$ 的向量）**，Embedding 向量/张量 被传递给 Transformer 层。每个 Transformer 层包含两个组件：首先是一个被称为 `MHA` 的掩码多头注意力模块，紧接着是一个被称为 `MLP` 的多层感知器子模块。最后一个 Transformer 层的输出被传递到**预测头（线性层 + softmax 层）**，负责在输入 token 之后预测下一个 token 。
 
@@ -226,7 +228,9 @@ LLMs 由于其庞大的规模和内存、计算需求，在实际部署中，尤
 
 #### 3.1.4 关于 LLM 量化的讨论
 
-![2022 年至 2024 年 LLM 方法量化的时间线。红色突出显示的方法表示它们属于参数有效微调量化 (Q-PEFT)，绿色突出显示的方法表示它们属于 QAT 相关方法，其他则是基于 PTQ 的方法](../images/llm_inference_unveiled_paper/figure10.png)
+<div align="center">
+<img src="../images/llm_inference_unveiled_paper/figure10.png" width="60%" alt="2022 年至 2024 年 LLM 方法量化的时间线。红色突出显示的方法表示它们属于参数有效微调量化 (Q-PEFT)，绿色突出显示的方法表示它们属于 QAT 相关方法，其他则是基于 PTQ 的方法">
+</div>
 
 图 10 展示了 LLM 量化技术的发展时间轴，重点突出了从后训练量化（PTQ）作为最初的主流方法，逐渐演变为量化感知训练（QAT）和参数高效微调的量化（Q-PEFT）。这种转变反映了研究社区为应对 PTQ 性能瓶颈而作出的调整，标志着 QAT 和 Q-PEFT 成为在追求高效 LLM 推理过程中日益受到关注的领域。
 
@@ -252,7 +256,9 @@ Simoulin 和 Crabbe[2021] 的研究表明，尽管语言模型的参数量庞大
 
 Elbayad 等人[2020] 率先提出在机器翻译任务中使用提前退出的方法。它提出了一种通用的处理流程，如图 12（b）所示，在前向传播的每一层之后，有一个置信度函数（通常是固定指标或一个小型 MLP ），用于根据隐藏状态计算当前层的饱和可能性。该置信度分数用于判断是否可以依据设计好的标准退出模型。随后， LM Head 将输出下一个词元的预测概率分布。由于后续工作的设计有很大的相似性，我们通过进一步讨论语言模型中的提前退出方案设计的挑战，并引入了各种创新技术。
 
-![Illustration of Input-Dependent Dynamic Network Technique](../images/llm_inference_unveiled_paper/figure12.png)
+<div align="center">
+<img src="../images/llm_inference_unveiled_paper/figure12.png" width="60%" alt="Illustration of Input-Dependent Dynamic Network Technique">
+</div>
 
 **饱和度置信度的建模**。CALM [Schuster et al., 2022] 探讨了三种计算退出置信度得分的方法：softmax 响应（即 softmax 后前两项的差值）；隐藏状态的饱和度（通过计算当前层和最后一层隐藏状态之间的余弦相似度）；以及每层插入的线性分类器的输出。该线性分类器通过交叉熵损失进行训练，目标是让输入隐藏状态时的 MLP 输出与当前层退出时解码的 top-1 词元与完整模型解码的 top-1 词元一致。实验表明，虽然分类器方法并不是最精准的预测工具，但它在 FLOPs 开销和得分生成准确性之间找到了最佳平衡。[Bae et al., 2023] 基于 CALM 的研究进一步指出，总是从浅层退出可能导致异常长的序列生成。此外，每层计算置信度分数的开销较大，抵消了提前退出的性能优势。因此，该方法提出了两个退出选择：一是从“浅模块”或一组浅层退出，二是运行完整模型“深模块”，大幅减少了模型中需要的分类器数量。这种设计比 CALM 提供了更高的加速效果，在某些任务中达到了 2 倍速度提升。另一边，ConsistentEE [Zeng 等人, 2023] 提出了一种不同的退出预测方法，使用强化学习（RL）策略网络，通过逐层输出分类器头部进行迭代训练。该策略网络的目标是平衡效率（早层获得奖励）和准确性（奖励函数中包括提前退出时的 CE 损失项）。
 
@@ -295,7 +301,9 @@ Elbayad 等人[2020] 率先提出在机器翻译任务中使用提前退出的�
 
 由于内存加载的挑战和自回归的特性，LLM 的推理效率较低。然而，有研究（Kim 等人 [2023e]）表明，即使是更小的模型，只要对小模型生成序列中的一些关键令牌进行纠正，它们也能解码出与 LLM 相同的正确序列。如图 13(a) 所示，当小模型被要求推测并生成一系列草稿令牌时，模型权重的内存加载问题较小，从而显著提高了硬件计算单元的利用率。为了保证小模型生成的文本质量，LLM 可以“定期”评估并修正小模型的草稿令牌。尽管大模型有时需要评估错误的草稿令牌，可能导致比 LLM 自回归解码更多的 FLOPs 开销，但由于在令牌维度上并行处理内存加载，内存 IO 开销显著减少。**因为 LLM 推理受限于内存瓶颈，推测解码有可能大幅降低 LLM 的推理延迟**。
 
-![并行解码方法演示](../images/llm_inference_unveiled_paper/figure13.png)
+<div align="center">
+<img src="../images/llm_inference_unveiled_paper/figure13.png" width="60%" alt="并行解码方法演示">
+</div>
 
 **LLM 分布保持**: 
 

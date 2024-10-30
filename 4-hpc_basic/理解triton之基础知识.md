@@ -210,18 +210,21 @@ $$\text{Address}(A[m, k]) = A_{\text{ptr}} + m \times K + k$$
 **子块地址计算方法**：
 
 对于矩阵 $A$ 形状为 $(M, K)$，元素顺序为：
-\[
+
+$$
 A = \begin{bmatrix}
 A[0,0] & A[0,1] & \dots & A[0,K-1] \\
 A[1,0] & A[1,1] & \dots & A[1,K-1] \\
 \vdots & \vdots & \ddots & \vdots \\
 A[M-1,0] & A[M-1,1] & \dots & A[M-1,K-1]
 \end{bmatrix}
-\]
+$$
+
 内存中的存储顺序：
-\[
+
+$$
 A[0,0], A[0,1], \dots, A[0,K-1], A[1,0], A[1,1], \dots, A[1,K-1], \dots, A[M-1,K-1]
-\]
+$$
 
 在分块矩阵乘法中，矩阵被划分为多个子块。每个子块由其在行和列方向上的起始索引定义。矩阵子块加载、存储和计算的伪代码：
 ```bash
@@ -316,7 +319,9 @@ Triton 是关心分块（tile）的技术，和 pytorch 的输入是张量视图
 2. 优化 Pass: 借助一系列的优化 Pass，它可以达到和 cuBLAS 等算子库接近的水平。
 3. 和 pytorch 无缝衔接: 输入是 torch 张量指针。
 
-![Finding the control sweet spot](../images/triton_tutorials0/triton_torch_cuda.png)
+<div align="center">
+<img src="../images/triton_tutorials0/triton_torch_cuda.png" width="60%" alt="Finding the control sweet spot">
+</div>
 
 **triton 算子和 torch eager 算子区别**：
 
@@ -331,11 +336,15 @@ triton kernel -> triton IR -> LLVM IR -> PTX，最后配合 runtime 运行。
 
 上述编译过程通过 `@triton.jit` 装饰器完成，具体来说是遍历提供的 Python 函数的抽象语法树（AST），并使用常见的 `SSA` 构建算法即时生成 `Triton-IR`。然后，编译器后端会简化、优化并自动并行化所产生的 `IR` 代码，再将其转换为高质量的 `LLVM-IR`，最后生成 PTX 并在 NVIDIA GPU 上执行。
 
-![triton_workflow](../images/triton_tutorials0/triton_workflow.png)
+<div align="center">
+<img src="../images/triton_tutorials0/triton_workflow.png" width="60%" alt="triton_workflow">
+</div>
 
 triton 操作 sram 和 pytorch eager 操作 hbm
 
+<div align="center">
 <img src="../images/triton_tutorials0/triton_sram.jpg" width="60%" alt="triton_sram">
+</div>
 
 ### triton 保留关键字
 

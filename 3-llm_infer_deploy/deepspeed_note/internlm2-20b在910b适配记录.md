@@ -9,15 +9,21 @@
 - 工具调用能力整体升级。
 - 模型结构和上一代比有所区别，主要是隐藏层 hidden_size 从 5120 增加到 6144，但  num_hidden_layers 数目从 60 减少到 48，且支持了 GQA 技术。
 
-![internlm2_20b 模型配置](../../images/internlm2_20b/internlm2_20b-weights.png)
+<div align="center">
+<img src="../../images/internlm2_20b/internlm2_20b-weights.png" width="60%" alt="internlm2_20b 模型配置">
+</div>
 
 根据模型计算公式：
 
-![model_flops](../../images/internlm2_20b/model_flops.png)
+<div align="center">
+<img src="../../images/internlm2_20b/model_flops.png" width="60%" alt="model_flops">
+</div>
 
 可知：
 
-![params_flops_count](../../images/internlm2_20b/params_flops_count.png)
+<div align="center">
+<img src="../../images/internlm2_20b/params_flops_count.png" width="60%" alt="params_flops_count">
+</div>
 
 ### 1.2、模型结构区别的适配
 
@@ -25,22 +31,30 @@
 
 修改下述代码(tgi-for-ascend/server/text_generation_server/models/__init__.py)，支持模型配置：
 
-![model_load1.png](../../images/internlm2_20b/model_load1.png)
+<div align="center">
+<img src="../../images/internlm2_20b/model_load1.png" width="60%" alt="model_load1.png">
+</div>
 
 ### 1.3、使用了 GQA 技术的适配
 
-![gqa](../../images/internlm2_20b/gqa.png)
+<div align="center">
+<img src="../../images/internlm2_20b/gqa.png" width="60%" alt="gqa">
+</div>
 
 InternLM2-20b 模型使用了 GQA  技术，kv cache  对应的 head  数目为 8，kv cache 所需存储的 tokens 相比之前，减少了 48/8 = 6 倍。
 > GQA 将查询头分成 N 组，每个组共享一个Key 和 Value 矩阵
 
 flash_llama.py 会自动读取模型结构的 num_key_value_heads 值。
 
-![kv_cache_heads](../../images/internlm2_20b/kv_cache_heads.png)
+<div align="center">
+<img src="../../images/internlm2_20b/kv_cache_heads.png" width="60%" alt="kv_cache_heads">
+</div>
 
 默认权重类型为 pytorch 类型的 bin 后缀 ，但是获取权重的 weight_files 函数会自动 bin 后缀转换为 .safetensors 后缀。
 
-![model_suffix](../../images/internlm2_20b/model_suffix.png)
+<div align="center">
+<img src="../../images/internlm2_20b/model_suffix.png" width="60%" alt="model_suffix">
+</div>
 
 最终实际的模型结构类是在下述代码定义中导入：
 
@@ -57,16 +71,26 @@ from text_generation_server.models.custom_modeling.flash_llama_modeling_ascend i
 
 internlm2 模型没有 model.embed.tokens.weight 权重，其名字变成了 model.tok_embeddings.weight。
 
-![weights_name2](../../images/internlm2_20b/weights_name2.png)
-![weights_name1](../../images/internlm2_20b/weights_name1.png)
-![weights_name3](../../images/internlm2_20b/weights_name3.png)
+<div align="center">
+<img src="../../images/internlm2_20b/weights_name2.png" width="60%" alt="weights_name2">
+</div>
+<div align="center">
+<img src="../../images/internlm2_20b/weights_name1.png" width="60%" alt="weights_name1">
+</div>
+<div align="center">
+<img src="../../images/internlm2_20b/weights_name3.png" width="60%" alt="weights_name3">
+</div>
 
 2，其他权重文件名适配不再举例。
 
 3，特殊情况，internlm2 模型 attention 层的 q k v 权重做了合并，这点和 llama 模型不同，会导致模型推理框架中**权重个数对不上**的问题，因为底层C++ 库 linear 尺寸是写死的。报错代码和报错关键信息在下图：
 
-![model input error](../../images/internlm2_20b/acl_encoder_operation.png)
-![权重个数不匹配](../../images/internlm2_20b/weights_match.png)
+<div align="center">
+<img src="../../images/internlm2_20b/acl_encoder_operation.png" width="60%" alt="model input error">
+</div>
+<div align="center">
+<img src="../../images/internlm2_20b/weights_match.png" width="60%" alt="权重个数不匹配">
+</div>
 
 ### 适配过程总结
 
@@ -83,7 +107,9 @@ internlm2 模型没有 model.embed.tokens.weight 权重，其名字变成了 mod
 - wqkv 权重拆解成 3 个 q、k、v 权重矩阵。
 - attention 输出线性层、ffn、embedding、norm、最后的输出线性层等层重新命名。
 
-![weights_convert](../../images/internlm2_20b/weights_convert.png)
+<div align="center">
+<img src="../../images/internlm2_20b/weights_convert.png" width="60%" alt="weights_convert">
+</div>
 
 ## 参考资料
 

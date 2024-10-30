@@ -20,6 +20,7 @@
 前面的内容我们知道可以为一个核函数配置多个线程（每个线程同一时刻只能处理一个数据），而这些线程的组织是通过内核调用函数的**执行配置** <<<grid_size, block_size>> >来决定的，执行配置决定了如何划分并行任务。
 
 这里的 grid_size（网格大小）和 block_size（线程块大小）一般来说是一个 `dim3` 的结构体类型的变量，但也可以是一个普通的整型变量，即只有一个维度，其他维度为 `1`。其维度定义如下所示。
+
 ```bash
 // 三维 block 和三维 grid
 dim3 grid_size(Gx, Gy, Gz);
@@ -34,7 +35,9 @@ dim3 block_size(Bx);
 
 三维 block 和三维 grid 的可视化如下图所示:
 
-![dim3_block_grid](../images/cuda_exec_model/dim3_block_grid.png)
+<div align="center">
+<img src="../images/cuda_exec_model/dim3_block_grid.png" width="60%" alt="dim3_block_grid">
+</div>
 
 `dim3` 可以被看作是一个简单的三维向量，其中每个维度代表一个不同的轴：
 1. `x`：第一个维度，通常用于表示线程或线程块的线性索引。
@@ -201,6 +204,7 @@ int main() {
 ```
 
 完整程序在[这里](./src/matrix_transpose.cu)，编译运行后输出结果如下所示:
+
 ```bash
 Matrix transposition completed successfully!
 Original Matrix (8x8):
@@ -223,6 +227,7 @@ Transposed Matrix (8x8):
 6       14      22      30      38      46      54      62
 7       15      23      31      39      47      55      63
 ```
+
 ### 3.3 二维网格和二维块: 矩阵相乘
 
 正方形二维矩阵相乘，直接使用二维网格和二维块，核函数和核函数配置如下:
@@ -257,7 +262,9 @@ int main() {
 
 基于共享内存实现的了分块缓冲和分块矩阵乘法技术。分块矩阵乘法原理的如下图所示：
 
-![gemm_tiled](../images/triton_tutorials2/gemm_tiled.png)
+<div align="center">
+<img src="../images/triton_tutorials2/gemm_tiled.png" width="60%" alt="gemm_tiled">
+</div>
 
 使用 shared memory，将每个 block 需要计算的数据先存放到 shared memory 中，减少对 global memory 的访存次数。
 
@@ -560,6 +567,7 @@ int main()
 ```
 
 上述程序编译运行后输出结果如下所示:
+
 ```bash
 (base) root:/gemini/code/cuda_kernels# nvcc 3dgrid.cu 
 (base) root:/gemini/code/cuda_kernels# ./a.out 
@@ -577,6 +585,7 @@ h_array[9] is 10
 h_array[10] is 10
 ......
 ```
+
 ## 参考资料
 
 - [极智开发 | CUDA线程模型与全局索引计算方式](https://mp.weixin.qq.com/s/IyQaarSN6V_tukt6KigkGQ)

@@ -103,7 +103,9 @@ $$\text{可实现的 GFlops/sec} = \text{Min(峰值浮点性能，峰值内存�
 
 图 2 为图 1a 的 Roofline model 添加了性能上限：图 2a 展示了计算性能的上限，图 2b 展示了内存带宽的上限。尽管较高的上限没有显示具体的优化步骤，但它们是隐含的：要突破更高的上限，你必须先突破其下的所有上限。图 2a 显示，如果浮点运算组合不平衡，计算性能的上限是 8.8 GFlops/秒；如果没有进行 ILP 或 SIMD 优化，则上限降至 2.2 GFlops/秒。图 2b 显示了内存带宽的上限：没有软件预取时为 11 GBytes/秒，没有内存亲和优化时为 4.8 GBytes/秒，只有单步优化时为 2.7 GBytes/秒。
 
-![Roofline Model with Ceilings for Opteron X2.](../images/roofline_paper/figure2.png)
+<div align="center">
+<img src="../images/roofline_paper/figure2.png" width="60%" alt="Roofline Model with Ceilings for Opteron X2.">
+</div>
 
 图 2c 将这两张图合并为一个图表。**内核的操作强度决定了需要进行的优化区域以及应该尝试哪些优化**。图 2c 中显示了计算优化与内存带宽优化的重叠区域，并用不同颜色加以区分。例如，内核 2 落在右侧的蓝色梯形区域，这表明只需进行计算优化。而如果内核落在左下方的黄色三角形区域，模型则建议只进行内存优化。内核 1 落在中间的绿色区域（= 黄色 + 蓝色）平行四边形中，表明需要同时进行计算和内存的双重优化。需要注意的是，内核 1 的垂直线低于浮点不平衡优化线，因此可以跳过优化 2。
 
@@ -159,8 +161,12 @@ Intel Xeon 在四台多核系统中拥有最高的双精度浮点性能。然而
 
 Opteron X4 集成了片上内存控制器，提供独立的通道连接 667 MHz DDR2 DRAM，并且拥有独立的路径处理一致性。图 3 显示，Opteron X4 的屋顶线模型中的脊点位于 Xeon 的左侧，操作强度为每字节 4.4 Flops。Sun T2+ 拥有四台系统中最高的内存带宽，其脊点的操作强度非常低，仅为每字节 0.33 Flops。通过使用大量线程并行处理内存传输，T2+ 能够实现这种高带宽。IBM Cell 的操作强度脊点为每字节 0.65 Flops。
 
-![figure3](../images/roofline_paper/figure3.png)
-![figure3](../images/roofline_paper/figure4.png)
+<div align="center">
+<img src="../images/roofline_paper/figure3.png" width="60%" alt="figure3">
+</div>
+<div align="center">
+<img src="../images/roofline_paper/figure4.png" width="60%" alt="figure3">
+</div>
 
 #### 6.3.1 稀疏矩阵-向量乘法 (SpMV)
 
@@ -200,7 +206,9 @@ IBM Cell 的脊点接近 Sun T2+，但它面临两方面的挑战。首先，编
 
 为了展示 Roofline 模型的有效性，表 4 列出了每个内核-计算机组合的上限、下限，以及其每秒的 GFlops 和 GBytes 性能数据。请注意，操作强度是这两个速率的比值。表中列出的上限和下限是实际性能的范围。所有 16 个案例都验证了该界限和瓶颈模型，因为 Roofline 的上下限限定了性能，所以内核（函数）按照下限的建议进行了优化。限制性能的关键指标以粗体显示：在 Xeon 和 X4 上，16 个案例中有 15 个受内存带宽限制，而在 T2+ 和 Cell 上几乎是均衡分布。对于 FFT，有趣的是，在 Xeon 和 X4 上受内存带宽限制，而在 T2+ 和 Cell 上受计算能力限制。
 
-![table4](../images/roofline_paper/table4.png)
+<div align="center">
+<img src="../images/roofline_paper/table4.png" width="60%" alt="table4">
+</div>
 
 ## 7. 关于 Roofline 的一些误解
 > 这里只展示部分误解及其解释。
@@ -278,7 +286,9 @@ $$\text{核心数} \times \text{频率}$$
 
 处理器的指令发射带宽是有限的，而**浮点指令的发射带宽通常小于或等于总指令发射带宽**。随着非浮点指令占比的增加，浮点指令的发射带宽会被非浮点指令抢占。我们根据指令组合中浮点指令的占比计算出一组上限，假设核内并行性已被完全利用。此方法较为复杂，例如在 Cell 架构上，双精度指令会导致发射单元停顿 6 个周期。浮点指令的比例通常用 2 的负次方表示。根据不同架构和内核，通常可以确定哪些核内上限应被考虑，这些上限也考虑到处理器可能有限的整数运算性能。
 
-![figurea1](../images/roofline_paper/figureA1.png)
+<div align="center">
+<img src="../images/roofline_paper/figureA1.png" width="60%" alt="figurea1">
+</div>
 
 ### 负载均衡与屋顶线模型
 

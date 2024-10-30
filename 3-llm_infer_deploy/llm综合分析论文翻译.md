@@ -156,11 +156,15 @@ LLMs 的一大优势在于能够根据特定任务进行微调。通过在任务
 #### 4.1 大型语言模型（LLMs）在 GCP 上的部署
 
 所有大型语言模型（LLMs）目前已在 Google Cloud Platform（GCP）上部署，并且具有活跃的端点。这一设置便于直接访问这些模型，进行实时数据处理和分析。
-![Figure 2](../images/llm_analysis_paper/figure2.png)
+<div align="center">
+<img src="../images/llm_analysis_paper/figure2.png" width="60%" alt="Figure 2">
+</div>
 #### 4.2 LLMs 网站的全面分析
 
 分析工作流程从通过终端命令启动后端服务器开始。一旦后端激活，前端组件将被本地部署。这一设置允许与平台提供的分析工具进行动态交互。
-![Figure 3: User Interface of the LLM Analysis Website](../images/llm_analysis_paper/figure3.png)
+<div align="center">
+<img src="../images/llm_analysis_paper/figure3.png" width="60%" alt="Figure 3: User Interface of the LLM Analysis Website">
+</div>
 
 省略。。。。
 
@@ -245,7 +249,9 @@ Roofline 分析图提供了有关 LLM 在不同硬件配置下性能特征的宝
 
 这些主要发现和贡献使《语言模型比较分析》项目成为研究人员、从业者和决策者在处理 LLMs 时的宝贵资源。项目的见解和工具使得做出明智决策成为可能，促进了更高效的 LLM 开发，并推动了自然语言处理应用的发展。
 
-![Table 1: Performance comparison between F16 and 8-bit quantization](../images/llm_analysis_paper/table1.png)
+<div align="center">
+<img src="../images/llm_analysis_paper/table1.png" width="60%" alt="Table 1: Performance comparison between F16 and 8-bit quantization">
+</div>
 #### 6.2 对 LLM 部署和优化的影响
 
 《语言模型比较分析》项目的发现对 LLMs 在实际场景中的部署和优化具有重要影响。项目的见解可以指导从业者和组织做出明智决策，以最大化 LLMs 的性能和效率。

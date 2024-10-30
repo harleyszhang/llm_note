@@ -29,7 +29,9 @@ $P_{max}$: 性能上限 [操作数/秒]
 
 `Roofline` 模型可视化曲线如下图所示：
 
-![roof-line](../images/roofline_model/roofline-curve.jpeg)
+<div align="center">
+<img src="../images/roofline_model/roofline-curve.jpeg" width="60%" alt="roof-line">
+</div>
 
 `Roofline` 可以帮助识别程序的性能瓶颈，并指导优化（减少内存访问次数还是算法计算量 `FLOPs`），以及是否达到了硬件的能力上限。
 
@@ -109,11 +111,17 @@ compute_bound_performance = np.full_like(oi_values, peak_flops)
 
 ### 1.3 AI 应用性能优化策略
 
-![roofline model picture](../images/roofline_model/roof_line_model.png)
+<div align="center">
+<img src="../images/roofline_model/roof_line_model.png" width="60%" alt="roofline model picture">
+</div>
 
-![Many components contribute to the kernel run time](../images/roofline_model/many_components_time.png)
+<div align="center">
+<img src="../images/roofline_model/many_components_time.png" width="60%" alt="Many components contribute to the kernel run time">
+</div>
 
-![roofline_time](../images/roofline_model/roofline_time.png)
+<div align="center">
+<img src="../images/roofline_model/roofline_time.png" width="60%" alt="roofline_time">
+</div>
 
 总结：
 1. AI 应用的推理时间取决于多个因素，我们应该关注主要因素，比如：内存读写和数学计算时间，而不是次要因素：网络带宽和磁盘读写时间。
