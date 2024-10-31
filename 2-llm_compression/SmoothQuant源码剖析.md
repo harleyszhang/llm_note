@@ -1,9 +1,9 @@
 ---
 layout: post
 title: SmoothQuant 源码剖析
-date: 2024-10-30 19:00:00
+date: 2024-10-31 19:00:00
 summary: 详细解析了 SmoothQuant 仓库的源码，其主要分三个部分：基于校准集统计激活最大值 `calibration.py`、激活难度迁移至权重的平滑模块 smooth.py 以及包含模型权重转换的伪量化推理 fake_quant.py 和真正量化推理 `opt.py`。
-categories: LLM_Infer
+categories: LLM_Compression
 ---
 
 - [一 量化范围和粒度](#一-量化范围和粒度)
@@ -26,6 +26,8 @@ categories: LLM_Infer
 
 - `self-attention` 中的: `q_liner`、`k_liner`、`v_liner` 以及 $QK^T$ 对应的 `BMM`（批量矩阵乘法），以及注意力输出线性层；
 - `mlp` 中的全部线性层以及激活层。
+
+> smoothquant 算法的实现没有量化 attention 的输出线性层和 mlp 的 down 线性层权重，网上对这两个线性层是否量化存在争议，这个争议在 awq 量化算法中[依然存在](https://github.com/mit-han-lab/llm-awq/pull/67)。
 
 到这里我们会发现，transformer 中没有被量化的只有 `Token Bmbedding` 层、`LayerNorm` 层（llama 中是 RMSNorm 层），我个人推测之所以不量化 Token Bmbedding 层，是因为其参数冗余性较小且不存在权重稀疏现象，这个通过可视化 Token Bmbedding 层的权重值统计分布可以观测得到。
 
@@ -249,7 +251,11 @@ python examples/generate_act_scales.py \
 
 ### 2.2 激活值范围统计
 
-激活值范围统计实际是基于校准集去做模型推理，并**逐通道统计激活最大值**。这里代码实现核心是两个部分，分别是，逐通道计算激活最大值的实现函数 `get_act_scales`，以及为模型的每个 Linear 层添加 `stat_input_hook` 前向钩子。代码的详细注释如下:
+激活值范围统计实际是基于校准集去做模型推理，并**逐通道统计激活最大值**。这里代码实现核心是两个部分，分别是：
+- 逐通道计算激活最大值的实现函数 `get_act_scales`
+- 为模型的每个 Linear 层添加 `stat_input_hook` 前向钩子。
+
+代码的详细注释如下:
 
 ```python
 
