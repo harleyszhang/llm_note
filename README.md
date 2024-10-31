@@ -34,7 +34,9 @@ LLM notes, including model inference, transformer model structure, and lightllm 
 
 ## 二 大语言模型压缩
 
-量化、剪枝。
+- [SmoothQuant 论文解读](./2-llm_compression/SmoothQuant论文解读.md)
+- [SmoothQuant 算法源码剖析](./2-llm_compression/SmoothQuant源码剖析.md)
+- [AWQ 论文解读](./2-llm_compression/SmoothQuant论文解读.md)
 
 ## 三 大语言模型推理及部署（服务化）
 
@@ -43,7 +45,6 @@ LLM notes, including model inference, transformer model structure, and lightllm 
 - [Roofline 论文解读](./3-llm_infer_deploy/Roofline论文解读.md)
 - [llm 推理揭秘论文翻译](3-llm_infer_deploy/llm推理揭秘论文翻译.md)
 - [llm 综合分析论文翻译](3-llm_infer_deploy/llm综合分析论文翻译.md)
--
 
 ### 3.2 LLM 推理优化-算法层面
 
