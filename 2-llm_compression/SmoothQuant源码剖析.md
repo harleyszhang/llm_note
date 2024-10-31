@@ -1,3 +1,11 @@
+---
+layout: post
+title: SmoothQuant 源码剖析
+date: 2024-10-30 19:00:00
+summary: 详细解析了 SmoothQuant 仓库的源码，其主要分三个部分：基于校准集统计激活最大值 `calibration.py`、激活难度迁移至权重的平滑模块 smooth.py 以及包含模型权重转换的伪量化推理 fake_quant.py 和真正量化推理 `opt.py`。
+categories: LLM_Infer
+---
+
 - [一 量化范围和粒度](#一-量化范围和粒度)
   - [1.1 量化范围](#11-量化范围)
   - [1.2 量化粒度](#12-量化粒度)
@@ -5,8 +13,9 @@
   - [2.1 SmoothQuant 代码概述](#21-smoothquant-代码概述)
   - [2.2 激活值范围统计](#22-激活值范围统计)
   - [2.3 离群值平滑](#23-离群值平滑)
-  - [2.3 伪量化推理](#23-伪量化推理)
-  - [2.4 INT8 量化推理](#24-int8-量化推理)
+  - [2.4 伪量化推理](#24-伪量化推理)
+  - [2.5 INT8 量化推理](#25-int8-量化推理)
+- [三 总结](#三-总结)
 - [参考资料](#参考资料)
 
 ## 一 量化范围和粒度
@@ -498,7 +507,7 @@ def smooth_lm(model, scales, alpha=0.5):
             smooth_ln_fcs_llama_like(ffn_ln, fcs, fcs_input_scales, alpha)
 ```
 
-### 2.3 伪量化推理
+### 2.4 伪量化推理
 
 这里其实包括两个过程，对应代码在 `fake_quant.py`：
 1. FP32 模型转换为 INT8 模型，对应权重量化函数 `from_float`， 并构建 `W8A8Linear` 类；
@@ -771,7 +780,7 @@ def quantize_llama_like(
     return model
 ```
 
-### 2.4 INT8 量化推理
+### 2.5 INT8 量化推理
 
 这里其实包括两个过程：
 1. FP32 模型转换为 INT8 模型，核心是实现权重的量化函数；
@@ -918,7 +927,12 @@ class W8A8B8O8Linear(nn.Module):
 <img src="../images/smoothquant_code/Int8OPTForCausalLM.png" width="60%" alt="Int8OPTForCausalLM">
 </div>
 
-致此，smoothquant 仓库的源码解析已经全部完成，个人经验是读论文更多的是了解算法原理和公式推导，但是真的应用和细节还是得看源码。
+## 三 总结
+
+致此，smoothquant 仓库的源码解析已经全部完成，个人经验是读论文更多的是了解算法原理和公式推导，但是真的应用和细节还是得看源码。最后我们再总结下 smoothquant 仓库，其主要分三个部分：
+1. 基于校准集统计激活最大值 `calibration.py`；
+2. 激活难度迁移至权重的平滑模块 `smooth.py`;
+3. 包含模型权重转换的伪量化推理 `fake_quant.py` 和真正量化推理 `opt.py`。
 
 ## 参考资料
 
