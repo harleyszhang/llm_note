@@ -22,8 +22,8 @@ prompt_token_len = 42, output_token_len = 285。
 
 **1，用户指标**：
 
-- `first_token_latency` 首字时延：从请求发出到第一个 token 生成的耗时。
-- `avg_token_latency` 非首字时延：从第二个到第 N 个 token 生成的平均耗时。
+- `first_token_latency` 首字时延(`TTFT`，Time-to-first-token, 单位：毫秒)：从请求发出到第一个 token 生成的耗时。
+- `avg_token_latency` 非首字时延(`TPOT`，Time-per-output-token, 单位：毫秒)：从第二个到第 N 个 token 生成的平均耗时。
 - `response_time`【不算很重要】：用户从发起请求到收到最后一个 Token 响应结束的时间。
 - `benchmark_time`：用户发送完所有请求的最大运行时间。
 

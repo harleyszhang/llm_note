@@ -6,6 +6,7 @@
   - [2.1 静态批处理概述](#21-静态批处理概述)
   - [2.2 动态批处理方案](#22-动态批处理方案)
 - [三 Prefix Caching: RadixAttention](#三-prefix-caching-radixattention)
+  - [prefix caching](#prefix-caching)
 - [四 服务调度策略](#四-服务调度策略)
 - [参考资料](#参考资料)
 
@@ -111,6 +112,26 @@ llm 推理迭代过程有一些特点:
 ## 三 Prefix Caching: RadixAttention
 
 
+
+### prefix caching
+
+`vllm` 中开启 prefix caching 推理的代码如下所示：
+
+```python
+# Create an LLM with prefix caching enabled.
+prefix_cached_llm = LLM(model="facebook/opt-125m",
+                        enable_prefix_caching=True,
+                        gpu_memory_utilization=0.4)
+
+# Warmup so that the shared prompt's KV cache is computed.
+prefix_cached_llm.generate(generating_prompts[0], sampling_params)
+
+# Generate with prefix caching.
+outputs = prefix_cached_llm.generate(generating_prompts, sampling_params)
+
+print("Results with `enable_prefix_caching`")
+```
+
 ## 四 服务调度策略
 
 等待更新
@@ -119,3 +140,4 @@ llm 推理迭代过程有一些特点:
 
 - [How continuous batching enables 23x throughput in LLM inference while reducing p50 latency](https://www.anyscale.com/blog/continuous-batching-llm-inference)
 - [vLLM: Easy, Fast, and Cheap LLM Serving with PagedAttention](https://blog.vllm.ai/2023/06/20/vllm.html)
+- [Prompt Cache: Modular Attention Reuse for Low-Latency Inference](https://arxiv.org/abs/2311.04934)
