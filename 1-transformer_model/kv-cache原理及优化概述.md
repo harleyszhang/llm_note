@@ -153,13 +153,13 @@ $$O_{dec}=\text{softmax}(\frac{Q_{dec}\cdot K_{cat}^{T}}{\sqrt{d_k}}) * V_{cat }
 
 ### 2.1 kv cache 节省了多少计算量
 
-这里，我简单分析，对于上下文长度 $s$，不使用 kv cache d的 self-attention 的总计算量复杂度为：总计算量：$O(s^3h)$，使用后的总计算量近似为 $Os^2h$。计算量节省比率：
+设隐藏层维度大小为 $h$，上下文长度为 $s$，分析每个时间步的计算量，不使用 kv cache 的情况下 attention 总计算量为 $O(s^2h)$，使用后的总计算量近似为 $Osh$。计算量节省比率如下：
 
-$$\text{节省比率} = \frac{O(s^3 h) - O(s^2 h)}{O(s^3 h)} = 1 - \frac{1}{s}$$
+$$\text{节省比率} = \frac{O(s^2 h) - O(sh)}{O(sh)} = 1 - \frac{1}{s}$$
 
 当 $s$ 较大时，$\frac{1}{s}$ 接近于 0，节省比率接近于 100%！
 
-换种说法，计算复杂度从 $O(s^3 h)$  降低到 $O(s^2 h)$，**即使用 kv cache 可节省约 $s$ 倍的计算量，输出 tokens 数越多，计算量节省越可观**。
+换种说法，计算复杂度从 $O(s^2 h)$  降低到 $O(sh)$，**即使用 kv cache 可节省约 $s$ 倍的计算量，输出 tokens 数越多，计算量节省越可观**。
 
 ## 三 kv cache 实现代码
 
