@@ -395,7 +395,7 @@ llama2 相比于 llama1 其训练数据提升了 40%，有 7B、13B、34B、70B 
 
 ### 2.2 kv cache 优化-GQA 
 
-`MQA`，全称 Multi Query Attention, `GQA` 由 google 提出的 MQA 变种，全称 Group-Query Attention.
+`MQA`，全称 Multi Query Attention, `GQA` 由 google 提出的 MQA 变种，全称 Group-Query Attention，都是多头注意力（MHA）的变体，本质上是一种**共用 KV cache 的优化方法**。
 
 kv cache 优化三种方案：`MHA`、 `MQA` 和 `GQA` 的原理及区别如下：
 1. 最原始的 MHA(Multi-Head Attention)，QKV 三部分有相同数量的头（head），且一一对应。每次做 Attention，head1 的 QKV 就做好自己运算就可以，最后输出时将各个头的 `self-attention output` 相拼接。

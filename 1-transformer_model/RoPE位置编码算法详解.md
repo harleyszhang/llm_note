@@ -366,7 +366,7 @@ def apply_rotary_emb(xq: torch.Tensor, xk: torch.Tensor, freqs_cis: torch.Tensor
     return xq_out.type_as(xq), xk_out.type_as(xk)
 ```
 
-结合 rope 位置编码的 attention 结构的完整代码在[这里](./src/rope.py)，运行后，单元测试结果如下所示：
+结合 rope 位置编码的 attention 结构的完整代码在[这里](https://github.com/harleyszhang/llm_note/blob/main/1-transformer_model/src/rope.py)，运行后，单元测试结果如下所示：
 
 ```bash
 test_compute_theta passed.

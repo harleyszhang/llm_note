@@ -16,7 +16,7 @@ flashattention-2 虽然减少了非矩阵乘法的计算量，提高了运行速
 
 在解码过程中，每个新生成的 token 需要关注所有之前生成的 token，以计算：softmax(queries @ keys.transpose) @ values。
 
-在训练时，FlashAttention（最近发布的 v1 和 v2 版本）已经对这一操作进行了优化，主要瓶颈在于读取和写入中间结果所需的内存带宽（例如 Q @ K^T）。但是，这些优化无法直接应用于推理过程中，因为推理中的瓶颈和训练不同。在训练中，FlashAttention 在批量大小和查询长度维度上进行了并行化处理。而在推理中，查询的长度通常是 1，这意味着如果批量大小小于 GPU 上流处理器（SM）的数量（A100 GPU 上有 108 个 SM），那么该操作只能使用一小部分 GPU！尤其是在使用较长的上下文时，由于需要更小的批量大小以适应 GPU 内存，批量大小为 1 的情况下，FlashAttention 的 GPU 利用率不到 1%。
+在训练时，FlashAttention（最近发布的 v1 和 v2 版本）已经对这一操作进行了优化，主要瓶颈在于读取和写入中间结果所需的内存带宽（例如 Q @ K^T）。但是，这些优化无法直接应用于推理过程中，因为推理中的瓶颈和训练不同。在训练中，FlashAttention 在批量大小和查询长度维度上进行了并行化处理。而**在 decode 阶段中，查询的长度通常是 1**，这意味着如果批量大小小于 GPU 上流处理器（SM）的数量（A100 GPU 上有 108 个 SM），那么该操作只能使用一小部分 GPU！尤其是在使用较长的上下文时，由于需要更小的批量大小以适应 GPU 内存，批量大小为 1 的情况下，FlashAttention 的 GPU 利用率不到 1%。
 
 的情况下，FlashAttention1-2 的注意力计算的并行过程可视化如下图所示：
 
@@ -47,7 +47,8 @@ Flash-Decoding 的工作流程分为三个步骤：
 
 ## 总结
 
-Flash-Decoding 主要是针对 llm 推理的加速，在 batch_size 较小和序列长度较大时有着明显的加速效果，且性能对序列长度的增加并不敏感。
+Flash-Decoding 主要是针对 llm decode 阶段的推理加速，在 batch_size 较小和序列长度较大时有着明显的加速效果，且性能对序列长度的增加并不敏感。
+
 ## 参考资料
 
 - [FlashAttention-3: Fast and Accurate Attention with Asynchrony and Low-precision](https://arxiv.org/pdf/2407.08608)
