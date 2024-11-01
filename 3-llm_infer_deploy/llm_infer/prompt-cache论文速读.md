@@ -40,12 +40,12 @@ Prompt Cache 和之前全自回归生成、KV 缓存方法之间的区别如下�
 
 基于上述前提，论文中定义了提示标记语言（Prompt Markup Language, PML），将一类 `prompt`（通常对应一类任务）定义成一个模式（`schema`），这个模式又将一个“结构”定义成一个模块（module）。通过 `PML` 可以将前面的提示词格式化为如下 schema：
 
-```json
+```bash
 <schema name="TaskPrompt">
-  <module name="SystemPrompt">...</module>
-  <module name="MetaTemplate">...</module>
-  <module name="Context">...</module>
-  <module name="Examples">...</module>
+    <module name="SystemPrompt">...</module>
+    <module name="MetaTemplate">...</module>
+    <module name="Context">...</module>
+    <module name="Examples">...</module>
 </schema>
 
 ```
