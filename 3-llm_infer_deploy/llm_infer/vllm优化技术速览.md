@@ -54,6 +54,14 @@ PagedAttention 借助块表实现了灵活的内存共享机制。类似于进�
 <img src="../../images/vllm_technology/multiple_outputs.gif" width="60%" alt="Example generation process for a request that samples multiple outputs.">
 </div>
 
+### 1.3 和 TokenAttention 的区别
+
+**不同点**：
+1. 虽然两者都是精细化管理、分配 kv 向量的技术，tokenAttention 是粒度为 token 级别的 动态 kv cache 内存管理技术，pagedattention 是 block 粒度。
+2. `TokenAttention` 本质上是 `PagedAttention` 的一种特例，PagedAttention 当块大小为 1 时即为 TokenAttention。
+3. PagedAttention 会造成一定程度的显存浪费，作者推算是小于 4%，而 tokenAttention 最大的优化点是确保不会浪费显存。
+
+
 ## 二 连续批处理
 
 看图理解连续批处理（Continuous batching）技术原理。
