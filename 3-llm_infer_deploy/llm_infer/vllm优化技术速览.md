@@ -1,3 +1,14 @@
+- [一 PagedAttention](#一-pagedattention)
+  - [1.1 PagedAttention 方案](#11-pagedattention-方案)
+  - [1.2 PagedAttention 的内存共享优势](#12-pagedattention-的内存共享优势)
+  - [1.3 和 TokenAttention 的区别](#13-和-tokenattention-的区别)
+- [二 连续批处理](#二-连续批处理)
+  - [2.1 静态批处理概述](#21-静态批处理概述)
+  - [2.2 动态批处理方案](#22-动态批处理方案)
+- [三 Prefix Caching: RadixAttention](#三-prefix-caching-radixattention)
+- [四 服务调度策略](#四-服务调度策略)
+- [参考资料](#参考资料)
+
 
 vLLM 是一个快速且易于使用且大模型推理服务框架，声称有以下快速特性：
 - `SOTA` 的 serving 吞吐量
@@ -7,7 +18,7 @@ vLLM 是一个快速且易于使用且大模型推理服务框架，声称有以
 - 支持多种量化方案：GPTQ、AWQ、INT4、INT8 和 FP8
 - 高性能 CUDA kernel，如 Flashattention
 - 支持张量并行、采样并行(parallel sampling)
-- 支持分块的预填充处理
+- 支持分块的预填充处理（Chunked prefill）
 
 ## 一 PagedAttention
 
@@ -97,8 +108,12 @@ llm 推理迭代过程有一些特点:
 
 上述的简要描述忽略了 llm 推理的 prefill（预填充）过程，因为预填充阶段和生成阶段的计算模式是不同的，所以它无法简单的与生成阶段的 tokens 一起批处理。由此，一般连续批处理框架会通过一个超参数 waiting_served_ratio 来管理此问题（实际框架不止一个超参数会有多个超参数和调度策略），该参数表示等待预填充请求与等待终止 token 请求数的比率。假设该值为 1.3，当预填充请求数/等待终止 token 请求数 > 1.3，此时推理框架会暂停批次的 decode 过程，而是去插入相应数量的新请求，并做预填充处理。
 
-## 服务调度策略
+## 三 Prefix Caching: RadixAttention
 
+
+## 四 服务调度策略
+
+等待更新
 
 ## 参考资料
 

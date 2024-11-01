@@ -1,3 +1,11 @@
+---
+layout: post
+title: llama1-3 模型结构详解
+date: 2024-10-21 20:00:00
+summary: llama1-3 模型结构代码如何实现，模型结构分析。
+categories: Transformer
+---
+
 - [一 llama1 模型](#一-llama1-模型)
   - [1.1 模型整体结构](#11-模型整体结构)
   - [1.2 RMSNorm](#12-rmsnorm)
@@ -44,16 +52,16 @@ LLaMA **优势**在于其**只使用公开可用的数据**，这可以保证论
 完整的模型结构图如下图所示:
 
 <center>
-<img src="../images/llama/llama_architecture2.png" width="60%" alt="完整的llama模型结构">
+<img src="../images/llama/llama_architecture3.png" width="80%" alt="完整的llama模型结构">
 </center>
 
 > [processon 在线浏览](https://www.processon.com/view/link/67163481a8011b320f2af67f?cid=67161b027f25232473eba8d3)
 
 llama 模型系列的超参数详细信息在表 2 中给出。
 
-<center>
+<div align="center">
 <img src="../images/llama/llama_parameters.png" width="60%" alt="llama_parameters">
-</center>
+</div>
 
 ### 1.2 RMSNorm
 
@@ -147,7 +155,9 @@ else:
 
 `FFN` 层全称是 Position-wise Feed-Forward Networks（`FFN`），`FFN` 接收一个张量 x（序列中特定位置的隐藏表示），并将其通过两个可学习的**线性变换**（由矩阵 W1 和 W2 以及偏置向量 b1 和 b2 表示）进行处理，在两个线性变换之间应用修正线性（`ReLU`）[Glorot et al.,2011](https://proceedings.mlr.press/v15/glorot11a/glorot11a.pdf)激活。FFN 层（去掉了 dropout）结构如下图所示:
 
+<center>
 <img src="../images/llama/ffn.png" width="50%" alt="ffn">
+</center>
 
 `FFN` 计算过程用数学公式可表达为：
 
@@ -176,7 +186,9 @@ $\beta$ 可以是常数或可训练参数。下图展示了不同 $\beta$ 值下
 2. 当 $\beta = 0$ 时，Swish 变为缩放线性函数 $f(x) = x/2$。
 3. 随着 $\beta$ 趋近于无穷大，sigmoid 分量接近 0-1 函数，因此 Swish 变得与 ReLU 函数相似。这表明 Swish 可以被看作是一个平滑的函数，在线性函数和 ReLU 之间进行非线性插值。如果将 $\beta$ 设置为可训练参数，模型可以调控这种插值的程度。
 
+<center>
 <img src="../images/llama/swish_activation.png" width="55%" alt="swish_activation">
+</center>
 
 **门控线性单元 GLU**:
 [Dauphin et al., 2016](https://arxiv.org/pdf/1612.08083) 提出了**门控线性单元**（ Gated Linear Units, `GLU`），定义为输入的两个线性变换的**逐元素乘积**，其中一个经过了 sigmoid 激活。另外，他们还建议省略激活函数，称之为“双线性”（bilinear）层。
@@ -210,7 +222,9 @@ $$
 
 $\text{FPN}_{\text{SwiGLU}}$ 层结构如下图所示:
 
+<center>
 <img src="../images/llama/ffn_structrue.png" width="50%" alt="ffn_structrue">
+</center>
 
 原始的的 $\text{FPN}$ 层只有两个权重矩阵，但变体 $\text{FPN}_{\text{SwiGLU}}$ **有三个线性层权重矩阵**：$W$、$V$、$W_2$。为了保持参数数量和计算量的恒定，需要将隐藏单元的数量 `d_ff`（权重矩阵 $W$ 和 $V$ 的第二个维度以及 $W2$ 的第一个维度）缩小 `2/3`。
 
@@ -342,9 +356,9 @@ def apply_rotary_emb(xq: torch.Tensor, xk: torch.Tensor, freqs_cis: torch.Tensor
 
 [Vicuna](https://chat.lmsys.org/) 是一款从 LLaMA 模型中对用户分享的对话进行了精细调优的聊天助手，根据的评估，这款聊天助手在 LLaMA 子孙模型中表现最佳，能达到  ChatGPT 90% 的效果。 
 
-<center>
+<div align="center">
 <img src="../images/llama/Vicuna-demo.png" width="60%" alt="Vicuna-demo">
-</center>
+</div>
 
 **3，Koala（考拉）**
 
@@ -390,13 +404,18 @@ kv cache 优化三种方案：`MHA`、 `MQA` 和 `GQA` 的原理及区别如下�
 
 LLaMA2-70b 的模型配置如下图所示：
 
+<center>
 <img src="../images/llama/llama2_70b_config.png" width="50%" alt="GQA_visual">
+</center>
 
 `MHA`、 `MQA` 和 `GQA` 原理的可视化对比如下图所示:
 
+<center>
 <img src="../images/llama/GQA_visual.png" width="70%" alt="GQA_visual">
+</center>
 
-LLaMA2 官方实现的 `GQA` 代如下所示（经过简化）：
+LLaMA2 官方实现的 `GQA`（包含了 kv cahce）代码如下所示（经过简化）：
+
 ```python
 def repeat_kv(x: torch.Tensor, n_rep: int) -> torch.Tensor:
     """torch.repeat_interleave(x, dim=2, repeats=n_rep)"""
