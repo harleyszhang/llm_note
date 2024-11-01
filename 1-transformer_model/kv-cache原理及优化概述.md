@@ -1,3 +1,10 @@
+---
+layout: post
+title: kv-cache 原理及优化概述
+date: 2024-11-01 20:10:00
+summary: kv cache 优化是 llm decode 推理阶段最基础的优化技术，即发生在计算第二个输出token至最后一个token过程中，后面的 GQA、PagedAttention、RadixAttention、int8-kv cache、StreamingLLM 本质上都是 kv cache 技术的进一步优化。
+categories: Transformer
+---
 
 - [一 kv cache 原理](#一-kv-cache-原理)
 	- [1.1 `kv cache` 显存占用量计算](#11-kv-cache-显存占用量计算)
@@ -8,8 +15,6 @@
 	- [4.1 kv cache 计算优化-FlashDecoding](#41-kv-cache-计算优化-flashdecoding)
 	- [4.2 kv cache 访存优化-GQA、StreamingLLM](#42-kv-cache-访存优化-gqastreamingllm)
 - [参考资料](#参考资料)
-
-`kv cache` 优化是 llm decode 推理阶段最基础的优化技术，即发生在计算第二个输出token至最后一个token过程中，后面的 GQA、PagedAttention、RadixAttention、int8-kv cache、StreamingLLM 本质上都是 kv cache 技术的进一步优化。
 
 ## 一 kv cache 原理
 
@@ -26,17 +31,19 @@ tokenizer = GPT2Tokenizer.from_pretrained("/WORK/Test/gpt")
 in_text = "Lionel Messi is a"
 in_tokens = torch.tensor(tokenizer.encode(in_text))
 
-# inference
-token_eos = torch.tensor([198]) # line break symbol
+# 定义终止token为句号
+token_eos = torch.tensor([tokenizer.encode('.', add_special_tokens=False)[0]])
 out_token = None
 i = 0
+
 with torch.no_grad():
     while out_token != token_eos:
         logits, _ = model(in_tokens)
         out_token = torch.argmax(logits[-1, :], dim=0, keepdim=True)
         # 将当前轮输出的 token 与之前输入 tokens 拼接，并作为下一轮的输入 tokens
         in_tokens = torch.cat((in_tokens, out_token), 0)
-        text = tokenizer.decode(in_tokens)
+        # 解码当前的 token 序列
+        text = tokenizer.decode(in_tokens) 
         print(f'step {i} input: {text}', flush=True)
         i += 1
 
@@ -121,6 +128,7 @@ $$\text{Query}: Q_{pre}=X_{pre} * W_{q} \\
 生成的 $K_{pre}$ 和 $V_{pre}$ 被存储在 KV 缓存中，每个 transformer layer 都独立的存储 KV 键值对。其余的 `MHA` 计算如下：
 
 $$O_{pre }=\text{softmax}(\frac{Q_{pre } * K_{pre }^{T}}{\sqrt{d_k}}) * V_{pre } * W_{o}+X_{pre }$$
+
 > $d_k = h/n_{heads}$。
 
 MHA 的输出 $O_{pre }\in \mathbb{R}^{s\times h}$ 将传递到 MLP。MLP 的输出作为下一层 Transformer 层的输入。
