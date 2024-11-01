@@ -275,7 +275,8 @@ def llama_pos_shift_attention_forward():
     key_states = apply_rotary_pos_emb_single(key_states, cos, sin, key_position_ids)
 ```
 
-StreamingLLM 设计非常灵活，能够无缝集成到任何使用相对位置编码的自回归语言模型中，比如 RoPE (Su 等，2021) 和 ALiBi (Press 等，2022)。对于 RoPE 编码，会在应用旋转变换之前缓存 tokens 的键，然后在每次解码时对滚动缓存中的键进行位置变换。而与 ALiBi 的集成更为简单，直接将连续线性偏差应用于注意力得分，而不是跳跃式偏差。这种在缓存中分配位置嵌入的方法对于 StreamingLLM 的功能至关重要，确保模型在超出其预训练注意力窗口大小时也能高效运行。
+StreamingLLM 设计非常灵活，能够无缝集成到任何使用相对位置编码的自回归语言模型中，比如 RoPE (Su 等，2021) 和 ALiBi (Press 等，2022)。对于 RoPE 编码，会在应用旋转变换之前缓存 tokens 的键，然后在每次解码时对滚动缓存中的键进行位置变换。而与 ALiBi 的集成更为简单，直接将连续线性偏差应用于注意力得分，而不是跳跃式偏差。
+> StreamingLLM 的官方实现仓库地址在[这里](https://github.com/mit-han-lab/streaming-llm/blob/main/streaming_llm/pos_shift/modify_llama.py)。
 
 StreamingLLM 的缺点是过程太过暴力，没有识别出重要性 tokens，直接按照位置把中间的 token 都丢掉了，如果中间的 tokens 是重要的会造成精度问题。
 
