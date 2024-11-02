@@ -24,15 +24,13 @@ categories: LLM_Compression
 
 量化范围在论文中已经指出来了，`decode layer` 中的量化 `layer` 如下：
 
-- `self-attention` 中的: `q_liner`、`k_liner`、`v_liner` 以及 $QK^T$ 对应的 `BMM`（批量矩阵乘法），以及注意力输出线性层；
+- `self-attention` 中的: `q_liner`、`k_liner`、`v_liner` `out_linear`、以及 $QK^T$ 对应的 `BMM`（批量矩阵乘法），以及注意力输出线性层；
 - `mlp` 中的全部线性层以及激活层。
-
-> smoothquant 算法的实现没有量化 attention 的输出线性层和 mlp 的 down 线性层权重，网上对这两个线性层是否量化存在争议，这个争议在 awq 量化算法中[依然存在](https://github.com/mit-han-lab/llm-awq/pull/67)。
 
 到这里我们会发现，transformer 中没有被量化的只有 `Token Bmbedding` 层、`LayerNorm` 层（llama 中是 RMSNorm 层），我个人推测之所以不量化 Token Bmbedding 层，是因为其参数冗余性较小且不存在权重稀疏现象，这个通过可视化 Token Bmbedding 层的权重值统计分布可以观测得到。
 
 <div align="center">
-<img src="../images/smoothquant/smoothquant_in_llm.png" width="55%" alt="smoothquant_compute_process">
+<img src="../images/smoothquant/SmoothQuant_quantize_range.png" width="55%" alt="smoothquant_compute_process">
 </div>
 
 ### 1.2 量化粒度
@@ -792,7 +790,7 @@ def quantize_llama_like(
 1. FP32 模型转换为 INT8 模型，核心是实现权重的量化函数；
 2. INT8 量化 kernel 替换原来的 FP32 kernel，再执行原来一样的模型推理过程。
 
-代码实现上，其实就是实现权重量化函数 `from_float` 这个步骤跟伪量化基本一样，区别只在于不再将输入缩放回原始尺度，代码如下所示:
+第一步在代码实现上跟伪量化基本一样，都是实现权重量化函数 `from_float`，区别只在于不再将输入缩放回原始尺度，代码如下所示:
 
 ```python
 @torch.no_grad()
@@ -915,7 +913,7 @@ class W8A8B8O8Linear(nn.Module):
 看出区别没，和前面不同，真正的线性量化 kernel 的 forward 是没有使用  pytorch 的 `torch.functional.F.linear` 函数的，而是使用自行变形的 INT8 kernel 函数 `linear_a8_w8_b8_o8`。值的注意的是线性层的量化 kernel 有多重形式，作者提供了如下形式:
 - `linear_a8_w8_b8_o8`：激活、权重、bias 和输出都是 INT8，属于完全的量化 kernel。
 - `W8A8B8O8LinearReLU`: 激活、权重、bias 和输出都是 INT8，且和 relue 算子做了融合！
-- ``W8A8BFP32OFP32Linear` 和 `linear_a8_w8_b32_o32_with_scaling`：激活、权重是 INT8，bias 是 FP32，输出是 FP32，前者对权重做平滑后者没有。
+- `W8A8BFP32OFP32Linear` 和 `linear_a8_w8_b32_o32_with_scaling`：激活、权重是 INT8，bias 是 FP32，输出是 FP32，前者对权重做平滑后者没有。
 - `W8A8BFP32OFP32Linear`。
 - `W8A16Linear`：权重 INT8，激活是 `FP16`，forward 使用的是 `torch.functional.F.linear`，运算依然是浮点操作。
 
@@ -932,6 +930,61 @@ class W8A8B8O8Linear(nn.Module):
 <div align="center">
 <img src="../images/smoothquant_code/Int8OPTForCausalLM.png" width="60%" alt="Int8OPTForCausalLM">
 </div>
+
+将 `Attention` 和 `MLP`（decoder）中相关 FP32 kernel 替换为量化 kernel，即重新定义了模型结构，哪些层需要量化和论文图 6 以及第一节提到的量化范围一样，代码如下所示:
+
+```python
+# 下述代码做了省略
+class Int8OPTAttention(nn.Module):
+    """Multi-headed attention from 'Attention Is All You Need' paper"""
+
+    def __init__(
+        self,
+        embed_dim: int,
+        num_heads: int,
+    ):
+        super().__init__()
+        self.qk_bmm = BMM_S8T_S8N_F32T(1.0)
+        self.pv_bmm = BMM_S8T_S8N_S8T(1.0)
+
+        self.k_proj = W8A8B8O8Linear(embed_dim, embed_dim)
+        self.v_proj = W8A8B8O8Linear(embed_dim, embed_dim)
+        self.q_proj = W8A8B8O8Linear(embed_dim, embed_dim)
+        self.out_proj = W8A8BFP32OFP32Linear(embed_dim, embed_dim) # 最后一个线性层的输出是 fp32，以适应后面的 ln 层的计算
+
+class Int8OPTDecoderLayer(nn.Module):
+    def __init__(self, embed_dim, num_attention_heads, ffn_dim):
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.self_attn = Int8OPTAttention(
+            embed_dim=self.embed_dim, num_heads=num_attention_heads
+        )
+
+        self.self_attn_layer_norm = LayerNormQ(self.embed_dim)
+        self.fc1 = W8A8B8O8LinearReLU(self.embed_dim, ffn_dim) # 和 relue 做了融合的量化层，权重、激活（输入）、输出都是 INT8
+        self.fc2 = W8A8BFP32OFP32Linear(ffn_dim, self.embed_dim) # 最后一个线性层的输出是 fp32
+        self.final_layer_norm = LayerNormQ(self.embed_dim)     # 加了 quantize 操场的 LN
+```
+
+值的注意的是，这里的 `self_attn_layer_norm` 实际是融合了量化操作的，所以这是名字后面加了 `Q` 的原因，其实现代码如下所示:
+```python
+class LayerNormQ(torch.nn.Module):
+    def __init__(self, dim, eps=1e-5):
+        super().__init__()
+        self.input_scale = 1.0
+        self.eps = eps
+        self.register_buffer('weight', torch.ones(dim, dtype=torch.float32))
+        self.register_buffer('bias', torch.zeros(dim, dtype=torch.float32))
+
+    def forward(self, x):
+        # 将 输入转换为和权重一样的数据类型，但其实在论文图 6 可以看出 mlp 的最后一个线性层输出已经是 fp32 类型
+        x = x.to(self.weight.dtype) 
+        ln_output_fp = torch.nn.functional.layer_norm(
+            x, x.shape[-1:], self.weight, self.bias, self.eps)
+        # 将 layer_norm 的 fp32 输出结果量化为 INT8，也就是对应 quantize 层，只是这里融合进了 layer_norm 里面
+        ln_output_int8 = ln_output_fp.round().clamp(-128, 127).to(torch.int8)
+        return ln_output_int8
+```
 
 ## 三 总结
 

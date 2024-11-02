@@ -1,234 +1,227 @@
 ---
 layout: post
-title: SmoothQuant 源码剖析
-date: 2024-11-01 19:00:00
-summary: 先回顾了 SmoothQuant 算法的是三个核心观点，然后开始解读 AWQ 算法的两个核心观点（创新点）：：LLM 权重并非同等重要，只有 0.1%~1% 的小部分显著权重对模型输出精度影响较大，又因为幅度较大的输入特征通常更重要，因此需要基于激活分布来挑选权重的显著通道，以及如何基于激活感知缩放保护关键权重。
+title: SmoothQuant 量化详解
+date: 2024-10-29 23:00:00
+summary: 详细总结了 LLM 量化的难点：激活值中出现在特定通道的离群值使得激活值分布不均值导致激活难以量化，并给出了SmoothQuant 算法原理的详细描述。
 categories: LLM_Compression
 ---
 
-- [1. 摘要](#1-摘要)
-- [2. AWQ: 激活感知的权重量化](#2-awq-激活感知的权重量化)
-	- [2.1 观点 1-权重并非同等重要，需要基于激活分布来挑选权重的显著通道](#21-观点-1-权重并非同等重要需要基于激活分布来挑选权重的显著通道)
-	- [2.2 观点 2-对显著权重进行放大可以降低量化误差](#22-观点-2-对显著权重进行放大可以降低量化误差)
-	- [2.3 算法-计算缩放因子 s](#23-算法-计算缩放因子-s)
-- [3. 实验](#3-实验)
-- [4. 结论](#4-结论)
+- [摘要](#摘要)
+- [1. 介绍](#1-介绍)
+- [2. 预备知识](#2-预备知识)
+- [3. 量化难点总结](#3-量化难点总结)
+- [4. SmoothQuant 算法](#4-smoothquant-算法)
+- [5. 实验](#5-实验)
+  - [5.1 实验设置](#51-实验设置)
+  - [5.2 量化后精度对比实验](#52-量化后精度对比实验)
+  - [5.3 加速和节省内存对比实验](#53-加速和节省内存对比实验)
+  - [5.4 扩展：在单节点内运行 530B 模型](#54-扩展在单节点内运行-530b-模型)
+  - [5.5 消融研究](#55-消融研究)
 - [参考资料](#参考资料)
 
-先回顾下 `SmoothQuant` 论文提到的几个关键总结：
-1. 激活比权重更难量化。
-2. 激活值中的离群值是导致大模型难以量化的重要因素。
-3. 激活离群值通常出现于特定通道。
+> 先验知识：激活值是指模型中需要进行量化的计算密集层的输入，典型的就是线性层的输入，self-attention 层的输入等等。
 
-可以发现 SmoothQuant 核心是解决了 LLM 激活难以量化的问题。而 AWQ 论文是 SmoothQuant 的进一步发展，核心作者都是同一批人，那么 AWQ 论文的核心是什么呢？不会是优化权重量化吧。
+## 摘要
 
-## 1. 摘要
+SmoothQuant 是 PTQ（训练后量化）方案，量化位宽为 `W8A8`，即权重和激活都是用 8bit 量化，SmoothQuant 的核心贡献是，基于权重易量化而激活难量化的观察提出了一个解决办法：引入平滑因子 $s$ 来平滑激活中的异常值，**并通过数学上的等效转换将量化的难度从激活迁移至权重上**。这个方法可以使 INT8 量化能够应用于 LLMs 中所有的矩阵乘法运算。SmoothQuant 量化算法在保持模型精度不变的情况下，使得 LLMs 推理速度提升至 1.56 倍，内存需求减少至 50%。
 
-本文提出了激活感知权重量化 (`AWQ`)，这是一种适合硬件的 LLM 低位权重（比如 `w4`）量化方法。`AWQ` 发现，**并非所有 LLM 权重都同等重要，仅保护 `1%` 的显著权重便能大幅减少量化误差**。而要识别显著权重通道，需要参考的是激活分布而非权重本身分布。为了避免硬件效率低下的混合精度量化，我们通过数学推导得出，放大显著通道可以减少量化误差。AWQ 采用等效变换来放大显著权重通道，用于保留权重显著通道值，保留的比例通过离线收集激活统计数据确定。
+## 1. 介绍
 
-`AWQ` 不依赖反向传播或重构，因此可以泛化到不同领域和模态而不会对校准集过拟合。AWQ 在各种语言建模和领域特定的基准测试（编码和数学）中优于现有方法。凭借更好的泛化性，它在**指令微调语言模型以及多模态语言模型**上首次实现了卓越的量化性能，多模态模型量化是前作 `SmoothQuant` 没有测试的领域。
+和 CNN 模型或较小的 Transformer 模型（如 BERT，Devlin 等，2019）不同，大型语言模型 (LLMs) 的激活非常难以量化。因为，将 LLMs 扩展至超过 `67B` 参数时，激活中会出现具有**大幅度**的系统性异常值 (Dettmers 等，2022)，导致较大的量化误差和准确性下降。这些**离群值(outier)与正常值相比会有数百倍的数值差距**。如果直接进行量化，会导致大部分数值清零，产生很大的精度损失。但同时又有研究表明，这部分**离群值会对模型的性能产生显著影响**，因此必须想办法保留离群值而不是直接清零，这就产生了一个难以调和的矛盾。
 
-此外，作者还开发了 `TinyChat`，一个高效灵活的 4 位设备端 LLM/VLM 推理框架。通过内核融合和平台适应的权重打包，`TinyChat` 在桌面和移动 GPU 上相比 Huggingface FP16 实现了超过 3 倍的加速，并使 70B 参数的 Llama-2 模型在移动 GPU 上的部署成为可能。
-> 值得注意的是，虽然作者开发的 `TinyChat` 使用的是 `w4` 量化，但理论上不考虑精度的前提下，量化位数可以是 `3`、`2`、`1` 任意低比特位数。
+`ZeroQuant` 和 `LLM.int8()` 提出了各自的解决办法：
 
-## 2. AWQ: 激活感知的权重量化
+1. `ZeroQuant` (Yao 等，2022) 应用了动态逐 `token` 激活量化和分组权重量化（定义见图 3 第 2 节）来解决激活离群值(outier)问题。虽然该方法实现效率较高，且对 GPT-3-350M 和 GPT-J-6B 提供了良好的准确性，但对于 `175B` 参数的 OPT 模型的准确性较差。
+2. `LLM.int8()` (Dettmers 等，2022) 通过引入混合精度分解（即对异常值保持 FP16，其他激活使用 INT8）解决了该准确性问题，但是这种方法在工程上很难在 AI 加速器上高效实现，是一种硬件不友好的量化方案。
 
-AWQ: ACTIVATION-AWARE WEIGHT QUANTIZATION
-
-在本节中，作者首先提出了一种**仅针对权重的量化方法**，通过保护更多“重要”权重，在无需训练或回归的情况下提升模型准确性。并开发了一种数据驱动的方法，来搜索能够减少量化误差的最佳缩放比例（见图 2）。
+因此，寻找一种高效、对硬件友好且无需训练的量化方案，使得 LLMs 中所有计算密集型操作均采用 INT8，仍然是一个未解决的难题。由此，论文提出了 `SmoothQuant` 量化方案，和过去相比，SmoothQuant 是高效且准确的 PTQ 方案。SmoothQuant 的提出是基于一个关键观察：之所以激活比权重更难量化是因为其存在离群值[(Dettmers et al., 2022)](https://arxiv.org/pdf/2208.07339), 不同 tokens 在其通道上表现出类似的变化。基于这一现象，**SmoothQuant 离线地将量化难度从激活迁移至权重（如下图图 2 所示），并提出了逐通道的等效缩放转换，使跨通道的数值更为平滑，从而显著提升模型的量化友好性**。
 
 <div align="center">
-<img src="../images/awq/figure2.png" width="60%" alt="figure2">
+<img src="../images/smoothquant/SmoothQuant.png" width="50%" alt="SmoothQuant 迁移量化难度">
 </div>
 
-图 2b 展示了可以基于激活分布找到 LLM 中 1% 的关键权重，将这些关键权重保留为 FP16 可以显著提升量化后的性能（困惑度从 43.2（左图）降至 13.0（中图））。但这种混合精度格式在硬件上效率较低，基于激活感知原则，作者提出了 AWQ（右图）。AWQ 采用逐通道缩放方式，保护关键权重并减少量化误差。作者测试了 OPT-6.7B 模型上使用 `INT3-g128` 量化下的困惑度 `PPL`(越小越好)表现为 13.0，和前面的混合精度量化一样，说明 AWQ 量化算法有效。
+`SmoothQuant` 的核心思路是：激活 $X$ 之所以难以量化，是因为存在离群值拉伸了量化的线性映射范围，导致大部分数值的有效位数减少。我们在离线阶段将激活中的尺度变化转移到权重 $W$ 上，从而降低激活的量化难度。经过平滑处理的激活 $\hat{X}$ 和调整后的权重 $\hat{W}$ 均易于量化。
+> 到这里可以看出 SmoothQuant 算法有两个难点：如何通过数学上的等效转换将量化的难度从激活迁移至权重上，以及如何实现逐通道的等效缩放转换。
 
-### 2.1 观点 1-权重并非同等重要，需要基于激活分布来挑选权重的显著通道
+## 2. 预备知识
 
-作者观察到，**LLM 中的权重并非同等重要：仅有 0.1%~1% 的小部分显著权重对模型输出精度影响较大**。如果能保留这部分关键权重，其他权重使用低比特量化推理，那么就能在保持模型精度的前提下，大幅降低模型内存占用和提高推理速度。
+**1，量化公式**：
 
-这里有个问题是，哪部分权重通道更重要呢？通常评估权重重要性的方法是查看其**大小或 L2-范数** (Han 等，2015；Frankle 和 Carbin，2018)，但在量化推理中也是这样吗？为此，作者做了三个对比实验来判断挑选显著权重方法的有效性，结果发现保留大范数的权重通道（即基于 W 的 FP16%）对量化性能的提升有限，跟随机选择通道带来的提升类似。详细对比结果见表 1 所示：
+在描述 SmoothQuant 的算法过程之前，得先掌握了解一些预备知识。**量化是将高精度连续浮点数映射为低精度的离散整数**，这里以经典的整数均匀量化（`INT8`）为例描述量化过程，量化公式如下所示：
+
+$$X¯_{\text{INT8}} = \left\lfloor \frac{X_{\text{FP16}}}{\Delta} \right\rceil, \quad \Delta = \frac{\max(|X|)}{2^{N-1} - 1} \tag{1}$$
+
+其中 $X$ 是浮点张量，$X¯$ 是量化后的整数张量，$\Delta$ 是缩放系数，$\left\lfloor·\right\rceil$ 表示四舍五入函数，$N$ 为量化位数（此处为 `8` 位）。这里假设张量围绕 $0$ 对称；对于非对称情况（例如经过 `ReLU` 激活后的数据），可以通过添加零点来进行调整（Jacob 等，2018）。
+
+该量化方法基于浮点数绝对值最大值来计算缩放系数 $\Delta$，这会保留激活中的异常值，而这些异常值对模型的准确性至关重要 (Dettmers 等，2022)。我们可以基于部分校准样本集的激活值离线计算缩放系数 $\Delta$，称为静态量化；也可以在模型运行时根据激活统计数据来动态计算缩放系数，称为动态量化。
+
+**2，量化粒度**
+
+所谓量化有不同的粒度其实是指**基于不同的粒度去计算量化缩放系数**。
+
+常见量化粒度的可视化如图 3 所示，其中逐张量量化是整个矩阵共用一个缩放系数 $\Delta$，而逐 token 量化和逐通道量化则为每个 token 或权重的输出通道设定不同的缩放系数。逐通道量化的粗略形式是分组量化，即通道组之间使用不同缩放系数 (Shen 等，2020；Yao 等，2022)。
+> 论文用 setp size 表示 $\Delta$，这不易理解，所以本文中描述为缩放系数。
 
 <div align="center">
-<img src="../images/awq/table1.png" width="60%" alt="table1">
+<img src="../images/smoothquant/per-channel-quantization.png" width="50%" alt="逐张量、逐 token 和逐通道量化的定义">
 </div>
 
-但有趣的是，基于激活幅度来选择权重可以显著提升性能!即使只保留 `0.1%-1%` 的通道为 FP16。作者推测是，幅度较大的输入特征通常更重要，保留相应的权重为 FP16 可以更好地保护这些特征，从而提升模型性能。
+其中逐张量量化实现最简单、效率最高。**为了在向量级量化中充分利用 INT8 GEMM 内核**，我们只能在外部维度（如 token 维度 T 和输出通道维度 Co）上应用缩放因子，而无法在内部维度（如输入通道维度 Ci）上应用。
 
-到这里可以总结出一个重要结论：**LLM 权重并非同等重要，只有 0.1%~1% 的小部分显著权重对模型输出精度影响较大，又因为幅度较大的输入特征通常更重要，因此需要基于激活分布来挑选权重的显著通道**。
+**3，transformer 模型中的线性层**。
 
-**局限性**：尽管保留 0.1% 的权重为 FP16 可以提升量化性能，且不会显著增加模型的总位数，但混合精度的数据类型会推理系统实现复杂化。因此还需要找到一种方法，可以保护这些关键权重同时又不用实际保留它们为 `FP16`。
+Transformer(Vaswani 等，2017) 中的线性层计算公式如下所示：
 
-### 2.2 观点 2-对显著权重进行放大可以降低量化误差
+$$Y = X \cdot W, \quad Y \in \mathbb{R}^{T \times C_o}, \quad X \in \mathbb{R}^{T \times C_i}, \quad W \in \mathbb{R}^{C_i \times C_o}$$
 
-> 论文描述是基于激活感知缩放保护关键权重 Protecting Salient Weights by Activation-aware Scaling，不是很清楚，这里我换了一种表达。
 
-作者提出一种替代方案，通过**逐通道缩放**减少关键权重的量化误差，避免硬件效率问题。
+其中 $T$ 表示 token 数，$C_i$ 为输入通道数，$C_o$ 为输出通道数（为简化省略批量维度，见图 3）。通过将权重量化为 INT8，可将存储需求减半。然而，为了加速推理，我们需要同时将权重和激活量化为 INT8（即 W8A8）以充分利用支持整数运算的内核（例如 INT8 GEMM），这些内核广泛支持于多种硬件（例如 NVIDIA GPUs、Intel CPUs、Qualcomm DSPs 等）。
+> 很明显这里 Transformer 线性层中的通道数其实就是隐藏层大小，即 $C_i = C_o = \text{hidden\_size}$。之所以用逐通道的概念，我猜是为了对应 CNN 模型中的张量通道概念，反正一般都是张量的最后一个维度。
 
-**量化误差分析**
+## 3. 量化难点总结
 
-从权重量化带来的误差分析入手。假设一个权重组或块 $\mathbf{w}$，其线性操作可写为 $y = \mathbf{wx}$，而量化后的对应形式为 $y = Q(\mathbf{w})\mathbf{x}$，由此可定义量化函数为：
+**1，激活比权重更难量化**。
 
-$$
-Q(\mathbf{w}) = \Delta \cdot \text{Round}\left(\frac{\mathbf{w}}{\Delta}\right), \quad \Delta = \frac{\max(|\mathbf{w}|)}{2^{N-1}}
-\tag{1}
-$$
+权重分布较均匀，易于量化。有研究表明 LLMs 的权重量化到 INT8 甚至 INT4 并不会影响精度 (Dettmers 等，2022；Yao 等，2022；Zeng 等，2022)，这与本论文的观察一致。
 
-其中，$N$ 是量化位数，$\Delta$ 是由**绝对值的最大值**决定的量化缩放系数。
+**2，激活值中的离群值是导致大模型难以量化的重要因素**。
 
-现在考虑对于一个权重元素 $w \in \mathbf{w}$，如果我们引入缩放因子 $s$，并在量化过程中将 $w$ 与 $s$ 相乘同时将激活 $x$ 以同样的缩放因子 $s$ 逆向缩放！即 $Q(w \cdot s)(x / s)$，函数形式为：
+激活中的离群值幅度比其他激活值大约 100 倍。对于逐张量量化（公式 1），异常值主导了最大幅度测量，从而压缩了非异常通道的有效量化位数（图 2）：假设某通道 $i$ 的最大幅度为 $m_i$，而整个矩阵的最大值为 $m$，则该通道的有效量化级别为 $2^8\cdot m_{i}/m$。对于非异常通道，有效量化级别会非常小（仅有 2-3 个级别），从而导致较大的量化误差。
 
-$$
-Q(w \cdot s) \cdot \frac{x}{s} = \Delta' \cdot \text{Round}\left(\frac{w s}{\Delta'}\right) \cdot x \cdot \frac{1}{s},
-\tag{2}
-$$
-> 虽然公式 1 和公式 2 在数学上是“等效”的，但是带来的精度损失是不一样的。
+**3，离群值通常出现于特定通道**。
 
-$\Delta'$ 是在应用 $s$ 之后的新量化缩放系数。作者通过实验发现：
-1. 来自 $\text{Round}(\cdot)$ 的期望误差（记为 $\text{RoundErr}(\cdot)$）不变：由于舍入函数将浮点数映射到整数，误差大致在 $[0, 0.5]$ 范围内均匀分布，导致平均误差约为 0.25，即 $\text{RoundErr}(\cdot) \sim 0.25$。
-2. 对单个元素 $w$ 进行缩放通常不会改变 $\mathbf{w}$ 组的最大值。因此可以得出 $\Delta' \approx \Delta$ 的结论；
-3. 由于 $\Delta$ 和 $x$ 以 FP16 表示，因此它们没有量化误差。
-
-因此，方程 (1) 和 (2) 中的量化误差可以表示为公式（3）：
-
-$$
-\text{Err}(Q(w)x) = \Delta \cdot \text{RoundErr}\left(\frac{w}{\Delta}\right) \cdot x
-$$
-
-$$
-\text{Err}\left(Q(w \cdot s)\left(\frac{x}{s}\right)\right) = \Delta' \cdot \text{RoundErr}\left(\frac{w s}{\Delta'}\right) \cdot x \cdot \frac{1}{s}
-\tag{3}
-$$
-
-两个误差相除，可得新误差与原始误差的比率为 $\frac{\Delta{\prime}}{\Delta} \cdot \frac{1}{s}$。因为 $\Delta{\prime} \approx \Delta$ 且 $s > 1$，则可推公式（2）的误差小于公式（1），由此，作者认为**量化时对显著权重进行放大，可以降低量化误差**。
-> 到这里，论文是通过公式推导证明了观点 2 的由来，下面才是实验证明。
-
-但是前面的设想和公式推导还只是理论层面，因此为了验证该想法，作者在 OPT-6.7B 模型的 `1%` 显著通道上乘以 $s > 1$，并做了相关对比实验，实验结果在表 2 中。
+作者对激活值进行了统计分析，发现离群值主要集中在少数通道中，一旦某个通道出现异常值，它会在所有 tokens 中持续存在（见图 4 红色标记）。对于特定 token，不同通道的激活值差异很大（少部分通道激活值很大，大部分通道较小），但同一通道内不同 tokens 的激活值幅度差异小（异常值通道幅度持续较大）。
 
 <div align="center">
-<img src="../images/awq/table2.png" width="60%" alt="table2">
+<img src="../images/smoothquant/activations_distribution.png" width="100%" alt="activations_distribution">
 </div>
 
-先看直接结果（模型精度变化），结果显示，放大显著通道非常有效：模型困惑度 PPL 从 $s = 1$ 时的 23.54（仅为 RTN）降低到 $s = 2$ 时的 11.92。
-
-再看间接结果：
-- 随着 $s$ 增加，$\Delta \ne \Delta'$ 的比例逐渐增大，但在 $s < 2$ 时比例还是很低的(<5%)；
-- 误差比值 $\frac{\Delta{\prime}}{\Delta} \cdot \frac{1}{s}$ 随 $s$ 增加持续减小，符合前面的推导。
-
-有点意外的是，最佳困惑度在 $s = 2$ 时出现而不是 $4$（s = 4 时误差比值最小）。作者因为如果 $s$ 过大，$\Delta$ 增加会放大非显著通道的相对误差（非显著通道的误差会被 $\frac{\Delta{\prime}}{\Delta}$ 放大，在 $s = 4$ 时 21.2% 的通道比率大于 1），从而可能影响模型整体精度。**因此，在保护显著通道时，我们还需考虑非显著通道的误差**。
-
-到此，表 2 的实验结果证明了**量化时对显著权重进行放大，是可以降低量化误差的，同时，在保护显著通道时，我们还需考虑非显著通道的误差**。
-
-如何选取 $s$ 来平衡显著通道和非显著通道的误差，就是下一节内容了，也是这篇论文相对前作的核心贡献，毕竟权重乘以缩放因子的方法 `smoothquant` 论文已经提出了，**这节更多的是通过公式推导和实验证明了权重乘以 $> 1$ 的缩放因子可以降低（权重）量化误差**！而前作 `smoothquant` 针对权重乘以缩放因子 $s$ 就可以将激活量化难度转移至权重（实际就是降低量化误差）并没有给出一个很详细的理论说明和公式推导（感觉像是有了实验结果了再给出解释）。此外，权重缩放因子 $s$ 的计算方法还是比较粗糙的，因此，awq 论文进一步优化了 $s$ 的计算法。
-
-### 2.3 算法-计算缩放因子 s
-
-**缩放因子的搜索**。
-
-按照前面的分析，我们希望找到权重矩阵通道的每一个缩放系数 $s$，使得量化误差最小，这里 $s$ 如何选择，本质上是优化如下目标函数：
-
-$$
-\mathbf{s}^* = \arg\min_{\mathbf{s}} \mathcal{L}(\mathbf{s})
-\tag{4}
-$$
-
-$$
-\mathcal{L}(\mathbf{s}) = \| Q(\mathbf{W} \cdot \text{diag}(\mathbf{s})) (\text{diag}(\mathbf{s})^{-1} \cdot \mathbf{X}) - \mathbf{W} \mathbf{X} \|
-$$
-
-上式 $Q$ 表示权重量化函数（例如，组大小为 `128` 的 `INT3/INT4` 量化，以及前文提到的 `per-channel` INT8 量化），$W$ 是原始 `FP16` 权重，$X$ 是从小型校准集缓存的输入特征（从预训练数据集中提取了一个小的校准集，以避免过拟合到特定任务）。$s$ 是逐（输入）通道的缩放因子；对于 $s^{-1} \cdot X$，通常可以将其与前一个操作符融合（参见 Wei 等，2022b；Xiao 等，2022， SmoothQuant 源码分析文章也详细解释了）。
-
-按照作者的观点，激活值越大，对应通道越显著，就应该分配更大的缩放系数降低其量化误差。因此，作者统计了各通道的平均激活值（计算输入矩阵各列绝对值的平均值），并直接将此作为各通道的缩放系数。同时引入一个变量 $\alpha$ 用于平衡显著通道和非显著通道的系数，由此，问题转化为：
-
-$$
-s = s {\mathbf{X}}^{\alpha}, \quad \alpha^* = \arg\min_{\alpha} \mathcal{L}(s{\mathbf{X}}^{\alpha})
-\tag{5}
-$$
-
-值得注意的是，这部分公式的代码实现和论文有个细节不同，阅读源码发现，为了防止 $s$ 过大或者过小，作者还进行了一步数据标准化：
-
-```python
-for ratio in range(n_grid):
-    ratio = ratio * 1 / n_grid
-    scales = x_max.pow(ratio).clamp(min=1e-4).view(-1)
-    scales = scales / (scales.max() * scales.min()).sqrt()
-    ########################## 省略代码#####################
-```
-
-$s{\mathbf{X}}$ 是逐通道计算的激活值的平均幅度，注意在求 $s$ 时，会按照超参数 `group_size` 对通道进行分组，每组共享一个 $\alpha$。到这里还有一个问题是，$alpha$ 如何取值呢？作者认为可以通过在区间 $[0, 1]$ 上进行**快速网格搜索**来找到最佳的 $\alpha$（0 表示不进行缩放；1 表示在搜索空间中最激进的缩放）。但这种方法到底是怎么做的，论文中并没有提。通过阅读源码，发现该方法实际上就是在 `[0,1]` 区间平均取 20 个数，0, 0.05, 0.10, 0.15 …… 然后逐个计算不同 $\alpha$ 下的 `MSE` 损失，损失最小的就是最佳的 $\alpha$。得到最佳 $\alpha$ 后，最佳缩放系数 $s$ 也随之确定。
-
-$\alpha$ 和 $s$ 具体取值的实现代码如下所示:
-
-```python
-n_grid = 20 # 搜索网格大小, 即取 20 个 alpha 实验值
-history = []
-org_sd = {k: v.cpu() for k, v in block.state_dict().items()}
-for ratio in range(n_grid):
-    ratio = ratio * 1 / n_grid
-    # 计算缩放因子 s
-    scales = x_max.pow(ratio).clamp(min=1e-4).view(-1)
-    scales = scales / (scales.max() * scales.min()).sqrt()
-    # 缩放并量化全连接层的权重
-    for fc in linears2scale:
-        fc.weight.mul_(scales.view(1, -1).to(fc.weight.device))
-        fc.weight.data = w_quantize_func(fc.weight.data) / (scales.view(1, -1))
-    # 获取缩放后的输出
-    out = block(x, **kwargs)
-    if isinstance(out, tuple):
-        out = out[0]
-
-    # 计算 MSE 损失
-    loss = ((org_out - out).float().pow(2).mean().item())  # 使用 float 类型防止溢出
-    history.append(loss)
-    is_best = loss < best_error
-    if is_best:
-        best_error = loss
-        best_ratio = ratio
-        best_scales = scales
-    # 恢复模块的原始状态
-    block.load_state_dict(org_sd)
-    # 最佳缩放因子
-    best_scales = best_scales.view(-1)
-```
-
-为了验证 AWQ 算法的有效性，作者做了 OPT 模型在 INT3-g128 量化下的消融实验，实验结果显示 AWQ 明显优于 RTN，并实现了和混合精度（1% FP16）相当的精度，同时对硬件更友好。
+上述现象总结起来就是，**离群值跟通道相关跟 token 无关**，由此很明显，应该对激活采用逐通道量化 (Bondarenko 等，2021)（即每个通道使用不同的量化系数），这会大幅降低量化误差，逐 token 量化则帮助不大。表 1 验证了这一假设：模拟的逐通道激活量化能使精度接近 FP16，与 Bondarenko 等的发现一致。
 
 <div align="center">
-<img src="../images/awq/table5.png" width="60%" alt="table5">
+<img src="../images/smoothquant/table1.png" width="60%" alt="table1">
 </div>
 
-## 3. 实验
+但是，逐通道激活量化并不适合硬件加速的 `GEMM` 内核（线性层计算），因为这些内核依赖于高吞吐量的连续操作（如 Tensor Core MMAs），无法容忍低吞吐量指令（如转换或 CUDA Core FMAs）的插入，而量化公式中无论是量化系数还是浮点数到定点数的转换都是用 CUDA Core 计算单元。
 
-实验设置：基于 AWQ 算法作者实现了一个极简 llm 推理框架-`tinychat`，并做了各种性能对比实验，其中关于速度比较的实验结果描述在下面。
+因此，在 `GEMM` 内核中，**为了不降低 `GEMM` 内核本身的吞吐量，量化的缩放操作只能沿矩阵乘法的外部维度进行（即激活的 `token` 维度和权重的输出通道维度 $C_o$，见图 3）**，通常在矩阵乘法完成后应用：
 
-**实验结果**
+$$Y = \text{diag}(\Delta_X^{\text{FP16}}) \cdot (X¯^{\text{INT8}} \cdot W¯^{\text{INT8}}) \cdot \text{diag}(\Delta_W^{\text{FP16}}) \tag{2}$$
 
-如图 9(a) 所示，TinyChat 在 4090 显卡上相比 Huggingface FP16 实现，为 Llama-2、MPT 和 Falcon 三大系列的 LLM 提供了 2.7-3.9 倍的加速。
-- 对于 Llama-2-7B，通过 FP16 内核融合将推理速度从 52 tokens/s 提升至 62 tokens/s。在更强的 FP16 基线之上，快速量化线性内核为带来了 $3.1$ 倍的额外加速。
-- 对于 Falcon-7B，由于官方实现未正确支持推理时的 KV 缓存，其速度明显慢于其他模型。在这种情况下，`tinychat` 的 FP16 优化实现了 1.6 倍的加速。在配备 8GB 内存的笔记本 4070 显卡上，`tinychat` 能够以 33 tokens/s 运行 Llama-2-13B，而 FP16 实现无法运行 7B 模型。
+因此，尽管逐 `token` 激活量化精度只比逐张量量化稍高一点，但是为了不降低`GEMM` 内核本身的吞吐量，过往的研究依然还是在线性层中采用了它(Dettmers 等，2022；Yao 等，2022)。
+> CUDA Core：用于执行传统的单一指令流任务，比如 FMA、加法、乘法等操作。每个 CUDA Core 每次只能执行一个简单的操作（如乘法和加法）。
+Tensor Core：专门设计用于深度学习中的矩阵运算，特别适用于加速矩阵乘法和积累（MMA）操作。能直接支持混合精度运算（例如 FP16 运算），可以在单个时钟周期内执行多次乘法和累加操作，非常适合深度学习中的卷积操作和矩阵乘法。
+
+## 4. SmoothQuant 算法
+
+作者引入了一个 `smoothing factor` 向量，对激活值按通道除以 `smoothing factor`，从而降低激活值整体的方差。为了保持线性层在数学上的等价性，以相反的方式对权重进行对应调整：
+
+$$Y = (X \cdot \text{diag}(s)^{-1}) \cdot (\text{diag}(s) \cdot W) = \hat{X} \cdot \hat{W} \tag{3}$$
+
+> 简简单单的公式（3）就完成了对激活值中含有”离群值“的通道进行了平滑，把离群值“转移”到了权重上，这就是前面描述的将激活量化难度前移到权重上的原理，公式就一行，果然大道至简。
+
+考虑到输入 $X$ 通常由前面的线性操作（如线性层、层归一化等）产生，我们可以轻松地**将平滑因子离线地融合到前一层的参数中，不会因额外的缩放操作而导致增加内核调用开销**。在一些其他情况下，例如当输入来自残差相加时，我们可以在残差分支中添加额外的缩放，类似于 Wei 等 (2022) 的方法。
+
+**1，将激活的量化难度迁移到权重上。**
+
+选择合适的**逐通道的平滑因子 $s$**，使得迁移后的激活 $\hat{X}  = X \cdot \text{diag}(s)^{-1}$ 更易于量化，这个很关键也很难（后续的AWQ 量化算法就是改进了 $s$ 的计算策略）。那么如何选择合适的 smoothing factor 向量 $s$ 呢：
+
+- 一种极端情况，是令 $s_j = \max(\vert\mathbf{X}_j\vert), \quad j = 1, 2, \dots, C_i$，这会使得激活值的离群值全部转移到权重上面，激活值变得很好量化，权重反而难以量化。
+- 另一种极端情况，是令 $s_j = \frac{1}{\max(\vert\mathbf{W}_j\vert)}$，即**将所有量化难度从权重迁移到激活**，这会使得原本方差较小的权重方差更小，激活值方差更大。
+
+因此，作者通过引入一个超参数 $\alpha$，来平衡这两种极端情况，如以下公式：
+
+$$
+s_j = \frac{\max(|\mathbf{X}_j|)^{\alpha}}{\max(|\mathbf{W}_j|)^{1 - \alpha}} \tag{4}
+$$
+
+对于大多数模型，$\alpha = 0.5$ 是一个理想的平衡点，能够均匀分配量化难度，尤其是在对权重和激活使用相同量化器时（如逐张量、静态量化），公式（4）确保权重和激活的相应通道具有相似的最大值，从而共享相同的量化难度。图 5 展示了当 $\alpha = 0.5$ 时的平滑变换过程。
 
 <div align="center">
-<img src="../images/awq/figure9.png" width="100%" alt="figure9">
+<img src="../images/smoothquant/smoothquant_compute_process.png" width="55%" alt="SmoothQuant 计算过程">
 </div>
 
-表 10 还展示了视觉-语言模型加速效果。在 NVIDIA Jetson Orin 上，TinyChat 为 VILA-7B 和 VILA-13B 提供了约 $3$ 倍的加速。值得一提的是，所有 AWQ 模型的前向传播均使用原生 PyTorch API 实现，并支持多种 GPU 架构，因此 `TinyChat` 具备出色的扩展性。
+合适的迁移强度 $\alpha$（最佳平衡点）能够让激活和权重都便于量化。若 $\alpha$ 过大，权重的量化会变得困难；而若 $\alpha$ 过小，激活的量化会受到影响。对于一些激活异常值更显著的模型（如 GLM-130B (Zeng 等，2022)，其异常值约占 30%，使激活量化更具挑战），可以选择更大的 $\alpha$ 值，例如 0.75，以将更多量化难度迁移至权重。
+
+**2, 将 SmoothQuant 应用于 Transformer 模型中**。
+
+线性层占据了大型语言模型中大部分的参数量和计算开销。默认情况下，我们对自注意力和前馈层的输入激活进行平滑处理，并将所有线性层量化为 W8A8。同时，我们对注意力机制中的 `BMM` 操作进行量化。图 6 展示了我们针对 Transformer 模块设计的量化流程：对于计算密集的操作（如线性层和注意力层中的 BMM），我们将其输入和权重量化为 INT8，而对于 ReLU、Softmax、LayerNorm 等轻量级元素操作，则保持激活为 FP16。这样的设计使我们在准确性和推理效率间达到了良好的平衡。
 
 <div align="center">
-<img src="../images/awq/table10.png" width="50%" alt="table10">
+<img src="../images/smoothquant/SmoothQuant_quantize_range.png" width="55%" alt="smoothquant_compute_process">
 </div>
 
-与其他系统的比较。在图 10 中，作者将 TinyChat 与现有的边缘 LLM 推理系统 AutoGPTQ、llama.cpp 和 exllama 进行了对比。在 Orin 上，TinyChat 比 llama.cpp 快最高 1.7 倍。此外，llama.cpp 和 exllama 适应性有限，主要针对 LLaMA 和 Llama-2 模型，而 TinyChat 支持更广泛的应用，包括 StarCoder (Li 等，2023c)、StableCode (GPTNeoX) (Black 等，2022)、Mistral (Jiang 等，2023) 和 Falcon (Penedo 等，2023)，且始终显著快于 AutoGPTQ。**TinyChat 甚至在资源极度受限的 Raspberry Pi 4B 上实现了 LLM 部署，7B 模型的速度达到了 0.7 tokens/s**。
+## 5. 实验
+
+### 5.1 实验设置
+
+作者在两个后端实现了 SmoothQuant：(1) PyTorch Huggingface，用于概念验证；(2) FasterTransformer，作为高性能生产环境框架的示例。
+
+在 PyTorch Huggingface 和 FasterTransformer 框架中，作者基于 CUTLASS INT8 GEMM 内核实现了 INT8 线性模块和批量矩阵乘法 (BMM) 功能，并直接将原先的浮点（FP16）线性模块和 BMM 函数替换为 INT8 内核，从而构建 INT8 模型推理。
+
+### 5.2 量化后精度对比实验
+
+作者做了大量的实验证明了，SmoothQuant 在不同类型、不同规模的 LLM 上，都能 INT8 量化下保持与 FP16 相当的精度。即使是最新的 Llama-2 (Touvron 等，2023b)、Falcon (Almazrouei 等，2023)、Mistral (Jiang 等，2023) 和 Mixtral (Jiang 等，2024) 模型，也能实现无损的 W8A8 量化，如下表 7 所示:
 
 <div align="center">
-<img src="../images/awq/figure10.png" width="100%" alt="figure10">
+<img src="../images/smoothquant/table7.png" width="55%" alt="SmoothQuant 在 llama 等新模型上实现 5w8a8 推理精度无损">
 </div>
 
-## 4. 结论
+> SmoothQuant 中使用逐 token 激活量化和逐通道权重量化。
 
-作者提出的激活感知权重量化 (`AWQ`)，是一种用于 LLM 低位权重压缩的简便有效方法。**基于权重在 LLM 中重要性不均的观察，AWQ 采用逐通道缩放来减少关键权重的量化损失**。AWQ 不会对校准集过拟合，并能够保留 LLM 在不同领域和模态中的通用能力。它在语言建模方面优于现有方法，并可应用于指令微调的语言模型和多模态语言模型。和 Huggingface 的 FP16 实现相比，作者实现的 `TinyChat` 系统进一步将 AWQ 实现的内存节省转化为 $3.2-3.3$ 倍的实际加速效果。另外，AWQ 的提出，使得在树莓派和手机端侧部署大模型成为了可落地的存在。
+### 5.3 加速和节省内存对比实验
+
+本节中的实验展示了集成到 PyTorch 和 FasterTransformer 中的 SmoothQuant-O3 的实际加速和内存节省效果。
+
+**Prefill 阶段 PyTorch 实现**。
+
+图 8 展示了基于 PyTorch 实现的推理延迟和峰值内存使用情况。SmoothQuant 一直比 FP16 基线更快，在 OPT-30B 模型（序列长度为 256）上实现了 1.51 倍的加速。同时，观察到，**模型越大，加速越显著**。与之对比，LLM.int8() 几乎总是比 FP16 基线慢，因为它的混合精度激活表示产生了较大的开销。在内存使用上，SmoothQuant 和 LLM.int8() 都能将 FP16 模型的内存占用几乎减半；其中，SmoothQuant 节省的内存略多一些，因为它采用了全 INT8 GEMM 运算。
+
+<div align="center">
+<img src="../images/smoothquant/latency_memory_save_expriment.png" width="55%" alt="最高1.5x加速和1.92倍节省内存">
+</div>
+
+**Prefill 阶段 FasterTransformer 实现**
+
+如图 9（顶部）所示，与 FasterTransformer 的 FP16 实现的 OPT 相比，单 GPU 情况下 SmoothQuant-O3 可以进一步减少 OPT-13B 和 OPT-30B 的执行延迟，最高可达 1.56 倍加速。值得一提的是，对于必须分布在多个 GPU 上的大型模型，SmoothQuant 在使用一半 GPU 数量的情况下实现了相似甚至更好的延迟表现。
+
+<div align="center">
+<img src="../images/smoothquant/latency_memory_save_expriment2.png" width="100%" alt="最高1.5x加速和近 2 倍节省内存">
+</div>
+
+**decode 阶段**。
+
+表 8 显示 SmoothQuant 可以大幅加速 LLM 的自回归解码阶段。相比 FP16，SmoothQuant 持续降低了逐 token 解码的延迟，**最高达 1.42 倍加速**。此外，SmoothQuant 将 LLM 推理的内存占用减半，使得部署成本大幅降低.
+
+<div align="center">
+<img src="../images/smoothquant/table8.png" width="45%" alt="SmoothQuant ’s performance in the decoding stage.">
+</div>
+
+### 5.4 扩展：在单节点内运行 530B 模型
+
+如表 9 和表 10 所示，SmoothQuant 能够在几乎无精度损失的情况下量化 530B 模型。模型尺寸的减小使得我们在相似的延迟下，仅需一半的 GPU 数量（从 16 减至 8）即可运行该模型，从而支持在单个节点（8×A100 80GB GPU）上部署超过 500B 的模型。
+
+<div align="center">
+<img src="../images/smoothquant/table9.png" width="50%" alt="SmoothQuant can quantize MT-NLG 530B to
+W8A8 with negligible accuracy loss.">
+</div>
+
+### 5.5 消融研究
+
+**量化方案：量化粒度对延迟的影响**。表 11 显示了基于我们 PyTorch 实现的不同量化方案的推理延迟。可以看到，**量化粒度越粗（从 O1 到 O3），延迟越低**。此外，**静态量化可以显著加速推理，因为不再需要在运行时计算量化步长**。在所有设置下，SmoothQuant 的速度都比 FP16 基线更快，而 LLM.int8() 通常较慢。如果精度允许，我们建议使用较粗的量化方案。
+
+<div align="center">
+<img src="../images/smoothquant/table11.png" width="55%" alt="量化粒度对延迟的影响">
+</div>
+
+**迁移强度：$\alpha$ 超参数对精度的影响**。我们需要找到合适的迁移强度 $\alpha$（参见方程 4）来平衡权重和激活的量化难度。图 10 显示了在 OPT-175B 上使用 LAMBADA 测试不同 $\alpha$ 值的效果。当 $\alpha$ 过小（<0.4）时，激活难以量化；当 $\alpha$ 过大（>0.6）时，权重难以量化。只有在选择位于最佳平衡区间（0.4-0.6）的 $\alpha$ 时，才能同时减少权重和激活的量化误差，并在量化后保持模型性能。
+
+<div align="center">
+<img src="../images/smoothquant/migration_strength_alpha.png" width="55%" alt="不同迁移强度对量化模型精度的影响">
+</div>
 
 ## 参考资料
 
-- [AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration](https://arxiv.org/pdf/2306.00978)
-- [深入理解AWQ量化技术](https://zhuanlan.zhihu.com/p/697761176)
-- [https://github.com/mit-han-lab/llm-awq](https://github.com/mit-han-lab/llm-awq/tree/main)
+- [深入理解SmoothQuant量化技术](https://zhuanlan.zhihu.com/p/703928680)
+- [SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models](https://arxiv.org/pdf/2211.10438)
+- [https://github.com/mit-han-lab/smoothquant](https://github.com/mit-han-lab/smoothquant)
