@@ -11,6 +11,7 @@ categories: LLM_Compression
 - [2. 预备知识](#2-预备知识)
 - [3. 量化难点总结](#3-量化难点总结)
 - [4. SmoothQuant 算法](#4-smoothquant-算法)
+  - [4.1 SmoothQuant 算法实现及简单实验](#41-smoothquant-算法实现及简单实验)
 - [5. 实验](#5-实验)
   - [5.1 实验设置](#51-实验设置)
   - [5.2 量化后精度对比实验](#52-量化后精度对比实验)
@@ -150,6 +151,147 @@ $$
 <div align="center">
 <img src="../images/smoothquant/SmoothQuant_quantize_range.png" width="55%" alt="smoothquant_compute_process">
 </div>
+
+### 4.1 SmoothQuant 算法实现及简单实验
+
+下述代码对激活值、权重参数值进行了统计分析并可视化，以及应用了 smoothquant 后的平滑激活和权重统计值的可视化。
+
+```python
+import torch
+import numpy as np
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+from transformers import AutoModelForCausalLM, LlamaTokenizer
+
+# 加载模型和分词器
+def load_model_and_tokenizer(model_name, device):
+    tokenizer = LlamaTokenizer.from_pretrained(model_name)
+    tokenizer.pad_token = tokenizer.eos_token  # 设置 eos_token 为 pad_token
+    model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16).to(device)
+    model.eval()
+    return model, tokenizer
+
+# 运行推理并获取激活值和权重
+@torch.no_grad()
+def get_activations_and_weights(model, tokenizer, texts, device):
+    inputs = tokenizer(texts, return_tensors="pt", padding=True, truncation=True).to(device)
+    with torch.no_grad():
+        outputs = model(**inputs, output_hidden_states=True)
+    
+    print("outputs.hidden_states shape is ", len(outputs.hidden_states))
+    activation = outputs.hidden_states[-5].abs()[:, :100, :]  # 最后一层激活值，选择前100个token和通道
+    weight = model.model.layers[0].self_attn.k_proj.weight.abs()[:100, :]  # 第一层权重
+
+    print(f"activation shape is {activation.shape} self_attn.q_proj.weight shape is {weight.shape}")
+    return activation, weight
+
+# 计算 SmoothQuant 的缩放因子
+@torch.no_grad()
+def calculate_scales(activation, weight, alpha=0.5):
+    original_shape = activation.shape
+    act_reshaped = activation.view(-1, original_shape[-1]).abs().detach() # 将张量展平并取绝对值
+    act_max = torch.max(act_reshaped, dim=0)[0].float().cpu()  # 计算每个隐藏维度上的最大值并转移到 CPU
+    w_max = weight.max(dim=0)[0].clamp(min=1e-5)
+
+    print(f"act_max shape is {act_max.shape}, w_max shape is {w_max.shape}")
+    scales = act_max.pow(alpha) / w_max.pow(1 - alpha)
+    return scales
+
+# 应用 SmoothQuant 缩放因子到激活值和权重
+@torch.no_grad()
+def apply_smoothquant_scaling(activation, weight, scales):
+    smooth_activation = activation / scales.view(1, 1, -1)
+    smooth_weight = weight * scales.view(1, -1)
+    return smooth_activation, smooth_weight
+
+# 检测离群值并打印通道索引
+def find_outlier_channels(activation_sample, threshold=20):
+    mean = activation_sample.mean(dim=(0, 1))
+    std = activation_sample.std(dim=(0, 1))
+    z_scores = (activation_sample - mean) / std
+    outliers = torch.where(z_scores > threshold)
+    unique_channels = torch.unique(outliers[2])
+    print(f"离群值所在的通道索引: {unique_channels.tolist()}")
+
+# 3D 绘图函数
+def plot_3d(data, title, xlabel, ylabel, zlabel, color, ax, y_max):
+    x, y = np.meshgrid(np.arange(data.shape[1]), np.arange(data.shape[0]))
+    x, y = x.flatten(), y.flatten()
+    z = np.zeros_like(x)
+    dx = dy = 1
+    dz = data.flatten()
+    ax.bar3d(x, y, z, dx, dy, dz, color=color, zsort='average')
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_zlabel(zlabel)
+    ax.set_zlim(0, y_max)  # 设置统一的 y 轴范围
+
+# 主函数，执行各个步骤
+def main():
+    model_name = "/Users/zhg/llm-awq/hf_weight/llama-2-7b/"
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model, tokenizer = load_model_and_tokenizer(model_name, device)
+    
+    # 处理输入文本并获取激活值和权重
+    input_texts = [
+        "The quick brown fox jumps over the lazy dog.",
+        "Artificial intelligence is revolutionizing the world.",
+        "Large language models are powerful tools for NLP tasks."
+    ]
+    activation_sample, weight_sample = get_activations_and_weights(model, tokenizer, input_texts, device)
+    print(f"activation_sample shape is {activation_sample.shape} self_attn.q_proj.weight shape is {weight_sample.shape}")
+
+    # 检查离群值所在通道
+    find_outlier_channels(activation_sample)
+
+    # 计算 SmoothQuant 缩放因子并应用平滑转换
+    scales = calculate_scales(activation_sample, weight_sample)
+    print(f"scales shape is {scales.shape}")
+
+    smooth_activation_sample, smooth_weight_sample = apply_smoothquant_scaling(activation_sample, weight_sample, scales)
+    print(f"smooth_activation_sample shape is {smooth_activation_sample.shape} q_proj smooth_weight shape is {smooth_weight_sample.shape}")
+
+    # 确定所有图的统一 y 轴范围
+    y_max = max(
+        np.max(activation_sample.cpu().numpy()),
+        np.max(smooth_activation_sample.cpu().numpy()),
+        np.max(weight_sample.cpu().numpy()),
+        np.max(smooth_weight_sample.cpu().numpy())
+    )
+    
+    # 创建图表
+    fig = plt.figure(figsize=(18, 8))
+    
+    # 绘制原始和平滑后的激活值和权重
+    plot_titles = [
+        ("Activation (Original)\nHard to quantize", activation_sample[0], "brown"),
+        ("Activation (SmoothQuant)\nEasy to quantize", smooth_activation_sample[0], "blue"),
+        ("Weight (Original)\nVery easy to quantize", weight_sample, "blue"),
+        ("Weight (SmoothQuant)\nHarder but still easy to quantize", smooth_weight_sample, "blue")
+    ]
+    
+    for i, (title, data, color) in enumerate(plot_titles, start=1):
+        ax = fig.add_subplot(1, 4, i, projection='3d')
+        xlabel = "Channel" if "Activation" in title else "In Channel"
+        ylabel = "Token" if "Activation" in title else "Out Channel"
+        plot_3d(data.detach().cpu().numpy(), title, xlabel, ylabel, "Absolute Value", color, ax, y_max)
+    
+    # 添加主标题并保存图表
+    fig.suptitle("SmoothQuant Visualization", fontsize=16)
+    plt.tight_layout()
+    plt.subplots_adjust(top=0.85)
+    plt.savefig("llama2_7b_smoothquant_visualization2.png", format='png', dpi=300)
+    plt.show()
+
+if __name__ == "__main__":
+    main()
+```
+
+代码运行分别测试了好几个层的输入激活值和 q、k 线性层权重及其平滑后的可视化结果如下图所示，遗憾的是我的实验并没有复现出作者观察到的现象“离群值通常出现于特定通道”，只观察到了“激活值中存在离群值的现象“。
+
+![llama2_smoothquant_visualization](../images/smoothquant/llama2_smoothquant_visualization.png)
+![llama2_7b_smoothquant_visualization](../images/smoothquant/llama2_7b_smoothquant_visualization.png)
 
 ## 5. 实验
 
