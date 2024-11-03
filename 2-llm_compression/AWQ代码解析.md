@@ -496,65 +496,84 @@ zeros = (-torch.round(min_val / scales)).clamp_(min_int, max_int)
 ![WQLinear](../images/awq_code/WQLinear.png)
 
 其中 pack_intweight 函数通过一系列的 reshape、transpose 等操作把量化后的权重（unpacked_qweight）重新排列和打包，以优化在 CUDA 内核中的高效计算。代码如下所示:
+
+![packed_weight](../images/awq_code/packed_weight.png)
+
+之所以需要这样做是因为原始的量化权重通常以较低位数（如 4 位）存储，但在 pytorch 标准张量中，**每个元素通常占用至少 8 位或更多**。通过将多个低位权重打包到一个较大的数据类型（如 int16）中，可以显著减少内存占用。虽然这个函数的目的大致是理解的，但是这么多过程的必要性操作是真不懂，pytorch 高手的操作张量是真的复杂。
+
+先直接看下这个函数的效果吧，定义以下单元测试，并且测试代码运行成功。
+
 ```python
-def pack_intweight(unpacked_qweight, interleave, kstride):
-    # unpacked_qweight: [N, K]
-    N = unpacked_qweight.shape[0]
-    K = unpacked_qweight.shape[1]
+def test_pack_intweight_edge_case(self):
+    """
+    测试特殊情况下的打包，如所有权重都是最大值15或最小值0。
+    """
+    N = 8
+    K = 128
+    interleave = 4
+    kstride = 32
 
-    # Step 1: 重塑为 [N, K//32, 32]
-    Packed_Kernel = unpacked_qweight.cpu().numpy().reshape(N, K // 32, 32)
+    # 测试所有权重为15的情况
+    unpacked_qweight_max = torch.full((N, K), 15, dtype=torch.int64).to(self.device)
+    packed_qweight_max = pack_intweight(unpacked_qweight_max, interleave, kstride)
+    expected_packed_value_max = 15 | (15 << 4) | (15 << 8) | (15 << 12)
+    self.assertTrue(torch.all(packed_qweight_max == expected_packed_value_max),
+                    "Packed weight value mismatch when all weights are 15.")
 
-    # Step 2: 重塑为 [N, K//32, 4, 4, 2] 并转置轴为 [0, 1, 3, 2, 4]
-    Packed_Kernel = Packed_Kernel.reshape(N, K // 32, 4, 4, 2).transpose(0, 1, 3, 2, 4)
-
-    # Step 3: 重塑回 [N, K//32, 32]
-    Packed_Kernel = Packed_Kernel.reshape(N, K // 32, 32)
-
-    # Step 4: 重塑为 [N, K//32, 4, 8]
-    Packed_Kernel = Packed_Kernel.reshape(N, K // 32, 4, 8)
-
-    # Step 5: 重塑为 [N, K//32, 4, 4, 2] 并转置轴为 [0, 1, 2, 4, 3]
-    Packed_Kernel = Packed_Kernel.reshape(N, K // 32, 4, 4, 2).transpose(0, 1, 2, 4, 3)
-
-    # Step 6: 重塑回 [N, K]
-    Packed_Kernel = Packed_Kernel.reshape(N, K)
-
-    # Step 7: 每四行交错排列，重塑为 [N//interleave, interleave, K//kstride, kstride]
-    Packed_Kernel = Packed_Kernel.reshape(
-        N // interleave, interleave, K // kstride, kstride
-    )
-
-    # Step 8: 转置为 [N//interleave, K//kstride, interleave, kstride]
-    Packed_Kernel = Packed_Kernel.transpose(0, 2, 1, 3)
-
-    # Step 9: 重塑为 [N//interleave, K//kstride, kstride, interleave]
-    Packed_Kernel = Packed_Kernel.reshape(
-        N // interleave, K // kstride, kstride, interleave
-    )
-
-    # Step 10: 每四个权重打包为一个 int16，左移位并按位或操作
-    Packed_Kernel = (
-        Packed_Kernel[..., 0]
-        | (Packed_Kernel[..., 1] << 4)
-        | (Packed_Kernel[..., 2] << 8)
-        | (Packed_Kernel[..., 3] << 12)
-    )
-
-    # Step 11: 重塑为 [N//interleave, K]
-    Packed_Kernel = Packed_Kernel.reshape(N // interleave, K)
-
-    # Step 12: 转换为 int16 类型的张量，并移动到原设备
-    qweight = (
-        torch.tensor(Packed_Kernel.astype("int16"))
-        .to(unpacked_qweight.device)
-        .contiguous()
-    )
-    return qweight
+    # 测试所有权重为0的情况
+    unpacked_qweight_min = torch.zeros((N, K), dtype=torch.int64).to(self.device)
+    packed_qweight_min = pack_intweight(unpacked_qweight_min, interleave, kstride)
+    expected_packed_value_min = 0
+    self.assertTrue(torch.all(packed_qweight_min == expected_packed_value_min),
+                    "Packed weight value mismatch when all weights are 0.")
 ```
 
-之所以需要这样做是因为原始的量化权重通常以较低位数（如 4 位）存储，但在 pytorch 标准张量中，**每个元素通常占用至少 8 位或更多**。通过将多个低位权重打包到一个较大的数据类型（如 int16）中，可以显著减少内存占用。
-> 但如果是 C++/CUDA 推理框架，是否也许要这步呢？
+此外，我们的输入输出是这样的：
+```bash
+unpacked_qweight[0].shape
+torch.Size([128])
+unpacked_qweight_max[0]
+tensor([15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+        15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+        15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+        15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+        15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+        15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+        15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15, 15,
+        15, 15])
+
+packed_qweight_max[0].shape
+torch.Size([128])
+packed_qweight_max[0]
+array([65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535,
+       65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535,
+       65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535,
+       65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535,
+       65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535,
+       65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535,
+       65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535,
+       65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535,
+       65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535,
+       65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535,
+       65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535,
+       65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535,
+       65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535,
+       65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535,
+       65535, 65535])
+```
+
+很明显，在经过一系列权重打包处理后，4 个 INT4 大小的权重（实际存储为 8 位）的打包成 pytorch 的 `INT16` 类型，自然原来 INT4 权重的最大值由 15 变成 65535。权重
+> 如果是 C++/CUDA 推理框架，是否也许要这步呢？
+
+部分代码解释：
+
+1, `<<` 左移位操作符
+
+示例：`value << num`: value是运算对象，num 是要向左进行移位的位数，左移的时候在低位补0。其实左移n 位，就相当于乘以2 的 n 次方。比如 `120 << 4` 运算的结果是 1920 = 120 * 2^4。
+
+`>>>`   无符号右移位操作符
+
+示例: `value >>> num`: value是运算对象，num是要向右进行移位的位数，右移动的时候,无论正负，都在高位插入0；其实右移n 位，就相当于除以 2 的 n 次方。
 
 ## 参考资料
 
