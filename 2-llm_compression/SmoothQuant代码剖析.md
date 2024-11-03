@@ -28,6 +28,7 @@ categories: LLM_Compression
 - `mlp` 中的全部线性层以及激活层。
 
 到这里我们会发现，transformer 中没有被量化的只有 `Token Bmbedding` 层、`LayerNorm` 层（llama 中是 RMSNorm 层），我个人推测之所以不量化 Token Bmbedding 层，是因为其参数冗余性较小且不存在权重稀疏现象，这个通过可视化 Token Bmbedding 层的权重值统计分布可以观测得到。
+> 稀疏权重是指在一个权重矩阵中，大部分元素的值为零或接近零，只有少数元素的值显著不为零。
 
 <div align="center">
 <img src="../images/smoothquant/SmoothQuant_quantize_range.png" width="55%" alt="smoothquant_compute_process">
