@@ -117,6 +117,8 @@ LLM 推理服务框架技术总结和源码解析：
 kernel 编写笔记资料：
 
 - 最基本的通用矩阵乘法（gemm）：https://zhuanlan.zhihu.com/p/657632577
+- [kernl](https://github.com/ELS-RD/kernl/tree/main): 提供了一些 llm 的 triton 版 kernels
+- [unsloth](https://github.com/unslothai/unsloth/tree/main)： Llama 3.2 的微调框架，Gemma LLMs 速度提高 2-5 倍，内存减少 80%内核基于 triton 实现。
 
 ## 参考资料
 
