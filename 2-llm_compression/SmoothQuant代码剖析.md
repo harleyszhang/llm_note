@@ -18,6 +18,8 @@ categories: LLM_Compression
 - [三 总结](#三-总结)
 - [参考资料](#参考资料)
 
+总结：smoothquant 从实现角度可拆开成两部分： 逐通道 smooth（平滑）权重和逐-token/逐 tensor 量化权重。
+
 ## 一 量化范围和粒度
 
 ### 1.1 量化范围
