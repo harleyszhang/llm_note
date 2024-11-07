@@ -179,7 +179,7 @@ def get_activations_and_weights(model, tokenizer, texts, device):
         outputs = model(**inputs, output_hidden_states=True)
     
     print("outputs.hidden_states shape is ", len(outputs.hidden_states))
-    activation = outputs.hidden_states[-5].abs()[:, :100, :]  # 最后一层激活值，选择前100个token和通道
+    activation = outputs.hidden_states[-5].abs()[:, :100, :]  # 倒数第五个 decoder layer 激活值，并选择前 100 个token和所有通道的值（电脑性能受限没选全部）
     weight = model.model.layers[0].self_attn.k_proj.weight.abs()[:100, :]  # 第一层权重
 
     print(f"activation shape is {activation.shape} self_attn.q_proj.weight shape is {weight.shape}")
