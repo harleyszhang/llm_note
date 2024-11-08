@@ -10,8 +10,7 @@
 - [四 cuda graph](#四-cuda-graph)
 	- [4.1 源码剖析](#41-源码剖析)
 	- [4.2 总结](#42-总结)
-- [五 服务调度策略](#五-服务调度策略)
-- [六 预先多步批量调度策略](#六-预先多步批量调度策略)
+- [五 预先多步批量调度策略](#五-预先多步批量调度策略)
 - [性能基准测试](#性能基准测试)
 	- [测试配置](#测试配置)
 	- [基准测试结果](#基准测试结果)
@@ -325,13 +324,10 @@ def capture()：
 
 `cuda graph` 解决了可能存在的所有 CPU 开销的来源：**如用户编写的逻辑、PyTorch 调度逻辑、内存分配开销以及 GPU 驱动/内核开销**（静态图优势）。
 
-## 五 服务调度策略
 
-等待更新
+## 五 预先多步批量调度策略
 
-## 六 预先多步批量调度策略
-
-Batch scheduling multiple steps ahead（早期称 Multi-step Scheduling），本质上是一种**服务调度策略**，用来解决 GPU 空泡的问题，或者说 `python/cpu` 的 `overhead` 一直很大的问题。
+Batch scheduling multiple steps ahead（早期称 `Multi-step Scheduling`），本质上是一种**服务调度策略**，用来解决 GPU 空泡的问题，或者说 `python/cpu` 的 `overhead` 一直很大的问题。
 > vllm 的这种调度策略，其实早在 `TGI` 框架实现了类似的效果，而且就目前来看，`TGI` 的服务调度策略依然比 vllm 更灵活，具体算法请参考我的[文章](https://github.com/harleyszhang/llm_note/blob/main/3-llm_infer_deploy/llm_infer/tgi%E6%A1%86%E6%9E%B6%E7%AE%80%E5%8D%95%E6%80%BB%E7%BB%93.md)。
 
 准确的说，由于输入/输出的处理和生成的原因，**每个解码批次（`decoding batch`）都会带来较高的 CPU 开销**，带来的直接代价就是 `GPU` 常常处于空闲状态，等待 `CPU` 操作结束，这会产生 $5-13$ 毫秒的 `GPU` 空闲时间!

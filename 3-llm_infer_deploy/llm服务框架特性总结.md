@@ -22,6 +22,7 @@
     - `Chunked prefill`: 将超长 prompt 拆分成多个块并和内存密集型的 decode 请求一起处理。
 3. 支持 `weight-only` 的低比特量化 AWQ 及其他量化算法。
 4. 首次提出 `PagedAttention` kv cache 管理、分配算法，并已被广大 llm 推理服务框架应用！
+5. 支持种类极多的大语言文本模型和多模态模型。
 
 PagedAttention 的运行机制如下图所示:
 
@@ -37,11 +38,11 @@ PagedAttention 的运行机制如下图所示:
 - 框架扩展性强，推理层可定制大模型推理逻辑（你可以把推理层换成 lightllm，就可以复用 tgi 的高效服务调度模块）
 - 同样支持 `AWQ`、`GPTQ` 等量化算法。
 
-动态性能测试工具:
+动态（在线）性能测试工具:
 
 ![serving_test](../images/llm_serving_compare/serving_test.png)
 
-静态性能测试工具
+静态（离线）性能测试工具
 
 ![static_test](../images/llm_serving_compare/static_test.png)
 
