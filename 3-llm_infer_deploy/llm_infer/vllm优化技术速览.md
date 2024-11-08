@@ -14,10 +14,11 @@
 - [六 预先多步批量调度策略](#六-预先多步批量调度策略)
 - [性能基准测试](#性能基准测试)
 	- [测试配置](#测试配置)
-	- [Llama 3 8B on 1xA100](#llama-3-8b-on-1xa100)
-	- [Llama 3 70B on 4xA100](#llama-3-70b-on-4xa100)
-	- [Llama 3 8B on 1xH100](#llama-3-8b-on-1xh100)
-	- [Llama 3 70B on 4xH100](#llama-3-70b-on-4xh100)
+	- [基准测试结果](#基准测试结果)
+		- [Llama 3 8B on 1xA100](#llama-3-8b-on-1xa100)
+		- [Llama 3 70B on 4xA100](#llama-3-70b-on-4xa100)
+		- [Llama 3 8B on 1xH100](#llama-3-8b-on-1xh100)
+		- [Llama 3 70B on 4xH100](#llama-3-70b-on-4xh100)
 - [参考资料](#参考资料)
 
 vLLM 是一个快速且易于使用且大模型推理服务框架，声称有以下快速特性：
@@ -378,7 +379,27 @@ vllm-v0.6.0 版本的详细性能测试结果。
 
 将 vLLM v0.6.0 与 `TensorRT-LLM r24.07`、`SGLang v0.3.0` 和 `lmdeploy v0.6.0a0` 进行了基准测试。对于其他基准测试，我们使用其默认设置。对于 vLLM，作者设置了 `--num-scheduler-steps 10` 启用了**多步调度**功能，这个功能即将默认启用。
 
-### Llama 3 8B on 1xA100
+2，性能测试数据集
+
+使用以下三个数据集对不同的推理引擎进行基准测试：
+- `ShareGPT`：从 ShareGPT 数据集中随机抽取 500 条提示语，使用固定的随机种子。平均输入token 数为 202，平均输出 token 数为 179。
+- `Prefill-heavy` 数据集：从 sonnet 数据集中合成生成 500 条提示语，平均包含约 462 个输入 token 和 16 个输出token。
+- `Decode-heavy` 数据集：同样从 sonnet 数据集中合成生成 500 条提示语，平均包含约 462 个输入 token 和 256 个输出token。
+
+3，模型和硬件
+
+- 模型：Llama 3 8B 和 70B。
+- 硬件：使用 A100 和 H100 进行基准测试。
+
+4，评估指标：
+
+- `TTFT`（Time-to-first-token，单位：毫秒）：在图表中显示均值及均值的标准误差。
+- `TPOT`（Time-per-output-token，单位：毫秒）：在图表中显示均值及均值的标准误差。
+- **吞吐量**（单位：请求每秒）：吞吐量在 `QPS` inf（即所有请求同时到达）下进行测量。
+
+### 基准测试结果
+
+#### Llama 3 8B on 1xA100
 
 在 Llama 3 8B 上，
 - **从延时角度看**，vLLM 在 ShareGPT 和解码密集型数据集上与 TensorRT-LLM 和 SGLang 的 `TTFT` 和 `TPOT` 表现相当。相比其他 llm 推理服务引擎，LMDeploy 的 TPOT 较低，但其 TTFT 普遍较高。
@@ -388,7 +409,7 @@ vllm-v0.6.0 版本的详细性能测试结果。
 <img src="../../images/vllm_benchmark/A100_8B.png" width="65%" alt="A100_8B">
 </div>
 
-### Llama 3 70B on 4xA100
+#### Llama 3 70B on 4xA100
 
 在 Llama 3 70B 上，
 - **从延时看**，vLLM、SGLang 和 TensorRT-LLM 的 `TTFT` 和 `TPOT` 指标基本一致（LMDeploy 的 TPOT 较低，但 TTFT 较高）。
@@ -398,7 +419,7 @@ vllm-v0.6.0 版本的详细性能测试结果。
 <img src="../../images/vllm_benchmark/A100_70B.png" width="65%" alt="A100_70B">
 </div>
 
-### Llama 3 8B on 1xH100
+#### Llama 3 8B on 1xH100
 
 vLLM 在 ShareGPT 和解码密集型数据集上实现了 SOTA（当前最佳）的吞吐量表现，尽管在填充密集型数据集上的吞吐量稍低。
 
@@ -406,7 +427,7 @@ vLLM 在 ShareGPT 和解码密集型数据集上实现了 SOTA（当前最佳）
 <img src="../../images/vllm_benchmark/H100_8B.png" width="65%" alt="H100_8B">
 </div>
 
-### Llama 3 70B on 4xH100
+#### Llama 3 70B on 4xH100
 
 vLLM 在 ShareGPT 和解码密集型数据集上具有最高吞吐量（尽管仅略高于 TensorRT-LLM），但在填充密集型数据集上的吞吐量较低。
 
