@@ -4,6 +4,7 @@
   - [1.3 TensorRT-LLM](#13-tensorrt-llm)
     - [TensorRT-LLM 量化方法](#tensorrt-llm-量化方法)
   - [1.4 lightllm](#14-lightllm)
+  - [1.5 SGLang](#15-sglang)
 - [参考资料](#参考资料)
 
 
@@ -13,7 +14,7 @@
 
 ### 1.1 vllm
 
-[vllm](https://github.com/vllm-project/vllm)
+[vllm](https://github.com/vllm-project/vllm) 一些区别于其他框架或者自身做的好的特性：
 
 1. **从吞吐量角度看，作者称 `vllm` 在大部分模型和 GPU 上都是实现了 SOTA**。
 2. 在 `llm` 推理层面的优化算法和模型量化上，支持的比较全和快。如支持最新的：
@@ -30,7 +31,7 @@ PagedAttention 的运行机制如下图所示:
 
 ### 1.2 TGI
 
-[TGI](https://github.com/huggingface/text-generation-inference)
+[TGI](https://github.com/huggingface/text-generation-inference) 一些区别于其他框架或者自身做的好的特性：
 
 - 性能监测工具好用且优雅；
 - 目前我看到的**最优服务调度策略**，基于 rust 编写（高性能）；
@@ -48,7 +49,7 @@ PagedAttention 的运行机制如下图所示:
 
 ### 1.3 TensorRT-LLM
 
-仓库地址：[TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM)，官方文档地址: [TensorRT-LLM-guide](https://nvidia.github.io/TensorRT-LLM/quick-start-guide.html)
+仓库地址：[TensorRT-LLM](https://github.com/NVIDIA/TensorRT-LLM)，官方文档地址: [TensorRT-LLM-guide](https://nvidia.github.io/TensorRT-LLM/quick-start-guide.html)，一些区别于其他框架或者自身做的好的特性：
 
 1. **极致的 kernel 优化带来了 SOTA 的 latency 指标**（毕竟在 cuda 内核优化上，英伟达自家舍我其谁），具体来说：
     - `attention` 层：decode（generate）阶段的 attention 操作是 gemv，因为 seq_len = 1 的 MQA/GQA 无法充分发挥 tensor core 算力，提出一个新的 `XQA` kernel 用于做 logical shape 的变换 (`[bs,1,num q head,head dim]x[bs,k len,num kv head,head dim] => [bs, num kv head, num q head/num kv head, head dim]x[bs,num kv head,k len, head dim]`）。本质上是将 `batch gemv` 转换成 `batch gemm` 操作，以充分发挥 tensor core 算力。
@@ -79,7 +80,7 @@ TensorRT-LLM 量化方法主要包括三个核心部分：
 
 ### 1.4 lightllm
 
-[lightllm](https://github.com/ModelTC/lightllm)
+[lightllm](https://github.com/ModelTC/lightllm) 一些区别于其他框架或者自身做的好的特性：
 
 1. 首次提出 `tokenattention`，本质上是粒度为 `token` 级别的 `pagedattention` 优化，最大的特点是内存几乎零浪费。
 2. **多进程协同**：`tokenization`、模型推理、`detokenization` 等工作异步进行，大幅提高 GPU 利用率，减少 gpu 空泡现象。
@@ -88,6 +89,29 @@ TensorRT-LLM 量化方法主要包括三个核心部分：
 
 ![token_attn](../images/llm_serving_compare/token_attn.gif)
 
+### 1.5 SGLang
+
+SGLang 一些区别于其他框架或者自身做的好的特性：
+
+- 采用了编译器方式的设计。
+- 提出 `RadixAttention` 共享 `KVCache Prefix`。
+- 使用 `torch.compile` 技术优化 Latency，在基准测试中产生高达 1.5 倍的加速效果。
+- 支持 `LLaVA-OneVision` 模型，和 hf 推理相比，SGLang 实现了高达 4.5 倍的速度提升。
+- 针对 `DeepSeek` 团队提出的多头潜在注意力（`MLA` 一种新的注意力机制），做了权重吸收、分组解码内核、FP8 **批量矩阵乘法**（`MatMul`）、以及 FP8 键值缓存量化等优化工作，测试结果显示比基准系统提高了 3 到 7 倍。
+
+SGLang的整体架构，模块上分为前端和后端，整体功能上有 4 个大的功能分别为前端 SGLang 语言、RadixAttention、fast constrained decoding 和 API Speculative Execution。
+
+性能对比：
+
+和 vllm 相比，SGLang 在 Llama-70B 模型上的吞吐量实现了`3.1x` 倍的提升。Llama-70B 模型在 8xA100 上推理的吞吐量测试结果。
+
+![70b_bf16_throughput](../images/llm_serving_compare/70b_bf16_throughput.svg)
+
+更多性能基准测试请查阅官方博客。我仔细看了下，SGLang 团队宣称的吞吐量、latency 提升是在输入 tokens > 1024 和输出 tokens > 512 的情况，即同时处于 `Prefill-heavy` 和 `Decode-heay` 的数据集情况下的的性能测试结果。在日常聊天场景下的基准性能测试结果我在博客上没看到。
+> 个人推测在大 seq_len 和 output_len 上的提升可能是来源于 `kernel` 针对这种场景做了定制化优化，具体的话得去看 kernel 源码，并做消除实验对比，后面有时间再研究下。
+
 ## 参考资料
 
 - [漫谈TensorRT-LLM的关键技术 (未完待续)](https://zhuanlan.zhihu.com/p/917457226)
+- [SGLang v0.3 Release: 7x Faster DeepSeek MLA, 1.5x Faster torch.compile, Multi-Image/Video LLaVA-OneVision](https://lmsys.org/blog/2024-09-04-sglang-v0-3/)
+- [SGLang技术分析](https://zhuanlan.zhihu.com/p/711167552)
