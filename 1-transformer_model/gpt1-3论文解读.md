@@ -242,6 +242,7 @@ if __name__ == "__main__":
     # 因为没有加载权重，所以输出 text 是随机输出，但形状是对的，8 个 token
     # 输出 Once upon a timeurdue Smartstocks hereditarySpanishlect flourish
 ```
+
 ## 三 GPT3 论文解析
 
 GPT3 论文名字是“语言模型是 Few-Shot Learners”。论文的价值 = 新意度 * 有效性 * 问题的大小。
