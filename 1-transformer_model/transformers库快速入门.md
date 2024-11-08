@@ -10,6 +10,7 @@
   - [2.3 AutoClass](#23-autoclass)
     - [2.3.1 AutoTokenizer](#231-autotokenizer)
     - [2.3.2 AutoModel](#232-automodel)
+  - [tokenizer 用法](#tokenizer-用法)
 - [参考链接](#参考链接)
 
 ## 一 Transformers 术语
@@ -272,6 +273,25 @@ print(pt_model.config.id2label) # {0: '1 star', 1: '2 stars', 2: '3 stars', 3: '
 tensor([[0.0021, 0.0018, 0.0115, 0.2121, 0.7725],
        [0.2084, 0.1826, 0.1969, 0.1755, 0.2365]], grad_fn=<SoftmaxBackward0>)
 ```
+
+### tokenizer 用法
+
+使用分词器（tokenizer）**将输入文本转换为模型可处理的张量形式**。
+
+```python
+encoded_inputs = tokenizer.encode(input_text, return_tensors='pt')
+```
+作用： 将原始文本 `input_text` 转换为模型可接受的输入格式。
+
+参数：
+
+- `input_text`：待处理的原始文本字符串, 可以是字符串、字符串列表、token id 列表。类型要求：`Union[TextInput, PreTokenizedInput, EncodedInput]`
+- `return_tensors='pt'`：指定返回 PyTorch 的张量格式。
+
+返回值： 一个包含编码后文本的张量，形状为 (batch_size, sequence_length)。
+- `batch_size`：输入文本的数量。对于单个输入文本，batch_size 为 1。
+- `sequence_length`：编码后文本的长度，即标记（token）的数量。
+
 ## 参考链接
 
 1. [HuggingFace Transformers 官方文档](https://huggingface.co/docs/transformers/v4.29.1/zh/quicktour)
