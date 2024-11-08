@@ -11,8 +11,14 @@
 	- [4.1 源码剖析](#41-源码剖析)
 	- [4.2 总结](#42-总结)
 - [五 服务调度策略](#五-服务调度策略)
+- [六 预先多步批量调度策略](#六-预先多步批量调度策略)
+- [性能基准测试](#性能基准测试)
+	- [测试配置](#测试配置)
+	- [Llama 3 8B on 1xA100](#llama-3-8b-on-1xa100)
+	- [Llama 3 70B on 4xA100](#llama-3-70b-on-4xa100)
+	- [Llama 3 8B on 1xH100](#llama-3-8b-on-1xh100)
+	- [Llama 3 70B on 4xH100](#llama-3-70b-on-4xh100)
 - [参考资料](#参考资料)
-
 
 vLLM 是一个快速且易于使用且大模型推理服务框架，声称有以下快速特性：
 - `SOTA` 的 serving 吞吐量
@@ -85,7 +91,10 @@ PagedAttention 借助块表实现了灵活的内存共享机制。类似于进�
 
 理解静态批处理之前，先来回顾下 LLM 的推理过程：LLM 推理分为两个阶段：prefill 和 decode 阶段，严格来讲 decode 阶段才是循环迭代过程，每次循环都只生成一个 token。LLM 推理过程如下图所示：
 
-<img src="../../images/vllm_technology/llm_infer.png" width="40%" alt="llm infer">
+<div align="center">
+<img src="../../images/vllm_technology/llm_infer.png" width="50%" alt="llm infer">
+</div>
+
 
 llm 推理迭代过程有一些特点:
 
@@ -94,7 +103,9 @@ llm 推理迭代过程有一些特点:
 
 上图是一个序列的 llm 推理过程，下面再来看下传统的一个批次的 llm 推理过程，也叫静态批处理，表现出来就是，只有当前批次完全推理完，下一个批次的序列才能进行推理。但是这有个问题是，我们之前一个批次中，序列长度不一，输出 tokens 数也不一样，即迭代结束时间不一样，那这自然会造成 gpu 利用率不高。LLM 静态批处理示意图如下所示：
 
+<div align="center">
 <img src="../../images/vllm_technology/static_batch.png" width="70%" alt="static_batch infer">
+</div>
 
 上图显示了一个 batch_size = 4 的静态批处理过程。在第一次迭代（左侧），每个序列从提示 tokens（黄色）生成一个 token（蓝色）。经过几次迭代后（右侧），完成的各序列长度不同，因为每个序列在不同迭代中发出各自的终止 token（红色）。尽管序列 3 在两次迭代后就完成了，但静态批处理意味着之前分配的 GPU 线程资源将一直未被充分利用，直到批次中的最后一个序列完成生成（在此示例中，为六次迭代后完成的序列 2）。
 
@@ -106,7 +117,9 @@ llm 推理迭代过程有一些特点:
 
 连续批出理技术的原理是动态调整迭代过程中的批次大小，不再等待批次中的所有序列都完成生成才推理下一个批次，而是根据每次迭代序列的完成情况和当前剩余显存资源来确定当前批次大小，批次中的部分序列完成后，新的序列可以立即插入其位置，这样有效避免了 GPU 空转。
 
+<div align="center">
 <img src="../../images/vllm_technology/continuous_batching.png" width="70%" alt="static_batch infer">
+</div>
 
 上图显示了通过连续批处理技术连续完成 7 个序列的推理情况。左图显示了第一次迭代后的批次，右图显示了几次迭代后的批次。每当一个序列发出终止 token 时，我们会将一个新的序列插入其位置（例如序列 S5、S6 和 S7），这样 GPU 无需等待所有序列完成即可开始处理新的序列，从而实现更高的 GPU 利用率。
 
@@ -149,7 +162,7 @@ CUDA Graph 是 NVIDIA 在 CUDA 10 中引入的一种新特性，旨在优化 GPU
 
 ### 4.1 源码剖析
 
-下面是我针对 llama 仓库上应用 cuda graph 的代码分析。
+下面是我针对 `llama` 仓库上应用 cuda graph 的代码分析。
 
 1，`ModelRunner` 类实际是对之前 `Model` 类的包装，封装了模型的前向传播逻辑，并管理与推理相关的资源。其中 `execute_model` 推理执行函数是核心，其负责接收输入数据，执行模型的前向传播，输出结果是 `sample` 采样后的结果，而不是模型推理结果 `logits`。`ModelRunner` 类的初始化如下所示：
 
@@ -196,7 +209,7 @@ else:
 
 到这里，还有一个问题就是 `self.graph_runners` 是在哪里完成初始化的，按照学习 cuda graph 的经验，`self.graph_runners` 一般是在 `capture_model` 函数中完成初始化。且以往简单模型推理场景我们习惯把 `capture_model` 函数定义在 `ModelRunner` 类中，但在 vllm 中，`capture_model` 是定义在 `GPUModelRunnerBase` 中。
 
-2，`GPUModelRunnerBase` 类是一个**基类**，它提供了模型加载、初始化等核心功能，为子类如 ModelRunner 和 CUDAGraphRunner 提供了通用的操作接口。和 cuda graph 优化相关的是 `capture_model` 函数，其核心实现逻辑代码如下所示:
+2，`GPUModelRunnerBase` 类是一个**基类**，它提供了模型加载、初始化等核心功能，为子类如 `ModelRunner` 和 `CUDAGraphRunner` 提供了通用的操作接口。和 cuda graph 优化相关的是 `capture_model` 函数，其核心实现逻辑代码如下所示:
 
 ```python
 # 代码有所省略
@@ -276,7 +289,9 @@ class GPUModelRunnerBase():
 - `CUDA` 图捕获： 将模型的前向传播过程捕获为 CUDA 图。
 - 图执行： 在推理过程中，执行已实例化的 CUDA 图，提高执行效率。
 
-![CUDAGraphRunner class](../../images/cuda_graph/CUDAGraphRunner_class.png)
+<div align="center">
+<img src="../../images/cuda_graph/CUDAGraphRunner_class.png" width="60%" alt="CUDAGraphRunner class">
+</div>
 
 其中关键的 `capture` 函数看起来代码很多，但核心逻辑就是执行捕获 `graph` 和定义输入输出 `placeholder` 的操作，具体的精简版代码如下所示：
 
@@ -313,6 +328,92 @@ def capture()：
 
 等待更新
 
+## 六 预先多步批量调度策略
+
+Batch scheduling multiple steps ahead（早期称 Multi-step Scheduling），本质上是一种**服务调度策略**，用来解决 GPU 空泡的问题，或者说 `python/cpu` 的 `overhead` 一直很大的问题。
+> vllm 的这种调度策略，其实早在 `TGI` 框架实现了类似的效果，而且就目前来看，`TGI` 的服务调度策略依然比 vllm 更灵活，具体算法请参考我的[文章](https://github.com/harleyszhang/llm_note/blob/main/3-llm_infer_deploy/llm_infer/tgi%E6%A1%86%E6%9E%B6%E7%AE%80%E5%8D%95%E6%80%BB%E7%BB%93.md)。
+
+准确的说，由于输入/输出的处理和生成的原因，**每个解码批次（`decoding batch`）都会带来较高的 CPU 开销**，带来的直接代价就是 `GPU` 常常处于空闲状态，等待 `CPU` 操作结束，这会产生 $5-13$ 毫秒的 `GPU` 空闲时间!
+
+具体讲就是 GPU 在每次从 CPU 接收下一步的输入，以及从 GPU 传输采样后的 token，到 CPU 生成用户响应时，都会产生一定的 “GPU bubble”（GPU 等待 CPU 处理的时间，5-13ms of GPU bubble），这部分空泡时间具体是这四个：
+
+- 将采样到的 token 从 GPU 传送到 CPU 进行反标记化并返回客户端
+- 生成用户所需的输出——将张量转换为 Python 对象
+- CPU 准备并生成下一步的输入元数据
+- vLLM 调度器（vLLM scheduler）
+
+由此，作者提出**多步解码调度**优化，即在调用 `vLLM` 调度器并处理采样的 `tokens` 之前，**执行多次解码**，从而将这些开销均摊到每 $n$ 步解码中。
+
+<div align="center">
+<img src="../../images/vllm_technology/illustration-multi-step.png" width="70%" alt="illustration-multi-step">
+</div>
+
+下方两个图是官方提供的对比图，这两个时长大约为 200ms。第一行是 CUDA 核心操作，底部是 Python 跟踪。每个红框大约代表 4ms 的 GPU 空闲时间，两张图均如此。
+
+首先是 baseline，每个 decode 步骤都会导致 4 ms的 GPU 空泡（使用 Pytorch profiler 打印）：
+
+<div align="center">
+<img src="../../images/vllm_technology/torch_profiles.png" width="70%" alt="torch_profiles">
+</div>
+
+使用 Multi-Step-8 之后，4ms 的开销仅在每 `8` 次解码中出现一次：
+
+<div align="center">
+<img src="../../images/vllm_technology/multi-step-torch-profiles.png" width="70%" alt="Multi-Step-8 8B on 1xH100">
+</div>
+
+具体的吞吐量提升效果如下表所示：
+
+<div align="center">
+<img src="../../images/vllm_technology/illustration-multi-step-effect.png" width="50%" alt="illustration-multi-step-effect">
+</div>
+
+## 性能基准测试
+
+vllm-v0.6.0 版本的详细性能测试结果。
+
+### 测试配置
+
+1，llm 推理服务引擎
+
+将 vLLM v0.6.0 与 `TensorRT-LLM r24.07`、`SGLang v0.3.0` 和 `lmdeploy v0.6.0a0` 进行了基准测试。对于其他基准测试，我们使用其默认设置。对于 vLLM，作者设置了 `--num-scheduler-steps 10` 启用了**多步调度**功能，这个功能即将默认启用。
+
+### Llama 3 8B on 1xA100
+
+在 Llama 3 8B 上，
+- **从延时角度看**，vLLM 在 ShareGPT 和解码密集型数据集上与 TensorRT-LLM 和 SGLang 的 `TTFT` 和 `TPOT` 表现相当。相比其他 llm 推理服务引擎，LMDeploy 的 TPOT 较低，但其 TTFT 普遍较高。
+- **从吞吐量来看**，TensorRT-LLM 在所有引擎中具有最高的吞吐量，而 vLLM 在 ShareGPT 和解码密集型数据集上的吞吐量位列第二。
+
+<div align="center">
+<img src="../../images/vllm_benchmark/A100_8B.png" width="65%" alt="A100_8B">
+</div>
+
+### Llama 3 70B on 4xA100
+
+在 Llama 3 70B 上，
+- **从延时看**，vLLM、SGLang 和 TensorRT-LLM 的 `TTFT` 和 `TPOT` 指标基本一致（LMDeploy 的 TPOT 较低，但 TTFT 较高）。
+- 从吞吐量来看，vLLM 在 ShareGPT 数据集上实现了最高吞吐量，并且在其他数据集上的吞吐量与其他引擎相当。
+
+<div align="center">
+<img src="../../images/vllm_benchmark/A100_70B.png" width="65%" alt="A100_70B">
+</div>
+
+### Llama 3 8B on 1xH100
+
+vLLM 在 ShareGPT 和解码密集型数据集上实现了 SOTA（当前最佳）的吞吐量表现，尽管在填充密集型数据集上的吞吐量稍低。
+
+<div align="center">
+<img src="../../images/vllm_benchmark/H100_8B.png" width="65%" alt="H100_8B">
+</div>
+
+### Llama 3 70B on 4xH100
+
+vLLM 在 ShareGPT 和解码密集型数据集上具有最高吞吐量（尽管仅略高于 TensorRT-LLM），但在填充密集型数据集上的吞吐量较低。
+
+<div align="center">
+<img src="../../images/vllm_benchmark/H100_70B.png" width="65%" alt="H100_70B">
+</div>
+
 ## 参考资料
 
 - [How continuous batching enables 23x throughput in LLM inference while reducing p50 latency](https://www.anyscale.com/blog/continuous-batching-llm-inference)
@@ -320,3 +421,5 @@ def capture()：
 - [Prompt Cache: Modular Attention Reuse for Low-Latency Inference](https://arxiv.org/abs/2311.04934)
 - [浅谈cuda graph在llm推理中的应用](https://zhuanlan.zhihu.com/p/715863693)
 - [Speed, Python: Pick Two. How CUDA Graphs Enable Fast Python Code for Deep Learning](https://fireworks.ai/blog/speed-python-pick-two-how-cuda-graphs-enable-fast-python-code-for-deep-learning)
+- [vLLM v0.6.0: 2.7x Throughput Improvement and 5x Latency Reduction](https://blog.vllm.ai/2024/09/05/perf-update.html)
+- [vLLM这一年的新特性以及后续规划](https://mp.weixin.qq.com/s/ISltFRwFSNlgsnrzUnBTiw)
