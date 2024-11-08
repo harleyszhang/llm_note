@@ -39,11 +39,11 @@ PagedAttention 的运行机制如下图所示:
 
 动态性能测试工具:
 
-![serving_test](../images/tgi_test/serving_test.png)
+![serving_test](../images/llm_serving_compare/serving_test.png)
 
 静态性能测试工具
 
-![static_test](../images/tgi_test/static_test.png)
+![static_test](../images/llm_serving_compare/static_test.png)
 
 ### 1.3 TensorRT-LLM
 
