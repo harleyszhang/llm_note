@@ -1,24 +1,24 @@
 - [一 PagedAttention](#一-pagedattention)
-	- [1.1 PagedAttention 方案](#11-pagedattention-方案)
-	- [1.2 PagedAttention 的内存共享优势](#12-pagedattention-的内存共享优势)
-	- [1.3 和 TokenAttention 的区别](#13-和-tokenattention-的区别)
+  - [1.1 PagedAttention 方案](#11-pagedattention-方案)
+  - [1.2 PagedAttention 的内存共享优势](#12-pagedattention-的内存共享优势)
+  - [1.3 和 TokenAttention 的区别](#13-和-tokenattention-的区别)
 - [二 连续批处理](#二-连续批处理)
-	- [2.1 静态批处理概述](#21-静态批处理概述)
-	- [2.2 动态批处理方案](#22-动态批处理方案)
+  - [2.1 静态批处理概述](#21-静态批处理概述)
+  - [2.2 动态批处理方案](#22-动态批处理方案)
 - [三 Prefix Caching: RadixAttention](#三-prefix-caching-radixattention)
-	- [prefix caching](#prefix-caching)
+  - [prefix caching](#prefix-caching)
 - [四 cuda graph](#四-cuda-graph)
-	- [4.1 源码剖析](#41-源码剖析)
-	- [4.2 cuda graph 实践](#42-cuda-graph-实践)
-	- [4.3 总结](#43-总结)
+  - [4.1 源码剖析](#41-源码剖析)
+  - [4.2 cuda graph 实践](#42-cuda-graph-实践)
+  - [4.3 总结](#43-总结)
 - [五 预先多步批量调度策略](#五-预先多步批量调度策略)
 - [性能基准测试](#性能基准测试)
-	- [测试配置](#测试配置)
-	- [基准测试结果](#基准测试结果)
-		- [Llama 3 8B on 1xA100](#llama-3-8b-on-1xa100)
-		- [Llama 3 70B on 4xA100](#llama-3-70b-on-4xa100)
-		- [Llama 3 8B on 1xH100](#llama-3-8b-on-1xh100)
-		- [Llama 3 70B on 4xH100](#llama-3-70b-on-4xh100)
+  - [测试配置](#测试配置)
+  - [基准测试结果](#基准测试结果)
+    - [Llama 3 8B on 1xA100](#llama-3-8b-on-1xa100)
+    - [Llama 3 70B on 4xA100](#llama-3-70b-on-4xa100)
+    - [Llama 3 8B on 1xH100](#llama-3-8b-on-1xh100)
+    - [Llama 3 70B on 4xH100](#llama-3-70b-on-4xh100)
 - [参考资料](#参考资料)
 
 vLLM 是一个快速且易于使用且大模型推理服务框架，声称有以下快速特性：
@@ -284,11 +284,11 @@ class GPUModelRunnerBase():
    - 捕获 CUDA Graph：在前向传播上下文中，使用 `graph_runner.capture(**capture_inputs)` 捕获模型的执行过程;
    - 存储捕获的 `CUDA Graph`: self.graph_runners[batch_size] = graph_runner。
 
-3，`CUDAGraphRunner` 是 ModelRunner 的扩展类，目的是利用 CUDA 图（CUDA Graph）技术优化模型的推理执行。其包括三个函数 `__init__`、`capture` 和 `forward`，对应功能如下：
+3，`CUDAGraphRunner` 是 `ModelRunner` 的扩展类，目的是利用 CUDA 图（CUDA Graph）技术优化模型的推理执行。其包括三个函数 `__init__`、`capture` 和 `forward`，对应功能如下：
 
 - 图(`graph`)实例化： 对捕获的 CUDA 图进行实例化，生成可执行的图实例。
 - `CUDA` 图捕获： 将模型的前向传播过程捕获为 CUDA 图。
-- 图执行： 在推理过程中，执行已实例化的 CUDA 图，提高执行效率。
+- 图执行：在推理过程中，执行已实例化的 `CUDA` 图，提高执行效率。
 
 <div align="center">
 <img src="../../images/cuda_graph/CUDAGraphRunner_class.png" width="60%" alt="CUDAGraphRunner class">
@@ -323,7 +323,7 @@ def capture()：
 
 ### 4.2 cuda graph 实践
 
-基于 gpt2 模型的推理应用 cuda graph 优化的代码如下所示:
+基于 `gpt2` 模型的推理应用 `cuda graph` 优化的代码如下所示:
 
 ```python
 import torch
