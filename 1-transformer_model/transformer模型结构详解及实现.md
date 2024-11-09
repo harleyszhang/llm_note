@@ -1,3 +1,10 @@
+---
+layout: post
+title: transformer 模型结构详解及实现
+date: 2024-10-20 20:00:00
+summary: transformer 模型结构代码如何实现，模型结构分析。
+categories: Transformer
+---
 
 - [一 前言](#一-前言)
   - [1.1 Transformer 简要发展史](#11-transformer-简要发展史)
@@ -264,9 +271,17 @@ Encoder 和 Decoder 结构中公共的 `layer` 之一是 `Multi-Head Attention`�
 
 `Self-Attention` 中文翻译为**自注意力机制**，论文中叫作 `Scale Dot Product Attention`，它是 Transformer 架构的核心，其结构如下图所示：
 
-<center>
+<div align="center">
 <img src="../images/transformer_code/scale_dot_product_attention.jpeg" width="60%" alt="../images/transformer_code/scale_dot_product_attention.jpeg">
-</center>
+</div>
+
+通过上述结构图，我们可以知道自注意力的计算步骤如下所示：
+
+0. 线性变换：输入序列通过三个线性层分别生成查询（Query）、键（Key）和值（Value）矩阵。
+1. 计算注意力得分（并除以 $\sqrt{d_k}$）：查询矩阵与键矩阵的转置相乘，得到注意力得分矩阵。
+2. 应用掩码：根据任务需求应用掩码，过滤掉不需要关注的位置（如未来位置或填充位置）。
+3. 归一化：通过 softmax 函数将注意力得分归一化为概率分布。
+4. 加权求和：将归一化后的注意力得分与值矩阵相乘，得到最终的注意力输出。
 
 那么重点来了，第一个问题：Self-Attention 结构的最初输入 **Q(查询), K(键值), V(值)** 这三个矩阵怎么理解呢？其代表什么，通过什么计算而来？
 
@@ -337,9 +352,9 @@ Multi-Head Attention (`MHA`) 是基于 Self-Attention (`SA`) 的一种变体。M
 
 下图是论文中 Multi-Head Attention 的结构图。
 
-<center>
+<div align="center">
 <img src="../images/transformer_code/multi-head-attention3.png" width="60%" alt="multi_head_attention">
-</center>
+</div>
 
 从图中可以看出， `MHA` 结构的计算过程可总结为下述步骤:
 
@@ -441,9 +456,9 @@ $$
 $$
 Add 比较简单，这里重点讲下 Layer Norm 层。Layer Norm 是一种常用的神经网络归一化技术，可以使得模型训练更加稳定，收敛更快。它的主要作用是对每个样本**在特征维度上进行归一化**，减少了不同特征之间的依赖关系，提高了模型的泛化能力。Layer Norm 层的计算可视化如下图所示:
 
-<center>
+<div align="center">
 <img src="../images/transformer_code/layer_norm.jpeg" width="60%" alt="Layer Norm">
-</center>
+</div>
 
 Layer Norm 层的 Pytorch 实现代码如下所示:
 
@@ -514,7 +529,7 @@ class PositionwiseFeedForward(nn.Module):
 
 基于前面 Multi-Head Attention, Feed Forward, Add & Norm 的内容我们可以完整的实现 Encoder 结构。
 
-<img src="../images/transformer_code/decoders.png" alt="decoders" style="zoom: 50%;" >
+<img src="../images/transformer_code/decoders.png" alt="decoders" style="zoom: 50%;" />
 
 Encoder 组件的 Pytorch 实现代码如下所示:
 
@@ -663,7 +678,7 @@ Transformer 模型特性：
 
 ### 5.1 Transformer 完整代码实现
 
-基于前面实现的 Encoder 和 Decoder 组件，我们可以实现 Transformer 模型的完整代码，如下所示:
+基于前面实现的 `Encoder` 和 `Decoder` 组件，我们就可以实现 Transformer 模型的完整代码，如下所示:
 
 ```python
 import torch
@@ -735,6 +750,8 @@ class Transformer(nn.Module):
 
         return mask
 ```
+
+总结：到此，本文详细分析了 transformer 架构以及各个 layer 的结构，并基于 pytorch 实现了 transformer 结构代码。后续想深入理解 transformer 的清晰计算过程，可以参考这个 [github 文档](https://github.com/hkproj/pytorch-llama/blob/main/Slides.pdf)。
 
 ## 参考资料
 
