@@ -17,6 +17,7 @@ categories: Transformer
     - [1.2.3 TransformerEmbedding 层实现](#123-transformerembedding-层实现)
 - [二 Multi-Head Attention 结构](#二-multi-head-attention-结构)
   - [2.1 Self-Attention 结构](#21-self-attention-结构)
+  - [Q/K/T 如何理解](#qkt-如何理解)
   - [2.2 Self-Attention 实现](#22-self-attention-实现)
   - [2.3 Multi-Head Attention](#23-multi-head-attention)
   - [2.4 Multi-Head Attention 实现](#24-multi-head-attention-实现)
@@ -277,11 +278,59 @@ Encoder 和 Decoder 结构中公共的 `layer` 之一是 `Multi-Head Attention`�
 
 通过上述结构图，我们可以知道自注意力的计算步骤如下所示：
 
-0. 线性变换：输入序列通过三个线性层分别生成查询（Query）、键（Key）和值（Value）矩阵。
-1. 计算注意力得分（并除以 $\sqrt{d_k}$）：查询矩阵与键矩阵的转置相乘，得到注意力得分矩阵。
-2. 应用掩码：根据任务需求应用掩码，过滤掉不需要关注的位置（如未来位置或填充位置）。
-3. 归一化：通过 softmax 函数将注意力得分归一化为概率分布。
-4. 加权求和：将归一化后的注意力得分与值矩阵相乘，得到最终的注意力输出。
+对输入 tokens 进行线性变换，即输入序列通过三个线性层分别生成查询（Query）、键（Key）和值（Value）矩阵。
+
+1. 计算注意力得分：查询矩阵与键矩阵的转置相乘，得到注意力得分矩阵。
+2. 缩放：除以 $\sqrt{d_k}$
+3. 应用掩码：根据任务需求应用掩码，将未来位置或填充位置对应值置为 `-inf`。
+4. 归一化：通过 `softmax` 函数将注意力得分归一化为概率分布。
+5. 加权求和：将归一化后的注意力得分与值矩阵相乘，得到最终的注意力输出。
+
+self-attention 的矩阵计算形式如下图所示:
+
+![self-attention-matrix-calculation](../images/transformer_code/self-attention-matrix-calculation-2.png)
+
+其中关于 mask 的作用可以这样理解，因为是因果模型，所以我们只需要关注当前 token 与之前 token 的注意力关系，而无需理会它与后续 token 的关系。假设 batch_size = 1, seq_len = 4, embedding_dim = 3, self-attention 的计算过程拆解及可视化如下所示。
+> 缩放即除以 $\sqrt{d_k}$ 的操作没有展示。
+
+**计算注意力得分**。在三个线性层对输入矩阵 $X$ 做线性变换得到 Q、K、V 矩阵后，执行 $QK^T$ 计算。
+
+![Q乘以K的转置](../images/transformer_code/QKT.png)
+
+**应用掩码**。在 Softmax 操作之前需要先使用 `Mask` 矩阵遮挡住每一个单词之后的信息，masked 矩阵和应用遮挡操作的可视化如下所示：
+
+![输入矩阵与 Mask 矩阵](../images/transformer_code/masked_matrix.png)
+![在 softmax 之前应用 mask 操作](../images/transformer_code/masked_qkt.png)
+
+代码实现分为两步：**创建 masked 矩阵和应用 masked 矩阵到 $QK^T$ 结果上**。
+
+```python
+>>> import torch
+>>> seq_len = 4
+>>> qkt = torch.randn([seq_len, seq_len])
+>>> masked = torch.triu(torch.ones([seq_len, seq_len])
+>>> masked
+tensor([[1., 1., 1., 1.],
+        [0., 1., 1., 1.],
+        [0., 0., 1., 1.],
+        [0., 0., 0., 1.]])
+>>> qkt = qkt.masked_fill(masked == 0, float('-inf'))
+>>> qkt
+tensor([[-0.0881,  0.8683, -0.4806,  0.1423],
+        [   -inf,  0.4457, -0.1422,  1.2504],
+        [   -inf,    -inf,  0.3100,  1.5813],
+        [   -inf,    -inf,    -inf, -1.8580]])
+```
+
+**softmax 归一化**。得到 $\text{Mask}$ $QK^T$ 之后在 $\text{Mask}$ $QK^T$ 上进行 Softmax，每一行的和都为 1。但是单词 0 在单词 1, 2, 3, 4 上的 `attention score` 都为 0。这符合我们因果模型的性质，毕竟我们只关心当前 token 与之前 token 的注意力（相似度）关系！
+
+**加权求和**。使用 $\text{Mask}$ $QK^T$ 与矩阵 $V$ 相乘，得到输出 $Z$，则单词 1 的输出向量 $Z_1$ 是只包含单词 1 信息的!
+
+![Mask 之后的计算PV](../images/transformer_code/compute-PV.png)
+
+经过上述 `self-attention` 步骤就可以得到一个 Mask Self-Attention 的输出矩阵 $Z_i$，然后再通过 Multi-Head Attention 拼接多个输出然后计算得到第一个 Multi-Head Attention 的输出 $Z$，`MHA` 输出 $Z$ 与输入 $X$ 形状一样，即 `MHA` 不会改变输入张量的形状！
+
+### Q/K/T 如何理解
 
 那么重点来了，第一个问题：Self-Attention 结构的最初输入 **Q(查询), K(键值), V(值)** 这三个矩阵怎么理解呢？其代表什么，通过什么计算而来？
 
