@@ -1,12 +1,20 @@
-- [self-attention 结构](#self-attention-结构)
-  - [Q/K/T 如何理解](#qkt-如何理解)
-- [mask 原理](#mask-原理)
-- [如何应用 mask](#如何应用-mask)
-- [实现 Masked Attention](#实现-masked-attention)
+---
+layout: post
+title: masked-attention 算法详解
+date: 2024-11-10 05:30:00
+summary: Casual Mask 机制的本质是为了构建下三角（上三角）的注意力分数矩阵，从而实现因果模型只关注当前 token 与之前 token 的注意力关系，而不理会它与后续 token 的关系，即只"看"当前及前面的 tokens。
+categories: Transformer
+---
+
+- [1. self-attention 结构](#1-self-attention-结构)
+  - [1.1 Q/K/T 的一些问题](#11-qkt-的一些问题)
+- [2. mask 原理](#2-mask-原理)
+  - [2.1 创建及应用 mask](#21-创建及应用-mask)
+- [3. 实现 masked-attention](#3-实现-masked-attention)
   - [总结](#总结)
 - [参考资料](#参考资料)
 
-### self-attention 结构
+### 1. self-attention 结构
 
 `Self-Attention` 中文翻译为**自注意力机制**，论文中叫作 `Scale Dot Product Attention`，它是 Transformer 架构的核心，其结构如下图所示：
 
@@ -14,22 +22,20 @@
 <img src="../images/transformer_code/scale_dot_product_attention.jpeg" width="60%" alt="../images/transformer_code/scale_dot_product_attention.jpeg">
 </div>
 
-通过上述结构图，我们可以知道自注意力的计算步骤如下所示：
-
-对输入 tokens 进行线性变换，即输入序列通过三个线性层分别生成查询（Query）、键（Key）和值（Value）矩阵。
+通过上述结构图，我们拆解下自注意力的计算步骤：
+> 对输入 tokens 进行线性变换，即输入序列通过三个线性层分别生成查询（Query）、键（Key）和值（Value）矩阵。
 
 1. 计算注意力得分：查询矩阵与键矩阵的转置相乘，得到注意力得分矩阵。
-2. 缩放：除以 $\sqrt{d_k}$
+2. 缩放(`scale`)：除以 $\sqrt{d_k}$
 3. 应用掩码：根据任务需求应用掩码，将未来位置或填充位置对应值置为 `-inf`。注意，对于训练无需 mask 操作，对于 推理只有 `prefill` 阶段需要 `mask`，用了 kv cache 优化的 `decode` 阶段不需要 `mask` 操作。
 4. 归一化：通过 `softmax` 函数将注意力得分归一化为概率分布。
 5. 加权求和：将归一化后的注意力得分与值矩阵相乘，得到最终的注意力输出。
 
-self-attention 的矩阵计算形式如下图所示:
+`self-attention` 的矩阵形式的计算如下图所示:
 
 ![self-attention-matrix-calculation](../images/transformer_code/self-attention-matrix-calculation-2.png)
 
-假设 batch_size = 1, seq_len = 4, embedding_dim = 3, self-attention 的计算过程拆解及可视化如下所示。
-> 缩放即除以 $\sqrt{d_k}$ 的操作没有展示。
+假设 batch_size = 1, seq_len = 4, embedding_dim = 3, self-attention 的计算过程（忽略 `scale`）拆解及可视化如下所示。
 
 **计算注意力得分**。在三个线性层对输入矩阵 $X$ 做线性变换得到 Q、K、V 矩阵后，执行 $QK^T$ 计算。
 
@@ -48,7 +54,7 @@ self-attention 的矩阵计算形式如下图所示:
 
 经过上述 `self-attention` 步骤就可以得到一个 Mask Self-Attention 的输出矩阵 $Z_i$，然后再通过 Multi-Head Attention 拼接多个输出然后计算得到第一个 Multi-Head Attention 的输出 $Z$，`MHA` 输出 $Z$ 与输入 $X$ 形状一样，即 `MHA` 不会改变输入张量的形状！
 
-#### Q/K/T 如何理解
+#### 1.1 Q/K/T 的一些问题
 
 那么重点来了，第一个问题：Self-Attention 结构的最初输入 **Q(查询), K(键值), V(值)** 这三个矩阵怎么理解呢？其代表什么，通过什么计算而来？
 
@@ -56,11 +62,11 @@ self-attention 的矩阵计算形式如下图所示:
 
 第二个问题：Self-Attention 结构怎么理解，Q、K、V的作用是什么？这三个矩阵又怎么计算得到最后的输出？
 
-在计算 Self-Attention 时，Q、K、V 被用来**计算注意力分数**，即用于表示**当前位置和其他位置之间的关系**。注意力分数可以通过 Q 和 K 的点积来计算，然后将分数除以 `8`，再经过一个 softmax 归一化处理，得到每个位置的权重。然后用这些权重来加权计算 V 的加权和，即得到当前位置的输出。
+在计算 Self-Attention 时，Q、K、V 被用来**计算注意力分数**，即用于表示**当前位置和其他位置之间的关系**。注意力分数可以通过 Q 和 K 的点积来计算，然后将分数除以 $\sqrt{ \text{head\_dim}}$，再经过一个 `softmax` 归一化处理，得到每个位置的权重。然后用这些权重来加权计算 V 的加权和，即得到当前位置的输出。
 
-> 将分数除以 8 的操作，对应图中的 `Scale` 层，这个参数 8 是 K 向量维度 64 的平方根结果。
+> 将注意分数分数除以 $\sqrt{ \text{head\_dim}}$ 的操作，对应 self-attention 结构图中的 `Scale` 层。
 
-### mask 原理
+### 2. mask 原理
 
 之所以需要 mask 是因为，**对于因果模型来说，只需要关注当前 token 与之前 token 的注意力关系，而无需理会它与后续 token 的关系**，基于此这种模型的 mask 被称为 `Causal Mask`。
 
@@ -72,6 +78,7 @@ self-attention 的矩阵计算形式如下图所示:
 > 在 `llama` 系列模型中，是构建**上三角 `scores` 矩阵**。
 
 $QK^T$ 计算注意力分数，及应用 `Causal Mask` 过程的示意图如下所示：
+
 ![decoder_training04](../images/transformer_code/decoder_training04.png)
 
 上图可以看到，如果想要实现，让当前 `token` 只关注它及之前位置 `tokens` 的注意力关系，我们需要构建的 `Attention Mask` 是下三角矩阵。
@@ -86,7 +93,7 @@ GPT 在训练阶段为了提高训练效率，所以采用了 “masked self-att
 
 > 参考[知乎回答](https://www.zhihu.com/question/647132629/answer/3419355716)。
 
-### 如何应用 mask
+#### 2.1 创建及应用 mask
 
 代码实现分为两步：**创建 masked 矩阵和应用 masked 矩阵到 $QK^T$ 结果上**。
 
@@ -142,7 +149,7 @@ def generate_prefill_mask(self, tokens : torch.Tensor, prev_pos : int, cur_pos :
     return mask
 ```
 
-### 实现 Masked Attention
+### 3. 实现 masked-attention
 
 1，先实现一个 `MHA`
 
@@ -195,11 +202,11 @@ class MultiHeadAttention(nn.Module):
         return out
 ```
 
-2，实现构建 mask 下三角矩阵(张量)的函数
+2，实现构建**mask 下三角矩阵**(张量)的函数:
 
 ```python
 def generate_causal_mask(seq_length):
-    """生成一个因果遮罩，上三角为0，下三角为1"""
+    """生成一个因果遮罩的下三角矩阵，上三角为0，下三角为1"""
     mask = torch.tril(torch.ones((seq_length, seq_length))).unsqueeze(0).unsqueeze(0)  # (1, 1, seq, seq)
     return mask  # 1表示可见，0表示遮蔽
 ```

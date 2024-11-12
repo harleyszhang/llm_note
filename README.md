@@ -114,7 +114,7 @@ LLM 推理服务框架技术总结和源码解析：
 - 《CUDA 编程：基础与实践\_樊哲勇》：国内自己写的教材，我查资料时候挑着看了一点，基本逻辑是通的，虽然很多原理、概念都讲的特别啰嗦，但实践需要的关键知识点都有讲到，想学中文教程的，可以当作当作了解一个方向的快速阅读资料。
 - [CUDA-Kernels-Learn-Notes](https://github.com/DefTruth/CUDA-Learn-Notes/tree/main)： CUDA 内核编程笔记及实战代码，有很强的实践性，后期可以重点学习，我也准备认真看下代码和文档。
 
-kernel 编写笔记资料：
+`cuda/triton` 编写 `kernel` 笔记资料：
 
 - 最基本的通用矩阵乘法（gemm）：https://zhuanlan.zhihu.com/p/657632577
 - [kernl](https://github.com/ELS-RD/kernl/tree/main): 提供了一些 llm 的 triton 版 kernels
