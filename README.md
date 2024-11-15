@@ -119,6 +119,8 @@ LLM 推理服务框架技术总结和源码解析：
 - 最基本的通用矩阵乘法（gemm）：https://zhuanlan.zhihu.com/p/657632577
 - [kernl](https://github.com/ELS-RD/kernl/tree/main): 提供了一些 llm 的 triton 版 kernels
 - [unsloth](https://github.com/unslothai/unsloth/tree/main)： Llama 3.2 的微调框架，Gemma LLMs 速度提高 2-5 倍，内存减少 80%内核基于 triton 实现。
+- [Liger-Kernel](https://github.com/linkedin/Liger-Kernel/tree/main): 用于训练的高效 triton 内核实现。
+- [Efficient-LLM-Inferencing-on-GPUs](https://github.com/yinuotxie/Efficient-LLM-Inferencing-on-GPUs/tree/main): README 图片不错，改天看看。
 
 ## 参考资料
 
