@@ -75,9 +75,9 @@ Transformer(Vaswani 等，2017) 中的线性层计算公式如下所示：
 
 $$Y = X \cdot W, \quad Y \in \mathbb{R}^{T \times C_o}, \quad X \in \mathbb{R}^{T \times C_i}, \quad W \in \mathbb{R}^{C_i \times C_o}$$
 
-
 其中 $T$ 表示 token 数，$C_i$ 为输入通道数，$C_o$ 为输出通道数（为简化省略批量维度，见图 3）。通过将权重量化为 INT8，可将存储需求减半。然而，为了加速推理，我们需要同时将权重和激活量化为 INT8（即 W8A8）以充分利用支持整数运算的内核（例如 INT8 GEMM），这些内核广泛支持于多种硬件（例如 NVIDIA GPUs、Intel CPUs、Qualcomm DSPs 等）。
-> 很明显这里 Transformer 线性层中的通道数其实就是隐藏层大小，即 $C_i = C_o = \text{hidden\_size}$。之所以用逐通道的概念，我猜是为了对应 CNN 模型中的张量通道概念，反正一般都是张量的最后一个维度。
+
+> 很明显这里 Transformer 线性层中的通道数其实就是隐藏层大小，即 $C_i = C_o = \mathrm{hidden\_ size}$。之所以用逐通道的概念，我猜是为了对应 CNN 模型中的张量通道概念，反正一般都是张量的最后一个维度。
 
 ## 3. 量化难点总结
 
@@ -97,7 +97,7 @@ $$Y = X \cdot W, \quad Y \in \mathbb{R}^{T \times C_o}, \quad X \in \mathbb{R}^{
 <img src="../images/smoothquant/activations_distribution.png" width="100%" alt="activations_distribution">
 </div>
 
-上述现象总结起来就是，**离群值跟通道相关跟 token 无关**，由此很明显，应该对激活采用逐通道量化 (Bondarenko 等，2021)（即每个通道使用不同的量化系数），这会大幅降低量化误差，逐 token 量化则帮助不大。表 1 验证了这一假设：模拟的逐通道激活量化能使精度接近 FP16，与 Bondarenko 等的发现一致。
+上述现象总结起来就是，**离群值跟通道相关跟 token 无关**，由此很明显，**应该对激活采用逐通道量化 (Bondarenko 等，2021)（即每个通道使用不同的量化系数），这可以大幅降低量化误差，逐 token 量化则帮助不大**。表 1 验证了这一假设：模拟的逐通道激活量化能使精度接近 FP16，与 Bondarenko 等的发现一致。
 
 <div align="center">
 <img src="../images/smoothquant/table1.png" width="60%" alt="table1">
@@ -154,61 +154,73 @@ $$
 
 ### 4.1 SmoothQuant 算法实现及简单实验
 
-下述代码对激活值、权重参数值进行了统计分析并可视化，以及应用了 smoothquant 后的平滑激活和权重统计值的可视化。
+下述代码模仿官方仓库的量化算法，简单实现了对激活值、权重参数值进行了统计分析并可视化，以及应用了 smoothquant 后的平滑激活和权重统计值的可视化。真实的模型量化算法比这更复杂，校准集也更大，本代码只是尝试对特定层的特定线性层权重应用 SmoothQuant 量化，优点是代码可直接运行，更容易快速阅读来了解 SmoothQuant 的计算逻辑，仅供参考。
 
 ```python
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-from transformers import AutoModelForCausalLM, LlamaTokenizer
+from transformers import LlamaForCausalLM, LlamaTokenizer
 
 # 加载模型和分词器
 def load_model_and_tokenizer(model_name, device):
     tokenizer = LlamaTokenizer.from_pretrained(model_name)
     tokenizer.pad_token = tokenizer.eos_token  # 设置 eos_token 为 pad_token
-    model = AutoModelForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16).to(device)
+    model = LlamaForCausalLM.from_pretrained(model_name, torch_dtype=torch.float16).to(device)
     model.eval()
     return model, tokenizer
 
 # 运行推理并获取激活值和权重
 @torch.no_grad()
-def get_activations_and_weights(model, tokenizer, texts, device):
+def get_activations_and_weights(model, tokenizer, texts, layer_index = 4, channel_indexs = 200, device="cpu"):
     inputs = tokenizer(texts, return_tensors="pt", padding=True, truncation=True).to(device)
     with torch.no_grad():
         outputs = model(**inputs, output_hidden_states=True)
     
     print("outputs.hidden_states shape is ", len(outputs.hidden_states))
-    activation = outputs.hidden_states[-5].abs()[:, :100, :]  # 倒数第五个 decoder layer 激活值，并选择前 100 个token和所有通道的值（电脑性能受限没选全部）
-    weight = model.model.layers[0].self_attn.k_proj.weight.abs()[:100, :]  # 第一层权重
-
-    print(f"activation shape is {activation.shape} self_attn.q_proj.weight shape is {weight.shape}")
-    return activation, weight
+    
+    activation = outputs.hidden_states[layer_index].abs()[:, :, :channel_indexs]  # 最后一层激活值，选择前100个token和通道
+    q_weight = model.model.layers[layer_index].self_attn.q_proj.weight.abs()[:, :channel_indexs]  # 第 layer_index 层的 q 映射层权重的前 200 个通道
+    k_weight = model.model.layers[layer_index].self_attn.k_proj.weight.abs()[:, :channel_indexs]  # 第 layer_index 层的 q 映射层权重
+    v_weight = model.model.layers[layer_index].self_attn.v_proj.weight.abs()[:, :channel_indexs]  # 第 layer_index 层的 q 映射层权重
+    fcs = [q_weight,k_weight, v_weight]
+    
+    print(f"activation shape is {activation.shape} self_attn.q_proj.weight shape is {fcs[0].shape}")
+    return activation, fcs
 
 # 计算 SmoothQuant 的缩放因子
 @torch.no_grad()
-def calculate_scales(activation, weight, alpha=0.5):
+def calculate_scales(activation, fcs, alpha=0.5):
     original_shape = activation.shape
-    act_reshaped = activation.view(-1, original_shape[-1]).abs().detach() # 将张量展平并取绝对值
+    act_reshaped = activation.view(-1, original_shape[-1]).abs().detach() # 将激活张量 shape 转换成 [batch_size * seq_len, hidden_size]
     act_max = torch.max(act_reshaped, dim=0)[0].float().cpu()  # 计算每个隐藏维度上的最大值并转移到 CPU
-    w_max = weight.max(dim=0)[0].clamp(min=1e-5)
+    
+    # 如果 fcs 是线性层列表，则取整体的最大值，用来计算平滑因子 scales。
+    weight_max_list = torch.cat([fc.abs().max(dim=0, keepdim=True)[0] for fc in fcs], dim=0)
+    w_max = weight_max_list.max(dim=0)[0].clamp(min=1e-5)
 
     print(f"act_max shape is {act_max.shape}, w_max shape is {w_max.shape}")
     scales = act_max.pow(alpha) / w_max.pow(1 - alpha)
+    print(f"scales shape is {scales.shape}")
     return scales
 
 # 应用 SmoothQuant 缩放因子到激活值和权重
 @torch.no_grad()
-def apply_smoothquant_scaling(activation, weight, scales):
+def apply_smoothquant_scaling(activation, weights, scales):
     smooth_activation = activation / scales.view(1, 1, -1)
-    smooth_weight = weight * scales.view(1, -1)
-    return smooth_activation, smooth_weight
+    q_proj_weight = weights[0]
+    smooth_q_weight = q_proj_weight * scales.view(1, -1)
+    print(f"smooth_activation_sample shape is {smooth_activation.shape} q_proj smooth_weight shape is {smooth_q_weight.shape}")
+
+    return smooth_activation, smooth_q_weight
 
 # 检测离群值并打印通道索引
-def find_outlier_channels(activation_sample, threshold=20):
+def find_outlier_channels(activation_sample, threshold=10):
     mean = activation_sample.mean(dim=(0, 1))
     std = activation_sample.std(dim=(0, 1))
     z_scores = (activation_sample - mean) / std
+
     outliers = torch.where(z_scores > threshold)
     unique_channels = torch.unique(outliers[2])
     print(f"离群值所在的通道索引: {unique_channels.tolist()}")
@@ -235,39 +247,40 @@ def main():
     
     # 处理输入文本并获取激活值和权重
     input_texts = [
-        "The quick brown fox jumps over the lazy dog.",
-        "Artificial intelligence is revolutionizing the world.",
-        "Large language models are powerful tools for NLP tasks."
+        "The quick brown fox jumps over the lazy dog. " * 2,  # 通过重复句子生成超过64个词的文本
+        "Artificial intelligence is revolutionizing the world. " * 2,
+        "Large language models are powerful tools for NLP tasks. " * 2,
+        "The meaning of life is to find " * 2
     ]
-    activation_sample, weight_sample = get_activations_and_weights(model, tokenizer, input_texts, device)
-    print(f"activation_sample shape is {activation_sample.shape} self_attn.q_proj.weight shape is {weight_sample.shape}")
+    activation_sample, weight_sample = get_activations_and_weights(model, tokenizer, input_texts, layer_index = 4,channel_indexs=200, device=device)
 
     # 检查离群值所在通道
     find_outlier_channels(activation_sample)
 
     # 计算 SmoothQuant 缩放因子并应用平滑转换
     scales = calculate_scales(activation_sample, weight_sample)
-    print(f"scales shape is {scales.shape}")
 
     smooth_activation_sample, smooth_weight_sample = apply_smoothquant_scaling(activation_sample, weight_sample, scales)
-    print(f"smooth_activation_sample shape is {smooth_activation_sample.shape} q_proj smooth_weight shape is {smooth_weight_sample.shape}")
 
     # 确定所有图的统一 y 轴范围
     y_max = max(
         np.max(activation_sample.cpu().numpy()),
         np.max(smooth_activation_sample.cpu().numpy()),
-        np.max(weight_sample.cpu().numpy()),
+        np.max(weight_sample[0].cpu().numpy()),
         np.max(smooth_weight_sample.cpu().numpy())
     )
     
     # 创建图表
     fig = plt.figure(figsize=(18, 8))
+    batch_size, seq_len, hidden_size = activation_sample.shape
+    activation_sample = activation_sample.view(-1, hidden_size)
+    smooth_activation_sample = smooth_activation_sample.view(-1, hidden_size)
     
-    # 绘制原始和平滑后的激活值和权重
+    # 绘制原始和平滑后的激活值和权重, weight_sample 是 q、k、v 映射层权重组合的列表
     plot_titles = [
-        ("Activation (Original)\nHard to quantize", activation_sample[0], "brown"),
-        ("Activation (SmoothQuant)\nEasy to quantize", smooth_activation_sample[0], "blue"),
-        ("Weight (Original)\nVery easy to quantize", weight_sample, "blue"),
+        ("Activation (Original)\nHard to quantize", activation_sample, "brown"),
+        ("Activation (SmoothQuant)\nEasy to quantize", smooth_activation_sample, "blue"),
+        ("Weight (Original)\nVery easy to quantize", weight_sample[0], "blue"),
         ("Weight (SmoothQuant)\nHarder but still easy to quantize", smooth_weight_sample, "blue")
     ]
     
@@ -282,10 +295,41 @@ def main():
     plt.tight_layout()
     plt.subplots_adjust(top=0.85)
     plt.savefig("llama2_7b_smoothquant_visualization2.png", format='png', dpi=300)
-    plt.show()
+    plt.close()
 
 if __name__ == "__main__":
     main()
+
+####################模型结构信息#######################3
+"""
+LlamaForCausalLM(
+  (model): LlamaModel(
+    (embed_tokens): Embedding(32000, 4096)
+    (layers): ModuleList(
+      (0-31): 32 x LlamaDecoderLayer(
+        (self_attn): LlamaSdpaAttention(
+          (q_proj): Linear(in_features=4096, out_features=4096, bias=False)
+          (k_proj): Linear(in_features=4096, out_features=4096, bias=False)
+          (v_proj): Linear(in_features=4096, out_features=4096, bias=False)
+          (o_proj): Linear(in_features=4096, out_features=4096, bias=False)
+          (rotary_emb): LlamaRotaryEmbedding()
+        )
+        (mlp): LlamaMLP(
+          (gate_proj): Linear(in_features=4096, out_features=11008, bias=False)
+          (up_proj): Linear(in_features=4096, out_features=11008, bias=False)
+          (down_proj): Linear(in_features=11008, out_features=4096, bias=False)
+          (act_fn): SiLU()
+        )
+        (input_layernorm): LlamaRMSNorm((4096,), eps=1e-05)
+        (post_attention_layernorm): LlamaRMSNorm((4096,), eps=1e-05)
+      )
+    )
+    (norm): LlamaRMSNorm((4096,), eps=1e-05)
+    (rotary_emb): LlamaRotaryEmbedding()
+  )
+  (lm_head): Linear(in_features=4096, out_features=32000, bias=False)
+)
+"""
 ```
 
 代码运行分别测试了好几个层的输入激活值和 q、k 线性层权重及其平滑后的可视化结果如下图所示，遗憾的是我的实验并没有复现出作者观察到的现象“离群值通常出现于特定通道”，只观察到了“激活值中存在离群值的现象“。
