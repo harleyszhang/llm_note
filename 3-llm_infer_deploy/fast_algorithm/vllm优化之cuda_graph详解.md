@@ -7,13 +7,13 @@
 
 ## 一 vllm 中的 cuda graph
 
-vllm 是 pythonic 的 llm 推理卡框架，在 cpu 进行 cuda kernel launch（启动）的 eager mode 时，其存在可较大的 kernel launch 开销，尤其是对于 batch较小/模型较小的情况，kernel 启动开销过大！由此，作者基于 torch 使用 cuda graph 来直接减少 kernel launch 的开销。
+vllm 是 pythonic 的 llm 推理框架，在 cpu 进行 cuda kernel launch（启动）的 eager mode 时，其存在可较大的 kernel launch 开销，尤其是对于 batch较小/模型较小的情况，kernel 启动开销过大！由此，作者基于 torch 使用 cuda graph 来直接减少 kernel launch 的开销。
 
 > 这里解释下 **cuda kernel launch，其实际是 CPU 向 GPU 发送指令的过程，即算子下发过程**！
 
 CUDA Graph 是 NVIDIA 在 CUDA 10 中引入的一种新特性，旨在优化 GPU 上的任务提交和执行流程。通过将一系列 CUDA 操作（如内核启动、内存拷贝等）表示为**一个图结构**，并在 GPU 上执行该图，可以显著减少 CPU 与 GPU 之间的通信开销，提高整体性能。
 
-因为 cuda graph 必须限制输入输出的的形状，而在 llm 推理中，prefill 阶段输入的 batch，seq_len，这两个维度都是动态变化的，因此 cuda graph 仅应用在 `decode` 阶段，且是通过提前预设一批 batch，针对每个不同 batch capture 不同的 cuda graph，运行时根据输入的 shape 找到匹配的 cuda_graph_runner 即可。这也带来一个问题，预设的 batch 数越多，使用 cuda graph 优化后带来的额外显存消耗也增加。
+因为 cuda graph 必须限制输入输出的的形状，而在 llm 推理中，prefill 阶段输入的 batch，seq_len，这两个维度都是动态变化的，因此 cuda graph 只能应用在 `decode` 阶段，同时需要提前预设一批 `batch`，针对每个不同 `batch` `capture` 不同的 `cuda graph`，运行时根据输入的 `batch` 找到匹配的 cuda_graph_runner 即可。当然，这也会带来一个问题，就是预设的 batch 数越多，使用 cuda graph 优化后带来的额外显存消耗也增加。
 
 > 值得一提的是，如果想看作者实现的 cuda graph 的思路来源，可以参考文章 [Speed, Python: Pick Two. How CUDA Graphs Enable Fast Python Code for Deep Learning](https://fireworks.ai/blog/speed-python-pick-two-how-cuda-graphs-enable-fast-python-code-for-deep-learning) 和 llama 仓库代码 [ llama-cuda-graph-example-masked_attn](https://github.com/fw-ai/llama-cuda-graph-example/blob/masked_attn/llama/generation.py#L123)。
 
@@ -25,9 +25,9 @@ CUDA Graph 是 NVIDIA 在 CUDA 10 中引入的一种新特性，旨在优化 GPU
 
 ## 二 vllm 的 cuda graph 源码剖析
 
-下面是我针对 `llama` 仓库上应用 cuda graph 的代码分析。
+下面是我针对 `vllm` 仓库上应用 cuda graph 的代码分析。
 
-1，`ModelRunner` 类实际是对之前 `Model` 类的包装，封装了模型的前向传播逻辑，并管理与推理相关的资源。其中 `execute_model` 推理执行函数是核心，其负责接收输入数据，执行模型的前向传播，输出结果是 `sample` 采样后的结果，而不是模型推理结果 `logits`。`ModelRunner` 类的初始化如下所示：
+1，`ModelRunner` 类实际是对之前 `Model` 类的包装，封装了模型的前向传播逻辑，并管理与推理相关的资源。其中推理执行函数 `execute_model` 是核心，其负责接收输入数据，执行模型的前向传播，输出结果是 `sample` 采样后的结果，而不是模型推理结果 `logits`。`ModelRunner` 类的初始化如下所示：
 
 ```python
 class ModelRunner(GPUModelRunnerBase[ModelInputForGPUWithSamplingMetadata]):
