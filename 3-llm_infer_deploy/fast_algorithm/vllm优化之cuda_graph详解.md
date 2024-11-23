@@ -1,3 +1,11 @@
+---
+layout: post
+title: vllm 优化之 cuda_graph 详解
+date: 2024-11-08 23:50:00
+summary: cuda graph 解决了可能存在的所有 CPU 开销的来源：如用户编写的逻辑、PyTorch 调度逻辑、内存分配开销以及 GPU 驱动/内核开销（静态图优势）。
+categories: LLM_Infer
+---
+
 - [一 vllm 中的 cuda graph](#一-vllm-中的-cuda-graph)
   - [1.1 总结](#11-总结)
 - [二 vllm 的 cuda graph 源码剖析](#二-vllm-的-cuda-graph-源码剖析)
@@ -131,8 +139,6 @@ class GPUModelRunnerBase():
                 self.graph_memory_pool = graph_runner.graph.pool()
                 # 将捕获的图运行器存储到 graph_runners 中
         		self.graph_runners[batch_size] = graph_runner
-]
-
 ```
 
 `SchedulerConfig` 是调度配置类，`max_num_seqs`  是 `SchedulerConfig` 类的初始化参数之一，表示单次迭代中可处理的最大序列数，可以理解为传统意义上的 `max_batch_size`。`batch_size_capture_list` 是一个 batch_size 列表，前三个元素是 1 2 4 后面的元素值间隔 8 并小于调度类中的 `max_num_seqs` 参数值。

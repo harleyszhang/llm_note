@@ -21,10 +21,10 @@ def get_activations_and_weights(model, tokenizer, texts, layer_index = 4, channe
     
     print("outputs.hidden_states shape is ", len(outputs.hidden_states))
     
-    activation = outputs.hidden_states[layer_index].abs()[:, :, :channel_indexs]  # 最后一层激活值，选择前100个token和通道
-    q_weight = model.model.layers[layer_index].self_attn.q_proj.weight.abs()[:, :channel_indexs]  # 第 layer_index 层的 q 映射层权重的前 200 个通道
-    k_weight = model.model.layers[layer_index].self_attn.k_proj.weight.abs()[:, :channel_indexs]  # 第 layer_index 层的 q 映射层权重
-    v_weight = model.model.layers[layer_index].self_attn.v_proj.weight.abs()[:, :channel_indexs]  # 第 layer_index 层的 q 映射层权重
+    activation = outputs.hidden_states[layer_index].abs()[:, :, :]  # 最后一层激活值，选择前100个token和通道
+    q_weight = model.model.layers[layer_index].self_attn.q_proj.weight.abs()[:, :]  # 第 layer_index 层的 q 映射层权重的前 200 个通道
+    k_weight = model.model.layers[layer_index].self_attn.k_proj.weight.abs()[:, :]  # 第 layer_index 层的 q 映射层权重
+    v_weight = model.model.layers[layer_index].self_attn.v_proj.weight.abs()[:, :]  # 第 layer_index 层的 q 映射层权重
     fcs = [q_weight,k_weight, v_weight]
     
     print(f"activation shape is {activation.shape} self_attn.q_proj.weight shape is {fcs[0].shape}")
@@ -140,7 +140,7 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
+
 ###################模型结构信息#######################3
 """
 LlamaForCausalLM(
