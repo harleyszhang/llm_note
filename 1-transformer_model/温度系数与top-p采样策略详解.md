@@ -1,5 +1,11 @@
+- [一、Temperature 温度系数作用](#一temperature-温度系数作用)
+- [二、解码策略介绍](#二解码策略介绍)
+- [三、top-p 采样算法](#三top-p-采样算法)
+  - [3.1 top-p 采样算法步骤:](#31-top-p-采样算法步骤)
+  - [3.2 top-p 采样代码](#32-top-p-采样代码)
+- [参考资料](#参考资料)
 
-## Temperature 温度系数作用
+## 一、Temperature 温度系数作用
 
 Temperature 采样的温度系数意义、公式和知识蒸馏很相似，结合 softmax 的公式，都是如下形式:
 
@@ -18,7 +24,7 @@ probs = torch.softmax(logits[:, -1] / temperature, dim=-1)
 - `logits[:, -1]` 表示选择的是最后一个位置（seq_len 维度的最后一项）对应的 `logits`，形状变为 [batch_size, vocab_size]。因为在生成模型中的 prefill 阶段，我们只关心当前生成的最后一个 token 的分布。
 - temperature 作用是调整 logits 的分布，用于控制采样的随机性。总结就是，温度系数 $T$ 越大输出越平滑，结果越不确定，越小则越确定。具体来说，当 `temperature < 1.0`，分布会变得更加陡峭，更倾向于选择高概率的 token。`temperature > 1.0`，分布会变得更加平坦，增加随机性。
 
-## 解码策略介绍
+## 二、解码策略介绍
 
 首先需要知道，**LLM 的输出结果只是下一个 `token` 的概率分布 `logits`**，即对下一个单词的预测概率张量，形状为 `[batch_size, seq_len, logits]`。而如何从概率分布中选择下一个单词，就是我要介绍的解码策略，也叫采样策略
 
@@ -28,7 +34,7 @@ probs = torch.softmax(logits[:, -1] / temperature, dim=-1)
 - `Top-K` 采样取的是概率的前 `TopK` 的样本作为候选项, 也就是每一步都保留有 K 个候选项，能在一定程度上保证全局最优。但 top-k 有个问题就是 `k` 取多少，是最优的，这个难以确定。
 - `Top-p` 采样，针对的就是 `K` 值难确定的问题，通过设定阈值 `p`, 根据候选集累积概率之和达到阈值 `p`，来选择候选项的个数，也叫核采样。
 
-## top-p 采样算法
+## 三、top-p 采样算法
 
 `Top-p` 采样（也称为核采样，Nucleus Sampling）是一种用于自然语言生成模型的解码策略，旨在平衡生成文本的多样性和质量。核心思想是：在每一步生成 next_token 时，都从累积概率超过阈值 p 的tokens 集合中进行随机采样。具体操作是，每个时间步，按照 token出现的概率由高到底排序，当概率之和大于 `top-p` 的时候，就不考虑后面的低概率 tokens。
 
@@ -50,7 +56,7 @@ probs = torch.softmax(logits[:, -1] / temperature, dim=-1)
 
 很明显，top-p 采样方法可以动态调整候选词的数量，避免了固定数量候选词可能带来的问题。另外，可以发现，top_p 越小，则过滤掉的小概率 token 越多，采样时的可选项目就越少，生成结果的多样性也就越小。
 
-### top-p 采样算法步骤:
+### 3.1 top-p 采样算法步骤:
 
 Top-p 采样的详细步骤：
 1. 概率排序：对模型在当前时间步生成的所有词汇的概率进行降序排序。
@@ -59,7 +65,7 @@ Top-p 采样的详细步骤：
 4. 随机采样：根据归一化后的概率分布，从候选集 V_p 中随机选择下一个生成的词。
 5. token 索引映射：使用 `torch.gather` 函数将采样的索引映射回原始词汇表索引。
 
-### top-p 采样代码
+### 3.2 top-p 采样代码
 
 `top-p` 采样代码详细解释：
 
@@ -172,7 +178,8 @@ print("采样的索引:", sample_idx.item())
 # 输出采样的索引可能为 2，因为其对应概率最大
 ```
 
-参考资料
+## 参考资料
+
 - [如何解释 top_p 和 temperature 参数对 LLM 生成多样性的影响](https://zhuanlan.zhihu.com/p/713270088)
 - [ChatGPT 温度系数t与top-p, 超参怎么设置最优](https://zhuanlan.zhihu.com/p/631591713)
 - [Top-k & Top-p](https://docs.cohere.com/docs/controlling-generation-with-top-k-top-p)
