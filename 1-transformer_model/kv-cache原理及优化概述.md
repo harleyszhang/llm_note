@@ -7,13 +7,13 @@ categories: Transformer
 ---
 
 - [一 kv cache 原理](#一-kv-cache-原理)
-	- [1.1 `kv cache` 显存占用量计算](#11-kv-cache-显存占用量计算)
+  - [1.1 `kv cache` 显存占用量计算](#11-kv-cache-显存占用量计算)
 - [二 prefill 和 decode 阶段的 kv 计算](#二-prefill-和-decode-阶段的-kv-计算)
-	- [2.1 kv cache 节省了多少计算量](#21-kv-cache-节省了多少计算量)
+  - [2.1 kv cache 节省了多少计算量](#21-kv-cache-节省了多少计算量)
 - [三 kv cache 实现代码](#三-kv-cache-实现代码)
 - [四 kv cache 技术的进一步优化](#四-kv-cache-技术的进一步优化)
-	- [4.1 kv cache 计算优化-FlashDecoding](#41-kv-cache-计算优化-flashdecoding)
-	- [4.2 kv cache 访存优化-GQA、StreamingLLM](#42-kv-cache-访存优化-gqastreamingllm)
+  - [4.1 kv cache 计算优化-FlashDecoding](#41-kv-cache-计算优化-flashdecoding)
+  - [4.2 kv cache 访存优化-GQA、StreamingLLM](#42-kv-cache-访存优化-gqastreamingllm)
 - [参考资料](#参考资料)
 
 ## 一 kv cache 原理
@@ -214,7 +214,11 @@ class GPT2Attention(nn.Module):
 
 ### 4.1 kv cache 计算优化-FlashDecoding
 
-另外，kv cache 在计算上的优化可以参见 FlashDecoding，Flash-Decoding 在前作对 `batch size` 和 `query length` 并行的基础上增加了一个新的并行化维度：`keys/values` 的序列长度，代价是最后一个小的归约步骤。
+decoding 阶段的 attention 运算当中，有一个特点是**输入 q 的长度是 1，而 k 和 v 的长度是可变的**。这是 Decoding Attention 的限制，在这种限制下，是可以做一些特定的优化，如 `FlashDecoding`。
+
+![decoding_attention](../images/kv_cache/decoding_attention.webp)
+
+FlashDecoding 是针对 decoding 阶段上的 kv cache 在计算上的优化。Flash-Decoding 在前作对 `batch size` 和 `query length` 并行的基础上增加了一个新的并行化维度：`keys/values` 的序列长度，代价是最后一个小的归约步骤。
 
 <div align="center">
 <img src="../images/flashattention-3/parallelization_kv.gif" width="60%" alt="flashattention_kv">
@@ -294,3 +298,4 @@ StreamingLLM 的缺点是过程太过暴力，没有识别出重要性 tokens，
 - [大模型推理加速：KV Cache Sparsity(稀疏化)方法](https://zhuanlan.zhihu.com/p/701580870)
 - [Efficient Streaming Language Models with Attention Sinks](https://arxiv.org/abs/2309.17453)
 - [Build Your Own Llama 3 Architecture from Scratch Using PyTorch](https://pub.towardsai.net/build-your-own-llama-3-architecture-from-scratch-using-pytorch-2ce1ecaa901c)
+- [高性能 LLM 推理框架的设计与实现](https://mp.weixin.qq.com/s?__biz=MzU1NTMyOTI4Mw==&mid=2247707241&idx=1&sn=c62888f9ff2865be05ce7d220f973531&chksm=fa0a1a06cc7b1fbd30818b177422f304e4b1ec447da40a439f3546aec140b76d894e9977dafc&scene=0&xtrack=1)
