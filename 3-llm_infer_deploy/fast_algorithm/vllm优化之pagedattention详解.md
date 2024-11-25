@@ -949,7 +949,7 @@ def get_cache_block_size(
 
 ```python
 @torch.inference_mode()
-def determine_num_available_blocks(self) -> Tuple[int, int]:
+def determine_num_available_blocks(model_config, gpu_memory_utilization = 0.9) -> Tuple[int, int]:
     """
     评估模型的峰值内存使用情况，以确定在不发生内存溢出的情况下可以分配的 KV（键值）缓存块的数量。
 
@@ -967,40 +967,56 @@ def determine_num_available_blocks(self) -> Tuple[int, int]:
 
     # 同步 CUDA 操作，确保内存信息准确
     torch.cuda.synchronize()
+    
     # 获取当前 GPU 的空闲内存和总内存（单位：字节）
-    free_gpu_memory, total_gpu_memory = torch.cuda.mem_get_info()
+    free_memory_pre_profile, total_gpu_memory = torch.cuda.mem_get_info()
     # 计算模型加载后的峰值内存使用量
-    peak_memory = self.init_gpu_memory - free_gpu_memory
-    # 确保峰值内存使用量为正值，否则抛出异常
-    assert peak_memory > 0, (
-        "内存评估出错。"
-        f"初始空闲内存：{self.init_gpu_memory}，当前空闲内存：{free_gpu_memory}。"
-        "这可能是因为在初始化 vLLM 实例前，GPU 内存未被正确清理。"
-    )
+    # Get the peak memory allocation recorded by torch
+    peak_memory = torch.cuda.memory_stats()["allocated_bytes.all.peak"]
+    
+    # 清理未使用的缓存，计算非Torch分配的内存
+    torch.cuda.empty_cache()
+    torch_allocated_bytes = torch.cuda.memory_stats()["allocated_bytes.all.current"]
 
+    total_allocated_bytes = torch.cuda.mem_get_info()[1] - torch.cuda.mem_get_info()[0]
+    non_torch_allocations = total_allocated_bytes - torch_allocated_bytes
+    
+    if non_torch_allocations > 0:
+        peak_memory += non_torch_allocations
+
+    available_kv_cache_memory = (
+        total_gpu_memory * gpu_memory_utilization -
+        peak_memory)
+    
     # 计算每个缓存块的大小
-    cache_block_size = _get_cache_block_size(
-        self.cache_config,
-        self.model_config,
-        self.parallel_config
-    )
+    cache_block_size = _get_cache_block_size(model_config)
     # 计算在剩余可用内存下，最多可以分配的 GPU 缓存块数量
     num_gpu_blocks = int(
-        (total_gpu_memory * self.cache_config.gpu_memory_utilization -
+        (total_gpu_memory * gpu_memory_utilization -
          peak_memory) // cache_block_size
     )
     # 确保缓存块数量不为负数
     num_gpu_blocks = max(num_gpu_blocks, 0)
 
-    # 如果模型使用了 LoRA（低秩适应）技术，移除所有 LoRA 模块以释放内存
-    # if self.model_runner.lora_manager:
-    #     self.model_runner.remove_all_loras()
+    logger.info(
+            "Memory profiling results: total_gpu_memory=%.2fGiB \n"
+            " initial_memory_usage=%.2fGiB peak_torch_memory=%.2fGiB \n"
+            " memory_usage_post_profile=%.2fGib \n"
+            " non_torch_memory=%.2fGiB kv_cache_size=%.2fGiB \n"
+            " gpu_memory_utilization=%.2f", total_gpu_memory / (1024**3),
+            (total_gpu_memory - free_memory_pre_profile) / (1024**3),
+            (peak_memory - non_torch_allocations) / (1024**3),
+            total_allocated_bytes / (1024**3),
+            non_torch_allocations / (1024**3),
+            available_kv_cache_memory / (1024**3),
+            gpu_memory_utilization)
 
     # 进行垃圾回收，释放未使用的内存
     gc.collect()
     # 再次清理 CUDA 缓存
     torch.cuda.empty_cache()
     # 返回可分配的 GPU 和 CPU 缓存块数量（此处 CPU 块数量为 0）
+
     return num_gpu_blocks, 0
 ```
 
