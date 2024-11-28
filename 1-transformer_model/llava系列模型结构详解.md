@@ -1,4 +1,9 @@
-
+- [LLaVA1](#llava1)
+  - [ViT-L/14 模型结构](#vit-l14-模型结构)
+- [LLaVA1.5](#llava15)
+  - [LLaVA-1.5-HD](#llava-15-hd)
+- [LLaVA1.6（LLaVA-NeXT）](#llava16llava-next)
+- [参考资料](#参考资料)
 
 多模态大模型 `MLLM` 架构通常都是: LLM + 视觉编码器 + 映射层的组合。
 
@@ -14,7 +19,7 @@ LLaVA 模型架构如下图所示吧:
 
 $$H_v = W\cdot X_v, with Z_v = g(X_v)$$
 
-### `ViT-L/14` 模型结构
+### ViT-L/14 模型结构
 
 `ViT-L/14` 模型的 `L` 表示模型的规模，为 “Large”，ViT(Vision Transformer) 模型有不同规模的模型，例如：
 - `ViT-B`（Base）：通常有 12 层 Transformer。
@@ -55,3 +60,4 @@ $$H_v = W\cdot X_v, with Z_v = g(X_v)$$
 
 - [Visual Instruction Tuning](https://arxiv.org/pdf/2304.08485)
 - [Improved Baselines with Visual Instruction Tuning](https://arxiv.org/pdf/2310.03744)
+- [【多模态大模型】llava系列：llava、llava1.5、llava-next](https://zhuanlan.zhihu.com/p/695100288)
