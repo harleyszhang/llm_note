@@ -124,7 +124,7 @@ LLM 推理服务框架技术总结和源码解析：
 
 3, Star History Chart：
 
-[![Star History Chart](https://api.star-history.com/svg?repos=HarleysZhang/deep_learning_system&type=Date)](https://star-history.com/#HarleysZhang/deep_learning_system&Date)
+[![Star History Chart](https://api.star-history.com/svg?repos=HarleysZhang/llm_note)](https://api.star-history.com/svg?repos=HarleysZhang/llm_note)
 
 ## 参考资料
 
