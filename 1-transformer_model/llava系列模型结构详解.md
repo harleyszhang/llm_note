@@ -5,7 +5,7 @@
 - [LLaVA1.6（LLaVA-NeXT）](#llava16llava-next)
 - [参考资料](#参考资料)
 
-多模态大模型 `MLLM` 架构通常都是: LLM + 视觉编码器 + 映射层的组合。
+多模态大模型 `MLLM` 架构通常都是 LLM + 视觉编码器 + 映射层的组合。
 
 ## LLaVA1
 
