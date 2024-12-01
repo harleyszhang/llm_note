@@ -104,7 +104,7 @@ LLM 推理服务框架技术总结和源码解析：
 
 ### 4.3 高性能编程学习资料推荐
 
-英伟达 gpu cuda 编程语法和特性学习资料推荐：
+1, 英伟达 gpu cuda 编程语法和特性学习资料推荐：
 
 - [GPU Architecture and Programming](https://homepages.laas.fr/adoncesc/FILS/GPU.pdf): 了解 GPU 架构和 cuda 编程的入门文档资料，学完可以理解 gpu 架构的基本原理和理解 cuda 编程模型（cuda 并行计算的基本流程）。建议当作学习 cuda 高性能计算编程的第一篇文档（文章）。
 - [CUDA Tutorial](https://cuda-tutorial.github.io/): CUDA 教程，分成四部分：CUDA 基础、GPU 硬件细节、最近的特性和趋势和基于任务的编程实例，提供了完整清晰的 PDF 文档和 cuda 代码实例。**建议当作系统性学习 cuda 编程的教程**。
@@ -114,13 +114,17 @@ LLM 推理服务框架技术总结和源码解析：
 - 《CUDA 编程：基础与实践\_樊哲勇》：国内自己写的教材，我查资料时候挑着看了一点，基本逻辑是通的，虽然很多原理、概念都讲的特别啰嗦，但实践需要的关键知识点都有讲到，想学中文教程的，可以当作当作了解一个方向的快速阅读资料。
 - [CUDA-Kernels-Learn-Notes](https://github.com/DefTruth/CUDA-Learn-Notes/tree/main)： CUDA 内核编程笔记及实战代码，有很强的实践性，后期可以重点学习，我也准备认真看下代码和文档。
 
-`cuda/triton` 编写 `kernel` 笔记资料：
+2, `cuda/triton` 编写 `kernel` 笔记资料：
 
 - 最基本的通用矩阵乘法（gemm）：https://zhuanlan.zhihu.com/p/657632577
 - [kernl](https://github.com/ELS-RD/kernl/tree/main): 提供了一些 llm 的 triton 版 kernels
 - [unsloth](https://github.com/unslothai/unsloth/tree/main)： Llama 3.2 的微调框架，Gemma LLMs 速度提高 2-5 倍，内存减少 80%内核基于 triton 实现。
 - [Liger-Kernel](https://github.com/linkedin/Liger-Kernel/tree/main): 用于训练的高效 triton 内核实现。
 - [Efficient-LLM-Inferencing-on-GPUs](https://github.com/yinuotxie/Efficient-LLM-Inferencing-on-GPUs/tree/main): README 图片不错，改天看看。
+
+3, Star History Chart：
+
+[![Star History Chart](https://api.star-history.com/svg?repos=HarleysZhang/deep_learning_system&type=Date)](https://star-history.com/#HarleysZhang/deep_learning_system&Date)
 
 ## 参考资料
 
