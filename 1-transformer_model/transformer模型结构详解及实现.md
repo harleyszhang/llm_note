@@ -6,9 +6,9 @@ summary: transformer 模型结构代码如何实现，模型结构分析。
 categories: Transformer
 ---
 
-- [一 前言](#一-前言)
-  - [1.1 Transformer 简要发展史](#11-transformer-简要发展史)
-  - [1.2 Transformer 整体架构](#12-transformer-整体架构)
+- [前言](#前言)
+  - [Transformer 简要发展史](#transformer-简要发展史)
+  - [Transformer 整体架构](#transformer-整体架构)
 - [一 输入模块](#一-输入模块)
   - [1.1 tokenizer 预处理](#11-tokenizer-预处理)
   - [1.2 Embedding 层](#12-embedding-层)
@@ -29,9 +29,9 @@ categories: Transformer
   - [5.1 Transformer 完整代码实现](#51-transformer-完整代码实现)
 - [参考资料](#参考资料)
 
-## 一 前言
+## 前言
 
-### 1.1 Transformer 简要发展史
+### Transformer 简要发展史
 
 以下是 Transformer 模型（简短）历史中的一些关键节点：
 
@@ -56,7 +56,7 @@ Transformer 默认都是大模型，除了一些特例（如 DistilBERT）外，
 
 <img src="../images/transformer_code/model_parameters.png" width="60%" alt="transformers model_parameters">
 
-### 1.2 Transformer 整体架构
+### Transformer 整体架构
 
 论文中给出用于中英文翻译任务的 `Transformer` 整体架构如下图所示：
 
