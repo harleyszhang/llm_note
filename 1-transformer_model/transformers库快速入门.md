@@ -4,7 +4,7 @@
   - [1.3 attention mask](#13-attention-mask)
   - [1.4 特殊 tokens 的意义](#14-特殊-tokens-的意义)
   - [1.5 自回归模型架构与参数](#15-自回归模型架构与参数)
-- [三 transformers 快速入门](#三-transformers-快速入门)
+- [二 transformers 快速入门](#二-transformers-快速入门)
   - [2.1 transformer 模型类别](#21-transformer-模型类别)
   - [2.2 Pipeline](#22-pipeline)
   - [2.3 AutoClass](#23-autoclass)
@@ -118,7 +118,7 @@ decoder 模型也称为自回归（auto-regressive）模型、causal language mo
 - **Checkpoints**：给定架构中会被加载的权重。
 - **模型**：一个笼统的术语，没有“架构”或“参数”那么精确：它可以指两者。
 
-## 三 transformers 快速入门
+## 二 transformers 快速入门
 
 [Transformers](https://github.com/huggingface/transformers) 库提供创建 transformer 模型和加载使用共享模型的功能；另外，[模型中心（hub）](https://huggingface.co/models)包含数千个可以任意下载和使用的预训练模型，也支持用户上传模型到 Hub。
 
