@@ -11,8 +11,7 @@ from fairscale.nn.model_parallel.layers import (
     RowParallelLinear,
 )
 from torch import nn
-
-
+from transformers import LlamaForCausalLM
 @dataclass
 class ModelArgs:
     dim: int = 4096
