@@ -91,14 +91,14 @@ $$
 
 [RMSNorm](https://openreview.net/pdf?id=SygkZ3MTJE)（Root Mean Square Layer Normalization）论文假设 LayerNorm 中的重新中心化不再是必须的（平移不变性不重要），并提出了一种新的归一化方法：均方根层归一化（RMSNorm）。RMSNorm 通过均方根（RMS）对每一层神经元的输入进行归一化，使模型具备重新缩放不变性和隐式学习率调整的能力。相比 LayerNorm，RMSNorm 计算更为简洁，大约可以节省 7% 到 64% 的运算。
 
-LayerNorm 和 RMSNorm 都主要用于 NLP 领域，它对每个 `token` 的特征向量进行归一化计算。设某个 token 的特征向量为 $\textrm{x}\in \mathbb{R}$，RMSNorm 的计算如下：
+LayerNorm 和 RMSNorm 都主要用于 NLP 领域，它对每个 `token` 的**特征向量**（即嵌入维度）进行归一化计算。设某个 token 的特征向量为 $\textrm{x}\in \mathbb{R}$，RMSNorm 的计算如下：
 
 $$
 \text{RMSNorm}(x): \hat{x}_i = \gamma \odot \frac{x_i}{\text{RMS}(x)} \\
-\text{RMS(x)} = \sqrt{\frac{1}{d} \sum_{x_i \in \textrm{x}} x_i^2}
+\text{RMS(x)} = \sqrt{\frac{1}{d} \sum_{x_i \in \textrm{x}} x_i^2 + \text{eps}}
 $$
 
-其中，$\gamma$ 是可学习的缩放参数，transform 模型中形状为 $[d]$。
+其中，$\gamma$ 是可学习的缩放参数，$\text{eps}$ 的作用是为了保持数值稳定性。$d$ 输入 `tokens` 的数量，大小为 `batch_size * seq_len`。
 
 以下是 RMSNorm 在 PyTorch 中的简单实现，使用了 RMS（均方根）来对输入进行归一化处理。
 
@@ -106,23 +106,24 @@ $$
 import torch
 import torch.nn as nn
 
-class RMSNorm(nn.Module):
+class LlamaRMSNorm(nn.Module):
     """nlp 领域"""
-    def __init__(self, dim):
+    def __init__(self, dim, eps=1e-6):
         """
         :param dim: 输入的维度
         """
         super(RMSNorm, self).__init__()
         self.scale = nn.Parameter(torch.ones(dim))  # 可学习的缩放参数
+        self.variance_epsilon = eps
     
-    def forward(self, x):
-        # x 的形状为 [batch_size, seq_len, dim]
-        
-        # 计算均方根 (RMS) shape is [2, 4, 1]
-        rms = torch.sqrt(torch.mean(x ** 2, dim=-1, keepdim=True))
-        
-        # 归一化，并应用缩放参数
-        return x / rms * self.scale
+    def forward(self, hidden_states):
+        # hidden_states 的形状为 [batch_size, seq_len, dim]
+        input_dtype = hidden_states.dtype
+        hidden_states = hidden_states.to(torch.float32)
+        variance = torch.mean(x ** 2, dim=-1, keepdim=True)
+
+        hidden_states = hidden_states * torch.rsqrt(variance + self.variance_epsilon)
+        return self.weight * hidden_states.to(input_dtype)
 
 # 测试 RMSNorm
 batch_size, seq_len, dim = 2, 4, 8
