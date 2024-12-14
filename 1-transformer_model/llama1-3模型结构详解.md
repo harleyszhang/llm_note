@@ -217,7 +217,7 @@ $$
 `llama` 对 FFN 的改进结构-$\text{FFN}_{\text{SwiGLU}}$，正是来源于论文：GLU Variants Improve Transformer。和 `FFN_SwiGLU` 原版实现使用 `Swish` 稍有不同，LLaMA 官方提供的代码使用 `F.silu()` 激活函数，$\text{SiLU}(x) = x⋅ \text{Sigmoid}(x)$。`SwiGLU` 数学表达式如下:
 
 $$
-\text{FFN}_{\text{SwiGLU}}(x, W, V, W_2) = (\text{SiLU}(xW)\otimes xV)W_2
+\text{FFN}_{\text{SwiGLU}}(x, W_1, W_3, W_2) = (\text{SiLU}(xW_1)\otimes xW_3)W_2
 $$
 
 $\text{FPN}_{\text{SwiGLU}}$ 层结构如下图所示:
@@ -226,7 +226,7 @@ $\text{FPN}_{\text{SwiGLU}}$ 层结构如下图所示:
 <img src="../images/llama/ffn_structrue.png" width="50%" alt="ffn_structrue">
 </center>
 
-原始的的 $\text{FPN}$ 层只有两个权重矩阵，但变体 $\text{FPN}_{\text{SwiGLU}}$ **有三个线性层权重矩阵**：$W$、$V$、$W_2$。为了保持参数数量和计算量的恒定，需要将隐藏单元的数量 `d_ff`（权重矩阵 $W$ 和 $V$ 的第二个维度以及 $W2$ 的第一个维度）缩小 `2/3`。
+原始的的 $\text{FPN}$ 层只有两个权重矩阵，但变体 $\text{FPN}_{\text{SwiGLU}}$ **有三个线性层权重矩阵**：$W_1$、$W_3$、$W_2$。为了保持参数数量和计算量的恒定，需要将隐藏单元的数量 `d_ff`（权重矩阵 $W_1$ 和 $W_3$ 的第二个维度以及 $W_2$ 的第一个维度）缩小 `2/3`。
 
 `Pytorch` 实现代码如下所示:
 
