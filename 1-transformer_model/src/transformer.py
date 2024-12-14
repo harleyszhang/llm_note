@@ -303,7 +303,6 @@ class TransformerEmbedding(nn.Module):
     token embedding + positional encoding (sinusoid)
     positional encoding can give positional information to network
     """
-
     def __init__(self, vocab_size, max_len, d_model, drop_prob, device):
         """
         class for word embedding that included positional information
