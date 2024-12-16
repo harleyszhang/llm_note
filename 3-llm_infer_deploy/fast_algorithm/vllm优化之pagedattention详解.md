@@ -842,7 +842,7 @@ block_tables: Optional[torch.Tensor]
 另外 `vllm/attention/backends/utils.py` 文件中提供了一些函数用于计算“槽映射”（slot mapping），并将序列中的 `token` 索引映射到内存块中的槽索引。
 
 <div align="center">
-<img src="../../images/vllm_pagedattention/compute_slot_mapping_python.png" width="60%" alt="_allocate_kv_cache">
+<img src="../../images/vllm_pagedattention/compute_slot_mapping.png" width="60%" alt="compute_slot_mapping">
 </div>
 
 主函数 `compute_slot_mapping`，根据是否进行性能分析、是否需要填充以及使用哪种实现方式（Python 或 NumPy），计算序列的槽映射。
@@ -887,7 +887,7 @@ class FlashAttentionMetadata:
 代码通过循环遍历 self.num_attention_layers，**为每个层分配独立的 KV 缓存张量**，确保每层的 kv 张量能够被单独存储和访问，避免不同层之间的干扰。`num_gpu_blocks` 会通过 `model_executor.determine_num_available_blocks` 函数获取当前模型在指定设备上的每个 `layer` 的最大可用物理 `blocks` 数目。
 
 <div align="center">
-<img src="../../images/vllm_pagedattention/allocate_kv_cache.png" width="65%" alt="_allocate_kv_cache">
+<img src="../../images/vllm_pagedattention/initialize_kv_caches.png" width="65%" alt="_allocate_kv_cache">
 </div>
 
 绝大部分后端的 `kv_cache_shape` 形状都是 `[2, num_blocks, block_size, num_kv_heads, head_size]`。
