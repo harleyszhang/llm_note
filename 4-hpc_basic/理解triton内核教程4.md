@@ -16,11 +16,11 @@ categories: Hpc
 
 ### 背景知识
 
-先看下标准 attention 计算公式：
+标准 attention 计算公式如下所示：
 
 $$\text{S = QK}^\text{T} \in \mathbb{R}^{N\times N},\quad \text{P = softmax(S)} \in \mathbb{R}^{N\times N},\quad \text{O = PV}\in \mathbb{R}^{N\times d}$$
 
-而 flashattention 是基于分块思想，如下图所示，我们从左向右计算有颜色的部分，对于 Q 增加一个外层循环，KV 增加内层循环长度，K1, K2, K3,… & V1, V2, V3, …，图中规模较小，但是泛化到更多块数据是一样的公式。
+flashattention 基于分块思想，其分块循环计算过程如下图所示，我们从左向右计算有颜色的部分，对于 Q 增加一个外层循环，KV 增加内层循环长度，K1, K2, K3,… & V1, V2, V3, …，图中规模较小，但是泛化到更多块数据是一样的公式。
 
 <div align="center">
 <img src="../images/triton_tutorials4/flashattention_tileing_visual.jpg" width="60%" alt="flashattention_tileing_visual">
