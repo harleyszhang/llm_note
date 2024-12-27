@@ -37,7 +37,7 @@
 
 ### 1.3、使用了 GQA 技术的适配
 
-InternLM2-20b 模型使用了 GQA 技术，kv cache 对应的 head  数目为 8，kv cache 所需存储的 tokens 相比之前，减少了 48/8 = 6 倍。
+InternLM2-20b 模型使用了 `GQA` 技术，kv cache 对应的 head  数目为 8，kv cache 所需存储的 tokens 相比之前，减少了 48/8 = 6 倍。
 > GQA 将查询头分成 N 组，每个组共享一个Key 和 Value 矩阵
 
 <div align="center">
