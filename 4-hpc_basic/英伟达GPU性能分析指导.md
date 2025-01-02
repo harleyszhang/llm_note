@@ -1,3 +1,11 @@
+---
+layout: post
+title: 英伟达 GPU 性能分析指导
+date: 2023-08-20 20:00:00
+summary: 本文主要介绍了 GPU 结构、操作的执行方式以及深度学习操作的常见限制，目的是为了更好的理解 GPU 的基本运行原理以及神经网络或特定网络层如何高效利用给定 GPU。
+categories: Hpc
+---
+
 - [一，概览](#一概览)
 - [二，GPU 架构基础](#二gpu-架构基础)
 - [三，GPU 执行模型](#三gpu-执行模型)
@@ -39,7 +47,8 @@ GPU 是一种**高度并行的处理器架构**，由处理元件和内存层次
 <div align="center">
 <img src="../images/gpu_perf/multi-add-op.svg" width="60%" alt="multi-add-op">
 </div>
-图 2. SM 每个时钟的乘加运算
+
+> 图 2. SM 每个时钟的乘加运算
 
 如图2所示，`FP16` 操作可以在 Tensor Cores 或 NVIDIA CUDA® 核心中执行。此外，NVIDIA Turing™ 架构可以在 Tensor Cores 或 CUDA 核心中执行 `INT8` 操作。`Tensor Cores` 是在NVIDIA Volta™ GPU 架构中引入的，用于加速机器学习和科学应用中的矩阵乘法和累加操作。这些指令对小矩阵块（例如 4x4 块）进行操作。值得注意的是，Tensor Cores 可以以比输入更高的精度计算和累加乘积。例如，在使用 FP16 输入进行训练时，Tensor Cores 可以在不丢失精度的情况下计算乘积，并以 FP32 累加。**当数学运算无法用矩阵块表示时，它们将在其他 CUDA 核心中执行**。例如，两个半精度张量的逐元素加法将由 CUDA 核心执行，而不是 Tensor Cores。
 
@@ -116,9 +125,9 @@ $$\frac{2MKN}{2(MK + KN + MN)}$$
 <img src="../images/gpu_perf/tiled_matrix_multiplication.webp" width="60%" alt="tiled_matrix_multiplication">
 </div>
 
-具体示例在下表 1 中。对于这些例子，我们将比较算法的算术强度与 NVIDIA Volta V100 PCle GPU 的 ops:byte ratio。V100 PCle GPU  的峰值算力为 112 FP16 Tensor TFLOPS，**片外内存带宽**约为 900 GB/s，芯片上 L2 缓存的带宽为 3.1 TB/s，因此其 `ops:byte ratio` 在 40 到 124.4 之间，取决于操作数据的来源（片内或片外存储器）。
+具体示例在下表 1 中。对于这些例子，我们将比较算法的算术强度与 NVIDIA Volta V100 PCle GPU 的 ops:byte ratio。V100 PCle GPU  的峰值算力为 112 FP16 Tensor TFLOPS，**片外内存带宽**约为 900 GB/s，芯片上 L2 缓存的带宽为 3.1 TB/s，因此其 `ops:byte ratio` 在 40 到 124.4 = 112 / 0.9 之间，取决于操作数据的来源（片内或片外存储器）。
 
-假设 GPU 在 FP16 输入上进行 Tensor Core 操作，并使用 FP32 累积，如果数据从 GPU 的内存加载，则 `FLOPS：B`（**ops:byte ratio**）为 `124.4 = 112 / 0.9`。下表显示了一些常见网络层的算术强度。
+假设 GPU 在 FP16 输入上进行 Tensor Core 操作，并使用 FP32 累积，下表显示了一些常见网络层的算术强度。
 
 <div align="center">
 <img src="../images/gpu_perf/memory_math_bound.png" width="60%" alt="memory_math_bound">
@@ -127,7 +136,12 @@ $$\frac{2MKN}{2(MK + KN + MN)}$$
 上述表格第一行的计算过程如下:
 
 $$
-\text{arithmetic intensity} = \frac{\text{FLOPs}}{\text{MAC}} = \frac{\#op}{\#bytes} = \frac{2MKN}{2(MK + KN + MN)} = \frac{2 \cdot 512 \cdot 1024 \cdot 4096}{2 \cdot (512\cdot1024 + 1024\cdot4096 + 512\cdot 4096 )}\approx 315
+\begin{aligned} 
+\text{arithmetic intensity} &= \frac{\text{FLOPs}}{\text{MAC}} = \frac{\#op}{\#bytes}\\
+&= \frac{2MKN}{2(MK + KN + MN)} \\
+&= \frac{2 \cdot 512 \cdot 1024 \cdot 4096}{2 \cdot (512\cdot1024 + 1024\cdot4096 + 512\cdot 4096 )} \\
+&\approx 315
+\end{aligned}
 $$
 
 即该线性层（矩阵乘法）的算术强度为 $315$，大于 V100 PCle 的 $124.4$。因此，在 V100 PCle 上，**该矩阵乘法受到算术限制，即 GPU 将被充分利用**。
