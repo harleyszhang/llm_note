@@ -1,3 +1,11 @@
+---
+layout: post
+title: flashattention1-2-3 系列总结
+date: 2024-10-07 12:00:00
+summary: flashattention1-2-3系列总结
+categories: LLM_Infer
+---
+
 - [1. Online Softmax](#1-online-softmax)
   - [Original Softmax](#original-softmax)
   - [Online Softmax](#online-softmax)
@@ -105,7 +113,11 @@ def safe_softmax(x):
 
 ### Online Softmax
 
-从 `Safe Softmax` 公式很明显看出，`MAC` 大原因是因为存在数据依赖：(2) 需要依赖 $m_N$, (3) 则需要依赖 $m_N$ 和 $d_N$。如果能**同时计算最大值 $m$ 和归一化项（normalization term）$d$，在一个 for 循环中得到最终的 $m_N$ 和 $d_N$**，则能直接减少 HBM 的访问次数（`MAC`），又因为 Softmax 典型情况都是内存受限，所以这肯定能提高 Softmax 算子的运行速度。
+从 `Safe Softmax` 公式很明显看出，`MAC` 大原因是因为存在数据依赖：
+- 公式 (2) 需要依赖 $m_N$；
+- 公式 (3) 则需要依赖 $m_N$ 和 $d_N$。
+
+但如果能**同时计算最大值 $m$ 和归一化项（normalization term）$d$，即在一个 for 循环中得到最终的 $m_N$ 和 $d_N$**，则能直接减少 HBM 的访问次数（`MAC`），又因为 Softmax 典型情况都是内存受限，所以这肯定能提高 Softmax 算子的运行速度。
 
 [Online normalizer calculation for softmax](https://arxiv.org/pdf/1805.02867) 论文将 3 步 safe softmax 合并成 2 步完成的方法，并证明了 $d_i'$ 存在如下递推性质：
 
@@ -247,7 +259,13 @@ $$\text{S = QK}^\text{T} \in \mathbb{R}^{N\times N},\quad \text{P = softmax(S)} 
 <img src="../../images/flash_attention/standard_attention_mac.png" width="60%" alt="self-attention 与 HBM 的交互">
 </div>
 
-self-attention 算子涉及到的和 HBM 数据传输过程如上图所示，很明显需要从HBM 中读取 5次，写入 HBM 3 次，`HBM` 访存量 $MAC = 3N^2 + 4Nd$，很明显标准注意力的 HBM 随序列长度增加呈二次方增长。
+self-attention 算子涉及到的和 HBM 数据传输过程如上图所示，很明显需要从HBM 中读取 5次，写入 HBM 3 次，`HBM` 访存量 $MAC = 3N^2 + 4Nd$，很明显标准注意力的 HBM 访问代价(`MAC`)随序列长度增加呈二次方增长。
+
+而 `self-attention` 的计算量为 $4N^2d$，标准注意力算子的操作强度 = $\frac{3N^2 + 4Nd}{4N^2d}$。公式可看出，标准注意力算子是一个很明显的内存受限型算子。一个实际模型的 self-attention 算子的内存访问代价和计算量分析如下图所示，从下图也可以看出 `self-attention` 算子操作强度近乎为 1，明显是内存受限的。
+
+<div align="center">
+<img src="../../images/transformer_params_flops/attention_oi.png" width="80%" alt="attention_oi">
+</div>
 
 ### 2.2 Roofline
 
@@ -363,7 +381,9 @@ O'_{r,c, i} &= \sum_{j=1}^i \frac{e^{S_{r, j} - M_{r, i}}}{D'_{r, i}} * V[j, c] 
 &= O'_{r,c, i-1} * \frac{e^{M_{r,i-1} - M_{r,i}} * D'_{r, i-1}}{D'_{r, i}} + \frac{e^{S_{r, i} - M_{r, i}}}{D'_{r,i}} * V[i, c] 
 \end{aligned}$$
 
-可以看到 $O'_{r,c, i}$ 仅仅和 $O'_{r,c, i-1}$ 以及 ${S_{r, i}、M_{r,i-1}、D'_{r,i-1}}$ 有关，不需要“规约”操作，这些变量都是可以在同一个 for 循环中计算得到的，即我们可以像 online softmax 那样在一个 $[i, N]$ 的循环中完成计算：
+<!-- 可以看到 $O_{r, c, i}'$ 仅仅和 $O_{r, c, i-1}'$ 以及 $S_{r, i}$、$M_{r, i-1}$、$D_{r, i-1}'$ 有关，不需要“规约”操作。这些变量都是可以在同一个 `for` 循环中计算得到的，即我们可以像 `online softmax` 那样在一个 $[i, N]$ 的循环中完成计算： -->
+
+![compute-s-m-d](../../images/flash_attention1-3/compute-s-m-d.png)
 
 $$\begin{aligned}
 S_{r, i} &= \sum^{Dim}_{j=1}Q[r, j]K[j, i]\\
@@ -468,6 +488,7 @@ $$
 D_{r, xy}' &= D_{r, x}' * e^{M_{r, x} - M_{r, xy}} + D_{r, y}' * e^{M_{r, y} - M_{r, xy}}\\
 O_{r,c,xy}' &= O_{r,c,x}' * \frac{e^{M_{r, x}-M_{r, xy}}D_{r, x}'}{D_{r, xy}'} + O_{r,c,y}' * \frac{e^{M_{r, y}-M_{r, xy}}D_{r, y}'}{D_{r, xy}'}\\
 \end{aligned}$$
+> 有问题，需要更新。
 
 因此，FlashAttention-1 的分块计算 python 代码如下。
 
@@ -542,6 +563,9 @@ def block_flashattn(Q, K, V, block_size=32):
             
     return O
 ```
+
+注意，前面内容的 FlashAttention 的 numpy 实现都是参考[这里](https://jcf94.com/2024/02/24/2024-02-24-flash-attention/)，但是这种实现和 FlashAttention 论文的公式和算法实现有些不同！仅供参考。
+
 ### 2.5 FlashAttention
 
 FlashAttention-v1 其实并没有提出新的算法和网络结构上的优化，但是其在算法上综合了过往的两个创新点：**分块**和**重计算**，并将其应用于 Attention 结构，给出了详尽的数学计算、证明和 IO 复杂度分析（论文长达 34 页大头都是公式），可以说是过往 transformer 模型在 gpu 上优化的**集大成者**，而且最重要的是提供了非常易用的前向传播和反向传播的代码库，这使得其广为引用和应用于工业界。
@@ -565,25 +589,31 @@ FlashAttention-v1 其实并没有提出新的算法和网络结构上的优化�
 
 `FlashAttention` 算法实现步骤如下所示。
 
-$\text{算法 1 FlashAttention} \\
-要求：矩阵\; Q, K, V \in \mathbb{R}^{N \times d}  \;存储在\;\text{HBM}（高带宽内存）中，片上\;\text{SRAM}\;大小为\;M. \\$
-
-$1: 设置块大小\;B_c = \left\lceil \frac{M}{4d} \right\rceil ,  B_r = \min \left(\left\lceil \frac{M}{4d} \right\rceil , d\right). \\
-2: 初始化\;O = (0)_{N \times d} \in \mathbb{R}^{N \times d} ,  \ell = (0)_N \in \mathbb{R}^N ,  m = (-\infty)_N \in \mathbb{R}^N\;存储在\; \text{HBM} 中. \\
-3: 将 \;Q\;分成\; T_r = \left\lceil \frac{N}{B_r} \right\rceil \;块 Q_1, \dots, Q_{T_r}，每块大小为\;B_r\times d；将\;K, V\;分为\; T_c = \left\lceil \frac{N}{B_c} \right\rceil \;块\; K_1, \dots, K_{T_c} \;和\; V_1, \dots, V_{T_c}，每块大小为\; B_c \times d. \\
-4: 将 \;O\;分为\;T_r\; 块\;O_1, \dots, O_{T_r}，每块大小为 \;B_r\times d，将 \;\ell\;分为\;T_r\;块 \ell_1, \dots, \ell_{T_r}，将\; m \;分为\;T_r\;块 m_1, \dots, m_{T_r}，每块大小为\;B_r. \\
-5: for \;1 \leq j \leq T_c\;\text{do} \\
-6: \quad 从\;\text{HBM} 加载\;K_j, V_j\;到片上 \;\text{SRAM}. \\
-7: \quad for \; 1 \leq i \leq T_r\; \text{do} \\
-8: \quad \quad 从 \; \text{HBM}\; 加载 \; Q_i, O_i, \ell_i, m_i \;到片上\; \text{SRAM}. \\
-9: \quad \quad 在片上计算\; S_{ij} = Q_i K_j^T \in \mathbb{R}^{B_r \times B_c}. \\
-10: \quad \quad 在片上计算\; \tilde{m}_{ij} = \text{rowmax}(S_{ij}) \in \mathbb{R}^{B_r} ， \tilde{P}_{ij} = \exp(S_{ij} - \tilde{m}_{ij}) \in \mathbb{R}^{B_r \times B_c} （逐元素操作），计算\; \tilde{\ell}_{ij} = \text{rowsum}(\tilde{P}{ij}) \in \mathbb{R}^{B_r}. \\
-11: \quad \quad 在片上计算\; m_i^{\text{new}} = \max(m_i, \tilde{m}_{ij}) \in \mathbb{R}^{B_r} ， \ell_i^{\text{new}} = e^{m_i - m_i^{\text{new}}} \ell_i + e^{\tilde{m}_{ij} - m_i^{\text{new}}} \tilde{\ell}_{ij} \in \mathbb{R}^{B_r}. \\
-12: \quad \quad 将\; O_i \leftarrow \text{diag}(\ell_i^{\text{new}})^{-1} (\text{diag}(\ell_i) e^{m_{i} - m_i^{\text{new}}}O_i + e^{\tilde{m}_{ij} - m_i^{\text{new}}} \tilde{P}_{ij} V_j) \; 写回到\; \text{HBM}. \\
-13: \quad \quad 将\; \ell_i \leftarrow \ell_i^{\text{new}}, m_i \leftarrow m_i^{\text{new}} \;写回到\; \text{HBM}. \\
-14: \quad \text{end for} \\
-15: \text{end for} \\
-16: 返回\; O$
+$$
+\begin{array}{l}
+\text{算法 1 FlashAttention} \\
+\text{要求：矩阵 } Q, K, V \in \mathbb{R}^{N \times d} \text{ 存储在 HBM（高带宽内存）中，片上 SRAM 大小为 } M. \\
+1: \quad \text{设置块大小 } B_c = \left\lceil \frac{M}{4d} \right\rceil ,\quad  B_r = \min \left(\left\lceil \frac{M}{4d} \right\rceil , d\right). \\
+2: \quad \text{初始化 } O = (0)_{N \times d} \in \mathbb{R}^{N \times d},\quad \ell = (0)_N \in \mathbb{R}^N,\quad m = (-\infty)_N \in \mathbb{R}^N \text{ 存储在 HBM 中}. \\
+3: \quad \text{将 } Q \text{ 分成 } T_r = \left\lceil \frac{N}{B_r} \right\rceil \text{ 块 } Q_1, \dots, Q_{T_r}, \text{ 每块大小为 } B_r \times d; \\
+   \quad \text{将 } K, V \text{ 分为 } T_c = \left\lceil \frac{N}{B_c} \right\rceil \text{ 块 } K_1, \dots, K_{T_c} \text{ 和 } V_1, \dots, V_{T_c}, \text{ 每块大小为 } B_c \times d. \\
+4: \quad \text{将 } O \text{ 分为 } T_r \text{ 块 } O_1, \dots, O_{T_r}, \text{ 每块大小为 } B_r \times d, \text{ 将 } \ell \text{ 分为 } T_r \text{ 块 } \ell_1, \dots, \ell_{T_r}, \\
+   \quad \text{将 } m \text{ 分为 } T_r \text{ 块 } m_1, \dots, m_{T_r}, \text{ 每块大小为 } B_r. \\
+5: \quad \text{for } 1 \leq j \leq T_c \text{ do} \\
+6: \quad\quad \text{从 HBM 加载 } K_j, V_j \text{ 到片上 SRAM}. \\
+7: \quad\quad \text{for } 1 \leq i \leq T_r \text{ do} \\
+8: \quad\quad\quad \text{从 HBM 加载 } Q_i, O_i, \ell_i, m_i \text{ 到片上 SRAM}. \\
+9: \quad\quad\quad \text{在片上计算 } S_{ij} = Q_i K_j^T \in \mathbb{R}^{B_r \times B_c}. \\
+10: \quad\quad\quad \text{在片上计算 } \tilde{m}_{ij} = \text{rowmax}(S_{ij}) \in \mathbb{R}^{B_r},\quad \tilde{P}_{ij} = \exp(S_{ij} - \tilde{m}_{ij}) \in \mathbb{R}^{B_r \times B_c} \text{ （逐元素操作）}, \\
+   \quad\quad\quad \text{计算 } \tilde{\ell}_{ij} = \text{rowsum}(\tilde{P}_{ij}) \in \mathbb{R}^{B_r}. \\
+11: \quad\quad\quad \text{在片上计算 } m_i^{\text{new}} = \max(m_i, \tilde{m}_{ij}) \in \mathbb{R}^{B_r},\quad \ell_i^{\text{new}} = e^{m_i - m_i^{\text{new}}} \ell_i + e^{\tilde{m}_{ij} - m_i^{\text{new}}} \tilde{\ell}_{ij} \in \mathbb{R}^{B_r}. \\
+12: \quad\quad\quad \text{将 } O_i \leftarrow \text{diag}(\ell_i^{\text{new}})^{-1} \left(\text{diag}(\ell_i) e^{m_i - m_i^{\text{new}}} O_i + e^{\tilde{m}_{ij} - m_i^{\text{new}}} \tilde{P}_{ij} V_j\right) \text{ 写回到 HBM}. \\
+13: \quad\quad\quad \text{将 } \ell_i \leftarrow \ell_i^{\text{new}},\quad m_i \leftarrow m_i^{\text{new}} \text{ 写回到 HBM}. \\
+14: \quad\quad \text{end for} \\
+15: \quad \text{end for} \\
+16: \quad \text{return } O
+\end{array}
+$$
 
 <div align="center">
 <img src="../../images/flash_attention/flash_attention_algorithm1.png" width="60%" alt="flash attention 算法步骤">
@@ -592,7 +622,174 @@ $1: 设置块大小\;B_c = \left\lceil \frac{M}{4d} \right\rceil ,  B_r = \min \
 上面的是纯 python 代码，下面我们继续优化，利用 triton 框架写出极度优化的  FlashAttention-1 内核代码。
 
 ```python
+@triton.jit
+def flash_attention_v1_kernel(
+    q_ptr,
+    k_ptr,
+    v_ptr,
+    o_ptr,
 
+    q_batch_stride,
+    q_heads_stride,
+    q_seq_stride,
+    q_dim_stride,
+
+    k_batch_stride,
+    k_heads_stride,
+    k_seq_stride,
+    k_dim_stride, # matrix Q stride for columns, [seq_len, head_dim]
+
+    v_batch_stride,
+    v_heads_stride,
+    v_seq_stride,
+    v_dim_stride,
+
+    out_batch_stride,
+    out_heads_stride,
+    out_seq_stride,
+    out_dim_stride,
+
+    n_heads,      # number of heads
+    m_size,
+    n_size,       # sequence length of k, also be rows of K matrix
+    BLOCK_DHEAD_SIZE: tl.constexpr, # head_dim dimension
+    BLOCK_M_SIZE: tl.constexpr, # BLOCK size of m_size dimension，即 Q 矩阵行数分成了m_size // BLOCK_M_SIZE 块，块大小是 BLOCK_M_SIZE
+    BLOCK_N_SIZE: tl.constexpr, # n_size dimension
+    sm_scale,
+    ):
+    """
+    针对 prefill 阶段的 attention, 所以忽略了添加 mask 过程
+    """
+    block_m_idx = tl.program_id(0)
+    head_idx = tl.program_id(1)
+
+    cur_batch_idx = head_idx // n_heads
+    cur_head_idx = head_idx % n_heads
+
+    m_range_offs = tl.arange(0, BLOCK_M_SIZE)
+    n_range_offs = tl.arange(0, BLOCK_N_SIZE)
+    dhead_range_offs = tl.arange(0, BLOCK_DHEAD_SIZE)
+
+    m_offs = block_m_idx * BLOCK_M_SIZE + m_range_offs
+
+    # Compute offsets for the first block on matrix Q K V Output
+    q_offs = ( 
+        cur_batch_idx * q_batch_stride 
+        + cur_head_idx * q_heads_stride
+        + (m_offs[:, None] * q_seq_stride + dhead_range_offs[None,:] * q_dim_stride))
+
+    k_offs = (
+        cur_batch_idx * k_batch_stride 
+        + cur_head_idx * k_heads_stride
+        + (n_range_offs[:,None] * k_seq_stride + dhead_range_offs[None,:] * k_dim_stride))
+    
+    v_offs = ( 
+        cur_batch_idx * v_batch_stride 
+        + cur_head_idx * v_heads_stride
+        + (n_range_offs[:,None] * v_seq_stride + dhead_range_offs[None,:] * v_dim_stride))
+
+    o_offs = ( 
+        cur_batch_idx * out_batch_stride 
+        + cur_head_idx * out_heads_stride
+        + (m_offs[:,None] * out_seq_stride + dhead_range_offs[None,:] * out_dim_stride))
+    
+    q_ptrs = q_ptr + q_offs
+    k_ptrs = k_ptr + k_offs
+    v_ptrs = v_ptr + v_offs
+    out_ptrs = o_ptr + o_offs
+
+    # 初始化用于计算 softmax 归一化项的 m 和 d, 意义见 online-softmax, 这里
+    # 初始化用于计算 softmax 归一化项的 m 和 d, 意义见 online-softmax, 这里
+    m_i = tl.zeros((BLOCK_M_SIZE,), dtype=tl.float32) - float("inf")
+    d_i = tl.zeros((BLOCK_M_SIZE,), dtype=tl.float32)
+    o_i = tl.zeros((BLOCK_M_SIZE, BLOCK_DHEAD_SIZE), dtype=tl.float32)
+
+    q_mask = m_offs[:, None] < m_size
+    q = tl.load(q_ptrs, mask=q_mask, other=0.0)
+
+    for block_n_start_idx in range(0, n_size, BLOCK_N_SIZE):
+        block_n_offs = block_n_start_idx + n_range_offs
+        k_mask = block_n_offs[:, None] < n_size
+        k = tl.load(k_ptrs + block_n_start_idx * k_seq_stride, mask=k_mask, other=0.0
+
+        # qk^t 初始化赋值 0
+        qk = tl.zeros((BLOCK_M_SIZE, BLOCK_N_SIZE), dtype=tl.float32)
+        qk = tl.dot(q, tl.trans(k))
+        qk *= scale # scale 是 \sqrt{d_k}
+
+        m_j = tl.max(qk, 1)
+        n_j = tl.exp(qk - m_j[:, None])   # 计算 softmax 的分子项
+        d_j = tl.sum(n_j, 1)     # 计算 softmax 的分母项，即归一化项
+
+        m_new = tl.maximum(m_j, m_i) # 更新 qk^t 最大值
+        
+        alpha = tl.exp(m_i - m_new)
+        beta = tl.exp(m_j - m_new)
+        d_new = alpha * d_i + beta * d_j
+
+        scale1 = d_i / d_new * alpha 
+        o_i = o_i * scale[:, None]
+        
+        p_scale = beta / d_new
+        qk_softmax = n_j * p_scale[:, None]
+        V = tl.load(v_ptrs + block_n_start_idx * v_k_stride, mask=v_ptr_mask, other=0.0)
+        o_i += tl.dot(qk_softmax, V)
+
+        # 更新 m_i、d_i、o_i 用于下一轮计算
+        m_i = m_new
+        d_i = d_new
+
+    out_mask = m_offs[:, None] < m_size
+    tl.store(out_ptrs, o_i, mask=out_mask)
+
+@torch.no_grad()
+@custom_fwd(cast_inputs=torch.float16)
+def flash_attention_v1(
+    q: torch.Tensor,
+    k: torch.Tensor,
+    v: torch.Tensor,
+    sm_scale,
+    attention_mask: Optional[torch.Tensor] = None,
+    ):
+    """Compute Flash-attention, can't support fp32 input
+    参数:
+        q: Query tensor, shape: [bs, n_heads, m_size, head_dim], decode 阶段, q 的 seq_len 和 k v 不一致, 其值为 1
+        k: Key tensor,  shape: [bs, n_heads, n_size, head_dim]. 
+        v: Value tensor, shape is consistent with k. 
+        output: Attention ouput tensor, shape is consistent with q. 
+        attention_mask: Attention mask matrix broadcastable to (batch, head_size, m_size, n_size).
+    """
+    output = torch.empty_like(q)
+    assert q.shape[-1] == k.shape[-1] == v.shape[-1]
+    assert (
+            q.dtype == k.dtype == v.dtype == output.dtype
+        ), f"All tensors must have the same dtype: {q.dtype}, {k.dtype}, {v.dtype}, {output.dtype}"
+    
+    # sequence length of q, also be rows of Q matrix
+    bs, n_heads, m_size, head_dim = q.size()
+    n_size = k.shape[2]
+    # sm_scale = 1 / math.sqrt(head_dim)
+    # BLOCK_M_SIZE = 128
+    grid = lambda meta: (triton.cdiv(m_size, meta["BLOCK_M_SIZE"]), bs*n_heads, 1) # 二维 grid
+
+    flash_attention_v1_kernel[grid](
+        q,
+        k,
+        v, 
+        output,
+        *q.stride(),  # (batch, heads, m_size, head_dim)
+        *k.stride(),  # (batch, heads, n_size, head_dim)
+        *v.stride(),  # (batch, heads, n_size, head_dim)
+        *output.stride(),  # (batch, heads, m_size, n_size)
+        n_heads,
+        m_size,
+        n_size,
+        head_dim,
+        64,  # BLOCK_M_SIZE
+        64,  # BLOCK_N_SIZE
+        sm_scale
+    )
+    return output
 ```
 
 ## 3. FlashAttention-2
@@ -615,83 +812,7 @@ OD[i] &= OD[i-1] * E + E*V \nonumber \\
 O[i] &= OD[i] / D[i] \nonumber
 \end{align}$$
 
-这样公式就大大简化了，减少了 FlashAttention 的计算量。对应的 python 代码：
-
-```python
-#                      m, d, m0, d0, o0, m1, d1, o1):
-def flashattn_2_update(m,    m0,     od0, m1, d1, od1):
-    #                        |       |   |   |   |
-    #                        |       |   x   v   1
-    # Init value:           MIN_M    0
-    od = od0 * np.exp(m0 - m) + od1 * np.exp(m1 - m) * d1
-    return od
-
-def block_flashattn2(Q, K, V, block_size=32):
-    N, Dim = Q.shape
-    
-    # 1, Load Q K and write S. and Compute S[r][i] by matrix multiply 
-    S = np.zeros([N, N], "float32")
-    O = np.zeros([N, Dim], "float32")
-        
-    for r in range(0, N):
-       for i in range(0, N):
-           # QK^T
-           for j in range(0, Dim):
-               S[r][i] += Q[r][j] * K[i][j]
-    
-    for r in range(0, N):  
-        # Softmax
-        mm = np.zeros([N],  "float32")
-        dd = np.zeros([N],  "float32")
-        m = np.zeros([N // block_size],  "float32")
-        d = np.zeros([N // block_size],  "float32")
-        
-        for b in range(0, N // block_size):
-            # Calculate m,d of single block
-            for i in range(0, block_size):
-                mm[b*block_size + i], dd[b*block_size + i] = online_softmax_update(
-                    mm[b*block_size + i-1] if i > 0 else MIN_M,
-                    dd[b*block_size + i-1] if j > 0 else 0,
-                    S[r, b*block_size + i], 
-                    1,
-                )
-            
-            # Merge all block's result to total
-            m[b], d[b] = online_softmax_update(
-                m[b-1] if b > 0 else MIN_M,
-                d[b-1] if b > 0 else 0,
-                mm[(b + 1) * block_size - 1], # 当前块的 mm 和  dd
-                dd[(b + 1) * block_size - 1])
-        
-        # PV: [N, N] * [N, Dim] -> [N, dim]
-        for c in range(0, Dim):
-            o = 0
-            for b in range(0, N //block_size):
-                # Calculate single block
-                od = 0
-                for i in range(0, block_size):
-                    od = flashattn_2_update(
-                        mm[b * block_size + i], # 当前迭代位置的 m
-                        mm[b * block_size + i-1] if i > 0 else MIN_M,
-                        od,
-                        S[r, b * block_size + i], # 当前迭代位置的 s[r,i]
-                        V[b * block_size + i, c],
-                        1
-                    )
-                
-                # Merge all blocks to total
-                o = flashattn_2_update(
-                    m[b],                              # 当前迭代 block 的 m
-                    m[b - 1] if b > 0 else MIN_M,
-                    o, # 上一个 block 的结果
-                    mm[(b + 1) * block_size - 1],      # m1
-                    dd[(b + 1) * block_size - 1],      # d1
-                    od / dd[(b + 1) * block_size - 1], # od1 
-                )
-            O[r][c] = o / d[b - 1] # 上一轮 block 的 d
-            
-    return O
-```
+这样公式就大大简化了，减少了 FlashAttention 的计算量。
 
 ## 4. FlashAttention-3
 
