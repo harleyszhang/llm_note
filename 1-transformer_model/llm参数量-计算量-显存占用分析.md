@@ -166,10 +166,10 @@ $$y = xW^T + \text{bias}$$
 
 2, **Self-Attention 层**，`MHA` 包含 `heads` 数目的 `Self-Attention` 层，这里直接分析所有 `Self-Attention` 层的 `FLOPs`:
 - **$QK^T$ 打分计算**：每个头需要计算 Query 和 Key 的点积，所有头的 $QK^T$ 矩阵乘法的输入和输出形状为: $[s,h] \times [h,s]\to [s,s]$，`FLOPs`: $2s^2h$。
-- **softmax 函数**：softmax 函数不会改变输入矩阵的维度，即 $[s,s] \to [s,s]$，native softmax 涉及 `FLOPs` $3Hs^2-1$, $H$ 为头数。
+- **softmax 函数**：softmax 函数不会改变输入矩阵的维度，即 $[s,h] \to [s,h]$，native softmax 涉及 `FLOPs` $(4/5)sh$。
 - **应用注意力权重**：计算在 $V$ 上的加权 $score\cdot V$，矩阵乘法的输入输出形状: $[s,s] \times [s,h]\to [s,h]$，`FLOPs`: $2s^2h$。
 
-**`Scale Dot Product Attention` 层内部只估算两个矩阵乘法的计算量**，`attention_scale`（$/\sqrt(k)$）是逐元素操作、`attn_softmax` ($\text{softmax}$) 的计算量较小，因此都忽略不计。
+`attention_scale`（$/\sqrt(k)$）是逐元素操作、`attn_softmax` ($\text{softmax}$) 的计算量较小，因此都忽略不计。故`Scale Dot Product Attention` 层内部只估算两个矩阵乘法的计算量为 $4s^2h$。
 
 3, **多头拼接和线性映射**：所有注意力头输出拼接后通过线性映射，`concat` 不涉及数学运算，只涉及内存操作。矩阵乘法的输入和输出形状为: $[s,h] \times [h,h]\to [s,h]$，**attention 后的线性映射的 `FLOPs`: $2sh^2$**。
 
