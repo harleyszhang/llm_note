@@ -1,3 +1,11 @@
+---
+layout: post
+title: lightllm 性能瓶颈分析
+date: 2023-11-01 22:00:00
+summary: LightLLM 推理框架静态性能测试及分析
+categories: LLM_Infer
+---
+
 - [LightLLM 推理框架静态性能测试及分析](#lightllm-推理框架静态性能测试及分析)
   - [一、Prefill/Decode 阶段算子执行时间占比情况](#一prefilldecode-阶段算子执行时间占比情况)
   - [二、4 卡 A100 和 4 卡 A40 对比](#二4-卡-a100-和-4-卡-a40-对比)
@@ -29,7 +37,7 @@
 3，备注：集群不稳定的两束证据，尤其是 decode 阶段的 all_duce 通信时间，这个问题很重要！！！如果集群不解决，我们集群的性能数据都得重复测好几次，且结果不稳定。
 
 <div align="center">
-<img src="../../images/lightllm_analysis/cluster_problem.png" width="60%" alt="cluster_problem">
+<img src="../../images/lightllm_analysis/cluster_problem.png" width="80%" alt="cluster_problem">
 </div>
 
 ## 一、Prefill/Decode 阶段算子执行时间占比情况
@@ -37,19 +45,19 @@
 1，将 LLaMA2-70B 模型分别在 4/8 卡 A100-40GB 上部署，设置 batch_size=20, input_length=1024, output_length=1024，统计 prefill/decode 阶段各算子的执行时间占比：
 
 <div align="center">
-<img src="../../images/lightllm_analysis/pie_chart.png" width="60%" alt="pie_chart">
+<img src="../../images/lightllm_analysis/pie_chart.png" width="100%" alt="pie_chart">
 </div>
 
 2，将 LLaMA2-70B 模型分别在 4/8 卡 A40-48GB 上部署，设置 batch_size=20, input_length=1024, output_length=1024，统计 prefill/decode 阶段各算子的执行时间占比：
 
 <div align="center">
-<img src="../../images/lightllm_analysis/pie_chart2.png" width="60%" alt="pie_chart2">
+<img src="../../images/lightllm_analysis/pie_chart2.png" width="100%" alt="pie_chart2">
 </div>
 
 3，将 LLaMA2-7B 模型分别在 4/8 卡 T4-16GB 上部署，设置 batch_size=32, input_length=1024, output_length=1024，统计 prefill/decode 阶段各算子的执行时间占比：
 
 <div align="center">
-<img src="../../images/lightllm_analysis/pie_chart3.png" width="60%" alt="pie_chart3">
+<img src="../../images/lightllm_analysis/pie_chart3.png" width="100%" alt="pie_chart3">
 </div>
 
 **算子开销实验结论：对于 Prefill 阶段**：
@@ -73,19 +81,19 @@
 <img src="../../images/lightllm_analysis/4a100_4a40.png" width="60%" alt="4a100_4a40">
 </div>
 
-结果分析：在推理层，无论是 prefill 阶段还是 decode 阶段，4 卡 A100 的推理性能都优于 4 卡 A40 的性能。这是符合预期的，因为 A100 在算力、显存带宽、卡间通信方面都优于 A40。
+结果分析：在推理层，无论是 prefill 阶段还是 decode 阶段，4 卡 A100 的推理性能都优于 4 卡 A40 的性能。这是符合预期的，因为 A100 在算力、显存带宽、卡间通信方面都优于 A40。另外，4 卡 A100 的 prefill 阶段性能 2 倍于 A40，但是在 decode 阶段性能提升只有 15%，这是否意味着在 Decode 阶段可利用算力更低的 A40 降低成本。
 
 ### 2.3、算子性能分析结果
 
 `A100` 和 `A40` 卡的各算子的总耗时情况对比如下图所示，图中也展示了 A100 相对于 A40 的[加速比](https://www.jendow.com.tw/wiki/%E5%8A%A0%E9%80%9F%E6%AF%94)。
 
 <div align="center">
-<img src="../../images/lightllm_analysis/op_perf1.png" width="60%" alt="算子性能分析结果">
+<img src="../../images/lightllm_analysis/op_perf1.png" width="80%" alt="算子性能分析结果">
 </div>
 
 结果分析：
 
-1. prefill 阶段 A100 的 all_reduce【卡间互联通信时间】时间比 a40 快了 300%，理论值的对比是 600/112.5 = 5.33，基本符合理论值对比；decode 阶段 的 all_reduce 时间 4 卡 A100 比 A40 快了 `13%` 左右。
+1. prefill 阶段 A100 的 all_reduce【卡间互联通信时间】时间比 a40 快了 300%，理论值的对比是 600/112.5 = 5.33，和理论值对比有些差距；decode 阶段 的 all_reduce 时间 4 卡 A40 比 A100 快了 `13%` 左右（异常），可能是集群数据抖动。
 2. prefill 和 decode 阶段 a100 ffn 算子【纯矩阵运算】比 a40 的计算加速比是 $2.2%$ 和 $1.72$，理论上 a100 比 a40 的算力加速比是 $312/150 = 2.08$，实验结果和理论预估几乎一致。
 
 > prefill 阶段 sequence 和 batch_size 都大于 1，算子非访存密集型算子，有利于发挥 Tensor 性能。
@@ -109,7 +117,8 @@
 **结果分析**:
 
 无论是 prefill 还是 decode 阶段:
-1. 4 卡 A40 的 all_reduce 时间比 8 卡 A40 少了近一半；且 4 卡和 8 卡 A40 的 ffn + all_reduce 时间只差了 `16%` 左右，这直接解释了 8 卡 A40 的最大并发跟 4 卡 A40 的最大并发差不多的原因。
+1. 4 卡 A40 的 all_reduce 时间比 8 卡 A40 少了近一半，有待理论分析。
+2. 4 卡和 8 卡 A40 的占据最大头的 ffn + all_reduce 时间只差了 `20%` 左右。对应的从总的 prefill 和 decode 时间看，8 卡 A40 的最大并发跟 4 卡 A40 的时间也只相差不到 `25%`（8.34/6.7），考虑到最大并发数对首次延时的要求，这就能解释为什么 4 卡/8 卡 A40 支持的最大并发书数目相差无几。
 
 ## 四、4 卡 A100 和 8 卡 A100 对比
 
@@ -133,11 +142,13 @@
 
 具体来说，对于纯计算算子（线性层等），使用 8 张 A100 相对于 4 张 A100 能带来接近 2x 的性能提升，这符合预期，因为 8 卡 A100 的算力大约是 4 卡 A100 的两倍；而 decode  阶段，因为 sequence = 1，所以算术（计算）强度比较低，**性能受内存带宽限制而不是算力限制，即 GPU 算力无法被充分利用**，这也导致 decode 阶段通过增加算力给纯计算算子带来的性能提升并不明显的原因。
 
+**总结：长上下文、Llama70B 模型在 Decode 阶段没必要使用高算力机器，但有必要使用高带宽的机器**。
+
 奇怪点：8 卡比 4 卡 A100，单个卡的通信和访存变少了，但是为什么 decode 阶段 `all_reduce` 算子没有性能提升？
 
 2，**在 A100 上增加 TP 数不会给 `all_reduce` 算子带来性能提升，甚至略微降低一点点**。
 
-直观上在总通信量相同的情况下，8 卡的通信次数增加，但单次通信量和访存都减少，为什么 `all_recude` 算子没有性能提升呢？分析：对于 `all_reduce` 操作，所有 GPU 都需要同步数据。换句话说，**更多的 `TP` 数意味着 all_reduce 操作需要更多次的同步，导致每轮同步的耗时增加。另外 decode 阶段通信量很少，带宽利用率很低**。
+无论 TP = 4 或者 8，每次 llm 推理的总通信量是相同的，都是 `4bsh * 2byte`。
 
 ## 五、2 卡 A40 上 PCIe 和 NVLink 互联对比
 
@@ -159,15 +170,14 @@
 
 **结果分析**：
 - `Prefill` 阶段通信量很大，对于 all_reduce 算子来说，实验中，`NVLink` 互连的卡的 all_reduce 算子时间是 PCIe 的一半，即 A40 的 NVLink 比 PCIe4.0 的实际带宽的加速比为 $2$，而两者的理论带宽加速比是 1.76x。之所以实际加速比超过理论值，是因为，A40 机器的 GPU0 和 GPU3 是 PXB 连接方式【跨过多个 PCIE bridges】，其通信速度略低于 `PIX`  模式，即低于理论的 PCIE4.0 的通信带宽。实验结果和理论预估几乎一致。
-- `Decode` 阶段通信量很小，PCIe 互联卡的 all_reduce 时间是 NVLink 互联卡的时间的 1.2 倍，NVLink 通信带来的性能提升不明显。
+- `Decode` 阶段通信量很小，PCIe 互联卡的 all_reduce 时间是 NVLink 互联卡的时间的 1.2 倍（可能是数据抖动的原因），但为什么 `NVLink` 通信带来的性能提升不明显呢？
 
 ## 六、总结-lightllm 推理框架性能瓶颈分析实验结论
 
-- **`NVLink` 通信在 `prefill` 阶段有绝对优势！但是在 `decode` 阶段优势不明显，是不是意味着目前的推理框架在 `decode` 阶段的卡间互联通信上有优化空间？**
+- **PD 分离方案可考虑：`prefill` 阶段倾向于算力高的机器（PCIE 卡），`decode` 阶段倾向于高带宽（低算力）的机器**，从而降低 LLM 推理服务的成本。
+- 对比 PCIE 通信，`NVLink` 通信在 `prefill` 阶段是能明显提升 `all_reduce` 操作性能。但是在 `decode` 阶段 `all_reduce` 操作时间几乎不变。**
 - 带 `PCIe` 互联的卡（如 T4 卡和 8 张 A40 卡），**prefill 阶段的 all_reduce 时间占比是最大的**。
 - `decode` 阶段，因为 `sequence = 1` ，所以算子的算术（计算）强度比较低，即性能受内存带宽限制而不是算力限制（GPU 算力无法被充分利用），所以增加 `TP` 数给算子带来的性能提升并不明显。
-
-> 奇怪点：8 卡比 4 卡 A100，单个卡的通信和访存变少了，但是为什么 decode 阶段 `all_reduce` 算子没有性能提升？
 
 ## 参考资料
 
