@@ -1,3 +1,11 @@
+---
+layout: post
+title: 英伟达GPU架构总结
+date: 2023-09-01 20:00:00
+summary: 介绍 Volta、Turing、Ampera、Hopper 架构特性和硬件基本结构。
+categories: Hpc
+---
+
 - [背景知识](#背景知识)
   - [Tensor 算力和 FP32 算力](#tensor-算力和-fp32-算力)
   - [单指令多线程 SIMT](#单指令多线程-simt)
@@ -578,6 +586,10 @@ H100 提供了高达 `80GB` 的 GPU 显存和 `3.35TB/s`（H100 SXM）的显存�
  -->
 <img src="../images/nvidia_gpu/H100_format.png" width="60%" alt="H100 产品规格">
 
+NVIDIA A100 vs. H100 规格表如下所示:
+
+<img src="../images/nvidia_gpu/A100_H100.png" width="70%" alt="A100_H100">
+
 ## 六，V100/A100/H100 计算能力对比
 
 下表比较了不同 NVIDIA GPU 架构之间的计算能力参数。
@@ -608,4 +620,3 @@ H100 提供了高达 `80GB` 的 GPU 显存和 `3.35TB/s`（H100 SXM）的显存�
 12. [Tesla T4 专业推理卡数据手册](https://www.nvidia.com/en-us/data-center/tesla-t4/)
 13. [SIMD < SIMT < SMT: parallelism in NVIDIA GPUs](https://yosefk.com/blog/simd-simt-smt-parallelism-in-nvidia-gpus.html)
 14. [Dissecting the NVIDIA Volta GPU Architecture via Microbenchmarking - 2018 - Slides (1804.06826).](https://github.com/tpn/pdfs/blob/master/Dissecting%20the%20NVIDIA%20Volta%20GPU%20Architecture%20via%20Microbenchmarking%20-%202018%20-%20Slides%20(1804.06826).pdf)
-
