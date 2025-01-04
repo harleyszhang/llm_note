@@ -118,7 +118,28 @@ awq_results = {
 
 ![auto_scale_func](../images/awq_code/auto_scale_func.png)
 
-其中 scale_ln_fcs、scale_gelu_fc 函数都是在给定缩放因子 $s$ 的前提下去缩放权重参数，一个是针对 ln->fcs 连接的线性层列表权重和 ln 的权重及偏置，一个是针对 fc1->fc2 连接的线性层。 
+其中 scale_ln_fcs、scale_gelu_fc、scale_fc_fc 函数都是在给定缩放因子 $s$ 的前提下去缩放网络层权重参数：
+- `scale_ln_fcs`: 函数针对 ln->fcs 连接的线性层列表权重和 ln 的权重及偏置。
+- `scale_gelu_fc`: 函数用于对 `GELU` 激活函数后接全连接层的权重进行缩放操作。 
+- `scale_fc_fc`: 函数用于缩放两个连续全连接层 fc1->fc2 权重的函数。
+
+其中带注释的 `scale_gelu_fc` 函数实现如下所示:
+
+```python
+@torch.no_grad()
+def scale_gelu_fc(gelu, fc, scales):
+    # 进行网络层类型检查
+    assert isinstance(gelu, (nn.GELU, BloomGelu, GELUActivation))
+    assert isinstance(fc, nn.Linear)
+
+    # scales.view(1, -1) 将缩放因子重塑为 2D 张量, 以匹配权重矩阵的维度
+    # mul_ 是就地乘法操作（节省内存），直接修改 fc.weight 的值
+    fc.weight.mul_(scales.view(1, -1).to(fc.weight.device))
+
+    # 遍历全连接层的所有参数，确保没有任何参数变成 NaN 值，这是一个重要的数值稳定性检查。
+    for p in fc.parameters():
+        assert torch.isnan(p).sum() == 0
+```
 
 前面论文的解读文章中，我们已经知道了权重缩放系数 $s$ 的计算公式是如下所示：
 
@@ -127,9 +148,20 @@ s = \text{mean(abs}({\mathbf{x}}))^{\alpha}, \quad \alpha^* = \arg\min_{\alpha} 
 \tag{5}
 $$
 
-其中 $\text{mean(abs}({\mathbf{x}}))$ 是逐通道计算的激活值绝对值的平均值。它的对应实现是在 `_search_module_scale` 函数中，代码如下所示
+其中 $\text{mean(abs}({\mathbf{x}}))$ 是逐通道计算的激活值绝对值的平均值，对应的代码实现是 `get_act_scale` 函数。
 
 ```python
+@torch.no_grad()
+def get_act_scale(x):
+    # x.abs().view(-1, x.shape[-1]): 重塑张量维度 -> [b*s, h]
+    # x.abs().view(-1, x.shape[-1]).mean(0): 沿着第0维计算平均值 -> [h,]
+    return x.abs().view(-1, x.shape[-1]).mean(0)
+```
+
+公式（5）也就是 $s$ 的自动搜索算法实现是在 `_search_module_scale` 函数中，代码如下所示：
+
+```python
+# _search_module_scale 是 auto_scale_block 内的函数
 def _search_module_scale(block, linears2scale: list, x, kwargs={}):
     """
     在给定的模块和输入特征下，搜索最佳的缩放因子。
@@ -163,7 +195,7 @@ def _search_module_scale(block, linears2scale: list, x, kwargs={}):
 
     for ratio in range(n_grid):
         ratio = ratio * 1 / n_grid  # 当前比例
-        scales = x_max.pow(ratio).clamp(min=1e-4).view(-1)  # 计算缩放因子
+        scales = x_max.pow(ratio).clamp(min=1e-4).view(-1)  # s^alpha 计算缩放因子
         scales = scales / (scales.max() * scales.min()).sqrt()  # 归一化缩放因子
 
         for fc in linears2scale:
