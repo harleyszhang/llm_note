@@ -166,7 +166,7 @@ $$y = xW^T + \text{bias}$$
 
 2, **Self-Attention 层**，`MHA` 包含 `heads` 数目的 `Self-Attention` 层，这里直接分析所有 `Self-Attention` 层的 `FLOPs`:
 - **$QK^T$ 打分计算**：每个头需要计算 Query 和 Key 的点积，所有头的 $QK^T$ 矩阵乘法的输入和输出形状为: $[s,h] \times [h,s]\to [s,s]$，`FLOPs`: $2s^2h$。
-- **softmax 函数**：softmax 函数不会改变输入矩阵的维度，即 $[s,h] \to [s,h]$，native softmax 涉及 `FLOPs` $(4/5)sh$。
+- **softmax 函数**：softmax 函数不会改变输入矩阵的维度，即 $[s,s] \to [s,s]$，native softmax 涉及 `FLOPs` $(4/5)sh$。
 - **应用注意力权重**：计算在 $V$ 上的加权 $score\cdot V$，矩阵乘法的输入输出形状: $[s,s] \times [s,h]\to [s,h]$，`FLOPs`: $2s^2h$。
 
 `attention_scale`（$/\sqrt(k)$）是逐元素操作、`attn_softmax` ($\text{softmax}$) 的计算量较小，因此都忽略不计。故`Scale Dot Product Attention` 层内部只估算两个矩阵乘法的计算量为 $4s^2h$。
@@ -294,14 +294,14 @@ total_memory = memory_modal + 2 * memory_activations + memory_optimizer
 
 1，存储模型权重参数所需的显存计算公式（`params` 是模型参数量，参数类型为 `fp16`）：
 
-$$\text{memory\_model} = \text{params} * 2 = [n(12h^2 + 4h) + Vh] * 2$$
+$$\text{memory\_model} = \text{params} * 2 = [n(12h^2 + 13h) + Vh] * 2$$
 
 2，中间激活显存占用（额外开销）
 
 和模型训练需要存储前向传播过程中的中间变量结果不同，**模型推理过程中并不需要存储中间变量**，因此推理过程中涉及到的**中间结果**内存会很小（中间结果用完就会释放掉），一般指**相邻两层的中间结果**或者算子内部的中间结果，这里我们只考虑主要算子中最大的中间结果部分即可。
 
 这里我们假设其占用的显存为 `memory_intermediate`，`heads` 数量用符号 $n_\text{head}$ 表示，假设输入数据的形状为 $[b,s]$。
-- 每个 self-attention 头需要计算 Query 和 Key 的点积，每个头的 $QK^T$ 矩阵乘法的输入输出形状为 $[b, head\_num, s, h//n\_head] \times [b, head\_num, h//n\_head, s] \rightarrow [b, head\_num, s, s]$，所以占用显存大小为 $2bs^2n_{head}$；
+- 每个 self-attention 头需要计算 Query 和 Key 的点积，每个头的 $QK^T$ 矩阵乘法的输入输出形状为 $[b, n\_head, s, h//n\_head] \times [b, n\_head, h//n\_head, s] \rightarrow [b, n\_head, s, s]$，所以占用显存大小为 $2bs^2n_{head}$；
 - `mlp` 块中，第一个线性层的输出结果形状为 $[b, s, 4h]$，所以占用显存大小为 $8bsh$。
 
 计算 `MHA`和 `MLP` 的 `memory_intermediate` 的伪代码如下:
@@ -319,7 +319,7 @@ $$\text{memory\_intermediate} = 8bsh$$
 
 3，`kv cache` 显存占用
 
-`LLM` 推理优化中 `kv cache` 是常见的方法，本质是用空间换时间。假设输入序列的长度为 $s$ ，输出序列的长度为 $o$，decoder layers 数目为 $n$，以 `float16` 来保存 `KV cache`，那么 `KV cache` 的峰值显存占用计算公式为:
+`LLM` 推理优化中 `kv cache` 是常见的方法，本质是用空间换时间。假设输入序列的长度为 $s$ ，输出序列的长度为 $o$，decoder layers 数目为 $n$，以 `float16` 来保存 `KV cache`，那么 `KV cache` 的峰值显存占用计算公式（不使用 `GQA` 优化）为:
 
 $$\text{memory\_kv-cache} = 2*2*nh*b(s+o) = 4nh*b(s+o)$$
 
