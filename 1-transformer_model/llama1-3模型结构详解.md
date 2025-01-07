@@ -52,7 +52,7 @@ LLaMA **优势**在于其**只使用公开可用的数据**，这可以保证论
 完整的模型结构图如下图所示:
 
 <center>
-<img src="../images/llama/llama_architecture3.png" width="80%" alt="完整的llama模型结构">
+<img src="../images/llama/llama_architecture4.png" width="80%" alt="完整的llama模型结构">
 </center>
 
 > [processon 在线浏览](https://www.processon.com/view/link/67163481a8011b320f2af67f?cid=67161b027f25232473eba8d3)
