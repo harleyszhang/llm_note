@@ -22,14 +22,14 @@ prompt_token_len = 42, output_token_len = 285。
 
 **1，用户指标**：
 
-- `first_token_latency` 首字时延(`TTFT`，Time-to-first-token, 单位：毫秒)：从请求发出到第一个 token 生成的耗时。
-- `avg_token_latency` 非首字时延(`TPOT`，Time-per-output-token, 单位：毫秒)：从第二个到第 N 个 token 生成的平均耗时。
+- `TTFT` 首字时延(Time-to-first-token 或者 first_token_latency, 单位：毫秒)：从请求发出到第一个 token 生成的耗时。
+- `TPOT` 非首字时延(Time-per-output-token 或 decode_token_latency, 单位：毫秒)：从第二个到第 N 个 token 生成的平均耗时。
 - `response_time`【不算很重要】：用户从发起请求到收到最后一个 Token 响应结束的时间。
 - `benchmark_time`：用户发送完所有请求的最大运行时间。
 
 **2，系统指标**：
 - `concurrency_users`: LLM 服在满足用户首次时延和非首次时延的基础上，可支持的最大并发用户数。
-- `throughput_token_rate`：单位：`TPS`，表示系统每秒能生成 `tokens` 的数量。
+- `TPS`（throughput_token_rate）：表示系统每秒能生成 `tokens` 的数量。
 - `throughput_request_rate`: 单位：`QPS`，表示服务每秒能处理的请求数量。
 - `error_rate`：所有并发用户请求失败的总次数占比总请求数，系统错误率越小越好。
 
