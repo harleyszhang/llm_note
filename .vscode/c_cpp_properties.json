@@ -3,7 +3,11 @@
     {
       "name": "macos-clang-arm64",
       "includePath": [
-        "${workspaceFolder}/**"
+        "${workspaceFolder}/**",
+        "/opt/anaconda3/lib/python3.11/site-packages/torch/include/",
+        "/opt/anaconda3/lib/python3.11/site-packages/torch/include/torch/csrc/api/include",
+        "/opt/anaconda3/include/python3.11/",
+        "/opt/anaconda3/include/"
       ],
       "compilerPath": "/usr/bin/clang++",
       "cStandard": "c17",
