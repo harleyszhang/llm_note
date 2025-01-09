@@ -17,7 +17,7 @@ $$q_i = \frac{exp(z_i/T)}{\sum_j^K exp(z_j/T)}$$
 
 ```python
 # logits 是 llm 推理输出, 形状为 [batch_size, seq_len, vocab_size]
-probs = torch.softmax(logits[:, -1] / temperature, dim=-1)
+probs = torch.softmax(logits[:, -1, :] / temperature, dim=-1)
 ```
 
 代码详解：
