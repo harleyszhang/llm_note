@@ -259,9 +259,9 @@ $$\text{S = QK}^\text{T} \in \mathbb{R}^{N\times N},\quad \text{P = softmax(S)} 
 <img src="../../images/flash_attention/standard_attention_mac.png" width="60%" alt="self-attention 与 HBM 的交互">
 </div>
 
-self-attention 算子涉及到的和 HBM 数据传输过程如上图所示，很明显需要从HBM 中读取 5次，写入 HBM 3 次，`HBM` 访存量 $MAC = 3N^2 + 4Nd$，很明显标准注意力的 HBM 访问代价(`MAC`)随序列长度增加呈二次方增长。
+self-attention 算子涉及到的和 HBM 数据传输过程如上图所示，很明显需要从HBM 中读取 5次，写入 HBM 3 次，`HBM` 访存量 $MAC = 4N^2 + 3Nd$，很明显标准注意力的 HBM 访问代价(`MAC`)随序列长度增加呈二次方增长。
 
-而 `self-attention` 的计算量为 $4N^2d$，标准注意力算子的操作强度 = $\frac{3N^2 + 4Nd}{4N^2d}$。公式可看出，标准注意力算子是一个很明显的内存受限型算子。一个实际模型的 self-attention 算子的内存访问代价和计算量分析如下图所示，从下图也可以看出 `self-attention` 算子操作强度近乎为 1，明显是内存受限的。
+而 `self-attention` 的计算量为 $4N^2d$，标准注意力算子的操作强度 = $\frac{4N^2d}{4N^2 + 3Nd}$。公式可看出，标准注意力算子是一个很明显的内存受限型算子。一个实际模型的 self-attention 算子的内存访问代价和计算量分析如下图所示，从下图也可以看出 `self-attention` 算子操作强度近乎为 1，明显是内存受限的。
 
 <div align="center">
 <img src="../../images/transformer_params_flops/attention_oi.png" width="80%" alt="attention_oi">
