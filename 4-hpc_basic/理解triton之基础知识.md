@@ -279,7 +279,12 @@ tl.store(c_ptr + c_idx, acc, mask = (offsets_m < M) & (offsets < N), other=0.0)
 
 **不同的 grid 则可以执行不同的程序（即 kernel）**。`grid` 定义了内核（kernel）执行的网格大小，即有多少个块（`blocks`）将被启动来执行一个内核，同时每个块包含 'BLOCK_SIZE' 个线程（`threads`），一个 block 中的 thread 能存取同一块共享的内存。
 
-与 cuda 编程把 thread 当作并行执行的基本单位不同，在 Triton 中，**块 block 才是内核并行执行的基本单位**，每个块负责处理任务的一个子集，通过合理划分块大小，可以充分利用 GPU 的并行计算能力。
+与 cuda 编程把 thread 当作并行执行的基本单位不同，在 Triton 中，**块 block 才是内核并行执行的基本单位**，每个块负责处理任务的一个子集，通过合理划分块大小，可以充分利用 GPU 的并行计算能力。可以**8通过配置 `grid size` 来决定块的数量**，而块内的每个线程是隐式定义的，不需要像 CUDA 那样手动配置线程布局。在 triton 中 grid 定义 blocks 数量本质上是定义**内核的并行执行范围**。
+
+`triton` 中共享内存的使用方法：
+- 共享内存通过 tl.zeros 和 tl.atomic_add 等操作配合实现。
+- 每个 Block 独立分配共享内存，互不干扰。共享内存只在当前块内的所有线程可见，块之间无法共享。
+- 不同 SM 上的共享内存是完全独立的。
 
 ### cuda 执行模型
 
@@ -314,8 +319,8 @@ Triton 定义：
 
 ### triton 特性
 
-Triton 是关心分块（tile）的技术，和 pytorch 的输入是张量视图b不同，triton 的操作对象是张量指针，其更关心张量布局和如何分块（影响 kernel 性能），使用 triton 编写 kernel 性能下限很高，且开发时间大大减少。**Triton 有 3 个重要的特性**：
-1. 粒度为 Block(tile)：更关心 block（即 SM 和 CUDA 的 block 不完全一样），而不是 grid、block、thread 这样严格而又复杂的线程组织结构。
+Triton 是关心分块（tile）的技术，和 pytorch 的输入是张量视图不同，triton 的操作对象是张量指针，其更关心张量布局和如何分块（影响 kernel 性能），使用 triton 编写 kernel 性能下限很高，且开发时间大大减少。**Triton 有 3 个重要的特性**：
+1. 粒度为 `block`(tile)：更关心 block（即 SM 和 CUDA 的 block 不完全一样），而不是 grid、block、thread 这样严格而又复杂的线程组织结构。
 2. 优化 Pass: 借助一系列的优化 Pass，它可以达到和 cuBLAS 等算子库接近的水平。
 3. 和 pytorch 无缝衔接: 输入是 torch 张量指针。
 
