@@ -24,7 +24,7 @@ categories: LLM_Compression
 
 作者提供了 [llm-awq](https://github.com/mit-han-lab/llm-awq) 仓库，开源包括了量化算法、量化模型转换和量化模型推理的代码，另外提供了 `entry.py` 代码来调用模型权重量化和量化推理接口。
 
-1，获取模型权重缩放（放大）的 scale 因子，定义 args.run_awq 参数后 entry 会调用 **run_awq 函数**返回缩放因子 $s$。
+1，获取模型权重缩放（放大）的 scale 因子，定义 args.run_awq 参数后 entry 会调用 **run_awq 函数**获取缩放因子 $s$，通过 `--dump_awq` 参数指定缩放后的 llm 权重文件路径。
 
 ```bash
 python -m awq.entry --model_path /PATH/TO/LLAMA3/llama3-8b \
@@ -65,14 +65,14 @@ python -m awq.entry --model_path /PATH/TO/LLAMA3/llama3-8b \
 
 通过 `entry` 的四种用法可以发现，`awq` [仓库的算法架构](https://github.com/mit-han-lab/llm-awq/blob/main/awq/)和 `smoothquant` 很像，伪量化推理过程比较简单这里忽略，量化模型推理的实现是通过下述步骤（模块）：
 1. 基于校准集得到激活再根据量化算法计算量化缩放因子 $s$；
-2. 裁剪线性层权重的最小、最大值，推测了是为了抑制权重的异常值（smoothquant 没有这步）；
+2. 裁剪线性层权重的最小、最大值，推测是为了抑制权重的异常值（smoothquant 没有这步）；
 3. 在前面得到权重缩放因子 $s$ 基础上，将浮点模型权重转换为 `int4` 量化模型权重；
 4. 自定义 int4 矩阵乘法 kernel，并替换掉原来的浮点线性层，得到量化模型，再执行真正的量化模型推理（forward）。
 
 在代码实现上:
 1. 步骤 1 的实现对应代码文件 [auto_scale.py](https://github.com/mit-han-lab/llm-awq/blob/main/awq/quantize/auto_scale.py)；
 2. 步骤 2 的实现对应 [auto_clip.py](https://github.com/mit-han-lab/llm-awq/blob/main/awq/quantize/auto_clip.py)；
-3. 步骤 3 的实现对应 `pre_quant.py` 和 [quantizer.py](https://github.com/mit-han-lab/llm-awq/blob/main/awq/quantize/quantizer.py)，前者是分别调用 auto_scale.py 的 `apply_scale` 函数和 auto_clip.py 的 `apply_clip` 函数得到 awq 量化算法的最终结果 `awq_results` 给后续 quantizer.py 的模型量化函数 `real_quantize_model_weight` 用。
+3. 步骤 3 的实现对应 `pre_quant.py` 和 [quantizer.py](https://github.com/mit-han-lab/llm-awq/blob/main/awq/quantize/quantizer.py)，前者分别调用 auto_scale.py 的 `apply_scale` 函数和 auto_clip.py 的 `apply_clip` 函数得到 awq 量化算法的最终结果 `awq_results` 给后续 quantizer.py 的模型量化函数 `real_quantize_model_weight` 用。
 
 ```python
 # awq_results 是一个字典
@@ -144,11 +144,10 @@ def scale_gelu_fc(gelu, fc, scales):
 前面论文的解读文章中，我们已经知道了权重缩放系数 $s$ 的计算公式是如下所示：
 
 $$
-s = \text{mean(abs}({\mathbf{x}}))^{\alpha}, \quad \alpha^* = \arg\min_{\alpha} \mathcal{L}(\text{mean(abs}({\mathbf{x}}))^{\alpha})
-\tag{5}
+s = \text{mean(abs}({\mathbf{x}}))^{\alpha}, \quad \alpha^* = \arg\min_{\alpha} \mathcal{L}(\text{mean(abs}({\mathbf{x}}))^{\alpha}) \tag{5}
 $$
 
-其中 $\text{mean(abs}({\mathbf{x}}))$ 是逐通道计算的激活值绝对值的平均值，对应的代码实现是 `get_act_scale` 函数。
+其中 $\text{mean(abs}({\mathbf{x}}))$ 是逐通道计算的激活值绝对值的平均值，对应的代码实现是 `auto_scale.py/get_act_scale` 函数。
 
 ```python
 @torch.no_grad()
