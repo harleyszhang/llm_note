@@ -157,7 +157,7 @@ def get_act_scale(x):
     return x.abs().view(-1, x.shape[-1]).mean(0)
 ```
 
-公式（5）也就是 $s$ 的自动搜索算法实现是在 `_search_module_scale` 函数中，代码如下所示：
+公式（5）也就是 $s$ 的**自动搜索算法**实现是在 `_search_module_scale` 函数中，代码如下所示：
 
 ```python
 # _search_module_scale 是 auto_scale_block 内的函数
@@ -195,7 +195,7 @@ def _search_module_scale(block, linears2scale: list, x, kwargs={}):
     for ratio in range(n_grid):
         ratio = ratio * 1 / n_grid  # 当前比例
         scales = x_max.pow(ratio).clamp(min=1e-4).view(-1)  # s^alpha 计算缩放因子
-        scales = scales / (scales.max() * scales.min()).sqrt()  # 归一化缩放因子
+        scales = scales / (scales.max() * scales.min()).sqrt()  # 归一化缩放因子(论文没有描述这步操作)
 
         for fc in linears2scale:
             # 权重乘以缩放因子，对显著权重进行放大以降低量化误差, 对应公式(2)中的 w*s
@@ -327,7 +327,7 @@ if isinstance(module, LlamaDecoderLayer):
 获取裁剪权重的最大值，在代码实现上本质也是一种**暴力搜索 + 最小化 `MSE` 损失的算法**，其权重最大值的获取也是通过最小 MSE 损失来求得，但这里不仅遍历了每个通道的最大值，内层循环里面还遍历了前面提到的 $\alpha$ 值，是双重循环求最小 $MSE$ 损失！
 
 `auto_clip` 的实现和应用我都觉得很神奇，理论层面不理解为什么要这么做，只能基于 `smoothquant` 论文的灵感来给出一点我的推测，个人觉得这是为了直接剔除权重中的异常值，我们都知道激活中有异常值，那么权重中也是可能存在的，自然也需要剔除，尤其是这里权重量化位宽是 `INT4`，如果原来的浮点值有异常值，那么很可能会影响模型精度，毕竟 `INT4/INT3` 或者更低位宽表示的范围跟原来的 `FP16` 比差别很大！
-> awq 论文跟 smoothquant 论文还有点不一样的是它没有量化激活，只量化了，因此模型中量化 kernel 计算时得先对激活（就是当前层的输入张量）做反量化 dequantize 操作。
+> awq 论文跟 smoothquant 论文还有点不一样的是它没有量化激活，只量化了权重，因此模型中量化 kernel 计算时得先对激活（就是当前层的输入张量）做反量化 dequantize 操作。
 
 哎，没有理论说明，这里先假定它还是实验指导理论吧，后续有看到解释再来更新，直接看其代码实现吧。
 
