@@ -438,9 +438,9 @@ def auto_clip_layer(
 
 ### 3.1 pre_quant.py
 
-实现了 get_named_linears、get_blocks、move_embed、run_awq 和 apply_awq 函数，其中前三个都是文件内部使用的接口，后面两个是对外提供使用的。
+pre_quant.py 实现了 get_named_linears、get_blocks、move_embed、run_awq 和 apply_awq 函数，其中前三个都是文件内部使用的接口，后面两个是对外提供使用的。
 - `run_awq`：运行 AWQ（自动权重量化）流程，对模型进行权重量化。
-- `apply_awq`: 将 AWQ 结果应用到模型中，在加载模型权重缩放因子文件后用得到。
+- `apply_awq`: 其实就是先后调用 apply_scale 和 apply_clip 函数，将 AWQ 权重缩放结果应用到模型中，在加载模型权重缩放因子文件后用得到。
 
 run_awq 函数的实现逻辑相对简单，就是使用钩子函数，在跑模型推理的时候逐层获取缩放因子 `scales_list` 和 裁剪最大值 `clip_list` 结果，并调用相关 apply 函数来执行对显著权重进行放大和对权重异常值裁剪的操作。代码如下所示(做了精简):
 
@@ -501,21 +501,67 @@ def run_awq():
    - 如果 init_only 为 True，使用 WQLinear.from_linear 初始化量化线性层，并并调用 `set_op_by_name` 替换原有线性层。
    - 否则，伪量化权重，获取缩放因子和零点，并使用 WQLinear.from_linear 初始化量化线性层（带有缩放和零点）。
 
-real_quantize_model_weight 函数中最关键的操作就是使用量化线性层 `WQLinear` 替换原来的线性层。
+`real_quantize_model_weight` 函数中**最关键的操作就是使用量化线性层 `WQLinear` 替换原来的线性层**。
 
-（伪）权重量化函数的实现和 smoothquant 有点区别，虽然都是 min_max 求量化 scale 的算法，但这里是分组求最大值（per-group 量化），核心代码如下所示:
+（伪）权重量化函数的实现和 smoothquant 有点区别，基于 min_max + 非线性量化，求计算量化 scale 和 zero_point，同时支持分组量化，`AWQ` 的权重量化一般默认使用分组量化（per-group 量化，通过函数参数传入 group_size 大小），核心代码如下所示:
 
 ```python
-# 计算每组的最大值和最小值
-max_val = w.amax(dim=1, keepdim=True)
-min_val = w.amin(dim=1, keepdim=True)
-# 量化整数范围
-max_int = 2**n_bit - 1
-min_int = 0
-# 计算缩放因子
-scales = (max_val - min_val).clamp(min=1e-5) / max_int
-# 计算零点
-zeros = (-torch.round(min_val / scales)).clamp_(min_int, max_int)
+def pseudo_quantize_tensor(
+    w, n_bit=8, zero_point=True, q_group_size=-1, inplace=False, get_scale_zp=False
+):
+    org_w_shape = w.shape
+    if q_group_size > 0:
+        assert org_w_shape[-1] % q_group_size == 0
+        # num_groups = weight.shape[1] // group_size
+        w = w.reshape(-1, q_group_size) # 权重分组
+    assert w.dim() == 2
+    if zero_point:
+        max_val = w.amax(dim=1, keepdim=True)
+        min_val = w.amin(dim=1, keepdim=True)
+        max_int = 2**n_bit - 1
+        min_int = 0
+        scales = (max_val - min_val).clamp(min=1e-5) / max_int
+        zeros = (-torch.round(min_val / scales)).clamp_(min_int, max_int)
+    else:  # we actually never used this
+        assert min_val is None
+        max_val = w.abs().amax(dim=1, keepdim=True)
+        max_val = max_val.clamp(min=1e-5)
+        max_int = 2 ** (n_bit - 1) - 1
+        min_int = -(2 ** (n_bit - 1))
+        scales = max_val / max_int
+        zeros = 0
+
+    assert torch.isnan(scales).sum() == 0
+    assert torch.isnan(w).sum() == 0
+
+    if inplace:
+        (
+            (w.div_(scales).round_().add_(zeros)).clamp_(min_int, max_int).sub_(zeros)
+        ).mul_(scales)
+    else:
+        w = (
+            torch.clamp(torch.round(w / scales) + zeros, min_int, max_int) - zeros
+        ) * scales
+    assert torch.isnan(w).sum() == 0
+
+    w = w.reshape(org_w_shape)
+
+    if get_scale_zp:
+        return w, scales.view(w.shape[0], -1), zeros.view(w.shape[0], -1)
+    else:
+        return w
+```
+
+dim = 1 维度的权重分组不好直接理解，直接看示例：
+
+```python
+w = torch.tensor([[1, 2, 3, 4], [5, 6, 7, 8]])
+q_group_size = 2
+w = w.reshape(-1, q_group_size)
+# 结果：tensor([[1, 2],
+#               [3, 4],
+#               [5, 6],
+#               [7, 8]])
 ```
 
 ## 四 量化模型推理
