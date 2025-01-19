@@ -18,7 +18,7 @@ CUDA 是 NVIDIA 的通用并行计算架构（编程模型），是在 C 语言�
 
 ### 1.2 内存管理
 
-CUDA 编程的一个关键是内存管理，，CUDA运行时除了负责分配与释放设备内存，也负责在主机内存和设备内存之间传输数据。表2-1 列出了标准的 C 函数以及相应地针对内存操作的 CUDA C 函数。
+CUDA 编程的一个关键是内存管理，CUDA运行时除了负责分配与释放设备内存，也负责在主机内存和设备内存之间传输数据。表2-1 列出了标准的 C 函数以及相应地针对内存操作的 CUDA C 函数。
 
 <div align="center">
 <img src="../images/cuda_program_model/cuda_memory_manage.png" width="60%" alt="cuda 内存操作函数">
