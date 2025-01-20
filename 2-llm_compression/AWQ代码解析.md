@@ -566,7 +566,8 @@ w = w.reshape(-1, q_group_size)
 
 ## 四 量化模型推理
 
-量化模型推理的实现主要在于用  cuda 实现量化 kernel，并替换原有的浮点 kernel。这部分代码实现在 `qmodule.py` 文件中，文件实现了 calculate_zeros_width、pack_intweight 函数和 ScaledActivation、WQLinear 类。
+量化模型推理的实现主要在于用 cuda 实现量化 kernel，并替换原有的浮点 kernel。这部分代码实现在 `qmodule.py` 文件中，文件实现了 calculate_zeros_width、pack_intweight 函数和 ScaledActivation、WQLinear 类。
+> vllm 框架的 gemm 量化 kernel 实现代码是基于 [llm_awq](https://github.com/mit-han-lab/llm-awq/tree/main) 仓库提供的量化 kernel 修改优化得到，代码地址在[这里](https://github.com/vllm-project/vllm/blob/main/csrc/quantization/awq/gemm_kernels.cu)，推荐看 vllm 的实现，代码相对更为简洁和优雅易懂。
 
 其中 `WQLinear` 类是线性层量化类，其中 `from_linear` 作用是从原始 nn.Linear 层创建量化的 WQLinear 层；forward 函数部分用量化 kernel `gemm_forward_cuda_new` 替换原有的 pytorch 的 `Linear` 浮点线性层函数。主要代码如下所示:
 
