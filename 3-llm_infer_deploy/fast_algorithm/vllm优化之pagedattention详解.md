@@ -6,22 +6,20 @@ summary: 总结了 vllm 的 pagedattention 内核设计和动态分配、管理 
 categories: LLM_Infer
 ---
 
-- [一 PagedAttention 总结](#一-pagedattention-总结)
-  - [1.1 PagedAttention 为什么能提高性能](#11-pagedattention-为什么能提高性能)
-- [二 PagedAttention 内核](#二-pagedattention-内核)
-  - [2.1 主要函数](#21-主要函数)
-  - [2.2 内核配置定义](#22-内核配置定义)
-  - [2.3 基于 block\_tables 读取 kv cache](#23-基于-block_tables-读取-kv-cache)
-- [三 Paged(页表)原理分析](#三-paged页表原理分析)
-  - [3.1 Block 管理相关类](#31-block-管理相关类)
+- [一 PagedAttention 内核](#一-pagedattention-内核)
+  - [1.1 主要函数](#11-主要函数)
+  - [1.2 内核配置定义](#12-内核配置定义)
+  - [1.3 基于 block\_tables 读取 kv cache](#13-基于-block_tables-读取-kv-cache)
+- [二 Paged(页表)原理分析](#二-paged页表原理分析)
+  - [2.1 Block 管理相关类](#21-block-管理相关类)
     - [BlockTable](#blocktable)
     - [CpuGpuBlockAllocator 类](#cpugpublockallocator-类)
     - [NaiveBlockAllocator](#naiveblockallocator)
     - [BlockList 类](#blocklist-类)
     - [逻辑 block 管理类-SelfAttnBlockSpaceManager](#逻辑-block-管理类-selfattnblockspacemanager)
-  - [3.2 slot mapping](#32-slot-mapping)
-  - [3.3 物理 block 分配类-CacheEngine](#33-物理-block-分配类-cacheengine)
-    - [num\_gpu\_blocks 获取-determine\_num\_available\_blocks 函数](#num_gpu_blocks-获取-determine_num_available_blocks-函数)
+  - [2.2 slot mapping](#22-slot-mapping)
+  - [2.3 物理 block 分配类-CacheEngine](#23-物理-block-分配类-cacheengine)
+    - [2.3.1 num\_gpu\_blocks 获取-determine\_num\_available\_blocks 函数](#231-num_gpu_blocks-获取-determine_num_available_blocks-函数)
 - [参考资料](#参考资料)
 
 PagedAttention 算法的原理可以参考我前面写的文章[vllm优化技术速览](https://www.armcvai.cn/2024-10-26/vllm-optimize.html)。从源码的角度来看 PagedAttention，其实可以分为两部分:
@@ -33,21 +31,9 @@ PagedAttention 算法的原理可以参考我前面写的文章[vllm优化技术
 <img src="../../images/vllm_pagedattention/llm_memory_waste.png" width="60%" alt="llm_memory_waste">
 </div>
 
-## 一 PagedAttention 总结
+## 一 PagedAttention 内核
 
-### 1.1 PagedAttention 为什么能提高性能
-
-1. 首先，传统 kv cache 实现的效率低下的原因是存在大量**内存浪费**和**碎片化**问题。而 PagedAttention 算法基于操作系统的 page table 思想构建了 block table 来动态分配管理 kv cache 内存，能够极大程度上**避免 GPU 内存的浪费**，从而提推理时 `batch_size`，进而增加推理系统的 `TPS`。
-2. 基于 page table 思想来动态管理、分配 kv cache，可以实现**按需扩容**，和内存空间的**高复用**。
-3. 有利于流式推理，大模型推理 decode 阶段每次都是输出 `batch_size` 个 `tokens`，且在连续批处理技术中会混合着 prefill 和 decode 阶段分别分配的 `blocks`，而分页思想可以在后台**增量添加任意大小的 `bolcks` 空间**，不打断已有会话的计算，也无需合并或搬移大块数组。
-4. **有利结合 Kernel 优化**，比如得到 kv 实际长度后，可在 attention kernel 中实现 `NoPad Attention`。
-5. 最后一点是，个人总结的就是在类似 `PagedAttention` 类似的 kv cache 动态管理、分配内存的技术，是实现后续如 Chunked prefill、Prefix caching 等技术的基础，且在大模型时代 kv cache 的优化是核心中的核心！
-
-> Chunked prefill 技术的作用在于，可以将非常长的输入 prompt 拆分成更小的块进行处理，以避免长prompt阻塞其他请求，从而减少延迟并提高整体的吞吐。
-
-## 二 PagedAttention 内核
-
-### 2.1 主要函数
+### 1.1 主要函数
 
 看一个文件代码之前，先快速过一下这个文件有哪些主要（模板）类或者函数，vllm 中 `pagedattention` 内核的实现 `csrc/attention/attention_kernels.cu` 文件中，其主要有以下模板函数。
 
@@ -89,10 +75,8 @@ void paged_attention_v2_launcher()
 void paged_attention_v1(
     torch::Tensor& out,    // [num_seqs, num_heads, head_size]
     torch::Tensor& query,  // [num_seqs, num_heads, head_size]
-    torch::Tensor&
-        key_cache,  // [num_blocks, num_heads, head_size/x, block_size, x]
-    torch::Tensor&
-        value_cache,       // [num_blocks, num_heads, head_size, block_size]
+    torch::Tensor& key_cache,  // [num_blocks, num_heads, head_size/x, block_size, x]
+    torch::Tensor& value_cache,       // [num_blocks, num_heads, head_size, block_size]
     int64_t num_kv_heads,  // [num_heads]
     double scale,
     torch::Tensor& block_tables,  // [num_seqs, max_num_blocks_per_seq]
@@ -135,7 +119,7 @@ __global__ void paged_attention_v1_kernel(
     const float k_scale, const float v_scale) 
 ```
 
-### 2.2 内核配置定义
+### 1.2 内核配置定义
 
 先阅读 `paged_attention_v1_kernel()` 内核的调用（包装）函数 `paged_attention_v1_launcher()` 的 内容来看 kernel 的配置如何。
 
@@ -225,7 +209,7 @@ void paged_attention_kernel()
 
 通过注释我们可以发现最前面代码的核心就是计算 `seq`、`num_heads` 维度的索引以及线程组索引和偏移。
 
-### 2.3 基于 block_tables 读取 kv cache 
+### 1.3 基于 block_tables 读取 kv cache 
 
 这部分代码是真正属于 `pagedattention` 原创性的设计，即如何基于 block_tables 去 token 的 offset。
 
@@ -316,7 +300,7 @@ for (int block_idx = start_block_idx + warp_idx; block_idx < end_block_idx; bloc
 
 后续的代码就是去更新 softmax 和姨同样的操作去加载 v, 然后再做 gemv（softmax(qk^t) * v），最终得到 attention 输出，这里不再分析具体算法逻辑。
 
-## 三 Paged(页表)原理分析
+## 二 Paged(页表)原理分析
 
 这里的算法分析重点在于分析如何创建 block table、实现逻辑 table 和物理 table 的映射，以及如何针对每个 `seq` 动态分配相应数量的 `block` 用于存储 kv cache。
 
@@ -365,7 +349,7 @@ def __init__(
 <img src="../../images/vllm_pagedattention/BlockManager_CacheManager.jpg" width="70%" alt="BlockManager_CacheManager">
 </div>
 
-### 3.1 Block 管理相关类
+### 2.1 Block 管理相关类
 
 `BlockManager` 相关类的包装关系对应文件: block_manager.py -> block_table.py -> naive_block.py
 
@@ -825,11 +809,12 @@ class BlockList:
 
 #### 逻辑 block 管理类-SelfAttnBlockSpaceManager
 
-SelfAttnBlockSpaceManager 类用于管理注意力机制中 KV（Key-Value）缓存块，主要负责**逻辑内存块的分配、交换**、以及其他高级功能如前缀缓存、分叉/写时复制（Forking/Copy-on-Write）和滑动窗口内存分配。
+SelfAttnBlockSpaceManager 类用于管理注意力机制中 KV（Key-Value）缓存块，主要负责**逻辑内存块的分配、交换**、以及其他高级功能如前缀缓存（即请求共享前缀`systemp prompt`）、分叉/写时复制（Forking/Copy-on-Write）和滑动窗口内存分配。
 
-和前面几个是 `block` 模块内部类不同，它是对外部模块提供的类，但 BlockManager（和调度器）实际上只负责管理页表（即管理每个seq到物理块的映射关系），实际的物理块中的数据不由它管理。
+和前面几个是 `block` 模块内部类不同，它是对外部模块提供的类，但 BlockManager（和调度器）实际上只负责管理页表（即管理每个 `seq` 到物理块的映射关系），实际的物理块中的数据不由它管理。
 
-先看构造函数 `__init__()`，函数中维护了一个逻辑 `block_tables`，它是一个字典，形式如 `block_tables: Dict[SeqId, BlockTable] = {}`，这个字典维护着整个 vllm 系统中每个 Sequence 实例到它的 block_table 之间的映射关系。构造函数的输入参数比较多，这里重点看三个参数的意义：
+先看构造函数 `__init__()`，函数中维护了一个逻辑 `block_tables`，它是一个字典，形式如 `block_tables: Dict[SeqId, BlockTable] = {}`，这个字典维护着整个 vllm 系统中每个 Sequence 实例到它的 block_table 之间的映射关系，**方便快速查找到当前文本序列(Sequence) 对应的 PhysicalTokenBlock**。构造函数的输入参数比较多，这里重点看三个参数的意义：
+
 - `block_size`: 每个内存块的大小，表示可以存储多少个令牌的 KV 数据。
 - `num_gpu_blocks`: 分配在 GPU 上的内存块数量。
 - `num_cpu_blocks`: 分配在 CPU 上的内存块数量。
@@ -840,9 +825,59 @@ SelfAttnBlockSpaceManager 类用于管理注意力机制中 KV（Key-Value）缓
 <img src="../../images/vllm_pagedattention/block_tables.png" width="60%" alt="block_tables">
 </div>
 
-`SelfAttnBlockSpaceManager` 类中内存块分配相关有 `allocate` 和 `_allocate_sequence` 函数，分别用于为为给定的序列组分配所需的内存块和为单个序列分配块表。
+`SelfAttnBlockSpaceManager` 类中内存块分配相关有 `allocate` 和 `_allocate_sequence` 函数，分别用于为给定的序列组分配所需的内存块和为单个序列分配块表。
 
-### 3.2 slot mapping
+**块的分配策略由 CpuGpuBlockAllocator 来实现**，分配策略有 `naive` 和 `prefix_caching` 两种。CpuGpuBlockAllocator 是一个管理 CPU 和 GPU 内存块的分配器类，继承自 DeviceAwareBlockAllocator，提供了在 CPU 和 GPU 设备上分配和管理内存块的功能。
+
+块的分配策略类涉及到 4 个类，它们的类图关系如下所示：
+
+```mermaid
+classDiagram
+    DeviceAwareBlockAllocator <-- CpuGpuBlockAllocator
+    BlockAllocator <-- NaiveBlockAllocator
+    class DeviceAwareBlockAllocator {
+        +allocate_mutable_block()
+        +allocate_immutable_block()
+        +free()
+    }
+    class BlockAllocator {
+        +allocate_mutable_block()
+        +allocate_immutable_block()
+        +free()
+    }
+    class CpuGpuBlockAllocator {
+        -_allocators: Dict
+        +create()
+        +swap()
+    }
+    class NaiveBlockAllocator {
+        -_free_blocks: List
+        +allocate_block()
+        +free()
+    }
+```
+
+**类的关系说明**：
+1. DeviceAwareBlockAllocator
+    - 顶层接口
+    - 定义设备相关的内存块分配方法
+    - CpuGpuBlockAllocator 实现此接口
+    - BlockAllocator
+
+2. 基础抽象类
+    - 定义基本的内存块分配操作
+    - NaiveBlockAllocator 继承此类
+
+3. CpuGpuBlockAllocator
+    - 实现 DeviceAwareBlockAllocator 接口
+    - **内部使用 BlockAllocator 的具体实现(如 NaiveBlockAllocator)**
+    - 管理 CPU 和 GPU 两种设备上的内存块
+
+4. NaiveBlockAllocator
+    - BlockAllocator 的简单实现
+    - 被 CpuGpuBlockAllocator 使用来管理具体设备上的内存块
+
+### 2.2 slot mapping
 
 上一节讲的 `block_tables` 是逻辑层面的，而传给实际计算 `kernel` 的 `block_tables` 是形状为 `[batch_size, max_blocks_per_seq]` 的 `torch.Tensor` 表示每个序列的块地址列表，第一维表示序列 ID，第二维是物理块列表。
 - 例如，[0, 1, 2] 表示 tokens 存储在 kv cache 的第 0、1 和 2 个块中。
@@ -856,7 +891,7 @@ block_tables: Optional[torch.Tensor]
 另外 `vllm/attention/backends/utils.py` 文件中提供了一些函数用于计算“槽映射”（slot mapping），并将序列中的 `token` 索引映射到内存块中的槽索引。
 
 <div align="center">
-<img src="../../images/vllm_pagedattention/compute_slot_mapping.png" width="60%" alt="compute_slot_mapping">
+<img src="../../images/vllm_pagedattention/compute_slot_mapping_python.png" width="60%" alt="_allocate_kv_cache">
 </div>
 
 主函数 `compute_slot_mapping`，根据是否进行性能分析、是否需要填充以及使用哪种实现方式（Python 或 NumPy），计算序列的槽映射。
@@ -892,7 +927,7 @@ class FlashAttentionMetadata:
     slot_mapping: torch.Tensor
 ```
 
-### 3.3 物理 block 分配类-CacheEngine
+### 2.3 物理 block 分配类-CacheEngine
 
 `CacheEngine` 给GPU分配空间的方式，本质上通过 `pytorch` 的接口在 `gpu` 上分配 `num_blocks` 大小的零 `tensor` 来作为物理块的空间的，而不是直接使用 `cudaMalloc` 进行操作的。
 
@@ -901,7 +936,7 @@ class FlashAttentionMetadata:
 代码通过循环遍历 self.num_attention_layers，**为每个层分配独立的 KV 缓存张量**，确保每层的 kv 张量能够被单独存储和访问，避免不同层之间的干扰。`num_gpu_blocks` 会通过 `model_executor.determine_num_available_blocks` 函数获取当前模型在指定设备上的每个 `layer` 的最大可用物理 `blocks` 数目。
 
 <div align="center">
-<img src="../../images/vllm_pagedattention/initialize_kv_caches.png" width="65%" alt="_allocate_kv_cache">
+<img src="../../images/vllm_pagedattention/allocate_kv_cache.png" width="65%" alt="allocate_kv_cache">
 </div>
 
 绝大部分后端的 `kv_cache_shape` 形状都是 `[2, num_blocks, block_size, num_kv_heads, head_size]`。
@@ -924,7 +959,7 @@ class PagedAttention:
 <img src="../../images/vllm_pagedattention/initialize_kv_caches.png" width="65%" alt="llm_memory_waste">
 </div>
 
-#### num_gpu_blocks 获取-determine_num_available_blocks 函数
+#### 2.3.1 num_gpu_blocks 获取-determine_num_available_blocks 函数
 
 `determine_num_available_blocks` 函数的具体实现是在 `worker` 目录下的各个设备的 `work.py` 实现，先以简单 `cpu_work.py` 的实现为例分析，cpu 中的 `num_gpu_blocks`（实际是 cpu 的可用内存块数量）计算是通过理论计算得到的，通过 cpu/gpu 设备可用的内存空间除以相关 `kv_cache_block_size` 得到可用 `blocks` 数量。
 
@@ -1037,7 +1072,12 @@ def determine_num_available_blocks(model_config, gpu_memory_utilization = 0.9) -
     return num_gpu_blocks, 0
 ```
 
-至此 `vllm` 的 `pagedattention` 内核设计和动态分配、管理 kv cache 内存的模块分析完毕，难点主要有三个：一个是 `block_tables` 的创建和管理，以及 gpu 设备在指定模型上的可分配的内存 `blocks` 的计算，最后就是 `pagedattention` 内核代码中相关线程索引和偏移的计算怎么改成基于 `block_tables` 的形式，这都需要反复阅读理解代码才能得到清晰的理解。
+总结：至此 `vllm` 的 `pagedattention` 内核设计和动态分配、管理 kv cache 内存的模块分析完毕，难点主要有三个：
+1. `cpu/gpu` 设备在指定模型上的可分配的内存 `blocks` 的计算;
+2. (不同设备的) `block_tables` 的创建和管理，以及基于 `Scheduler` 的调度策略去分配、释放和回收 `blocks`。
+3. 最后就是 `pagedattention` 内核代码中相关线程索引和偏移的计算怎么改成基于 `block_tables` 的形式，多了三个参数：`k_cache, v_cache, block_table`，其中 `block_tables` 尺寸为 [num_seqs, max_num_blocks_per_seq]，`v_cache` 尺寸为 [num_blocks, num_heads, head_size, block_size]。
+
+以上，这都需要反复阅读理解代码才能得到清晰的理解。
 
 ## 参考资料
 
