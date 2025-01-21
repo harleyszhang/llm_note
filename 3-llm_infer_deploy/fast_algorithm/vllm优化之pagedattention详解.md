@@ -304,6 +304,10 @@ for (int block_idx = start_block_idx + warp_idx; block_idx < end_block_idx; bloc
 
 这里的算法分析重点在于分析如何创建 block table、实现逻辑 table 和物理 table 的映射，以及如何针对每个 `seq` 动态分配相应数量的 `block` 用于存储 kv cache。
 
+<div align="center">
+<img src="../../images/vllm_pagedattention/Manage_KV_Cache.png" width="75%" alt="Manage_KV_Cache">
+</div>
+
 这块代码的实现是在 vllm 的请求调度层模块里，**请求调度模块**的作用是将服务接收到的请求进行状态管理，包括入队出队操作，并且将请求解析成推理引擎的输入，由 `Worker` 模块完成模型推理。
 
 请求调度的核心源码在：[vllm/core/scheduler.py](https://github.com/vllm-project/vllm/blob/v0.3.0/vllm/core/scheduler.py#L73) 文件中。核心实现在 Scheduler 类中，这个类中的 _schedule 函数调用内部的相关完成具体的请求调度。另外，调度器中的下发 `batch` 请求到 `Worker` 模块中的相关函数，如 `_schedule_prefills` 函数会先调用 `block_manager.can_allocate` 函数判断是否有足够内存分配。而在初始化方法 `__init__` 函数有 kv cache 显存块状态管理器的初始化。具体代码如下所示：
@@ -346,7 +350,7 @@ def __init__(
 值得注意的是，BlockManager（和调度器）实际上只负责管理页表（即管理逻辑块和每个 `seq` 到物理块的映射关系），实际的物理块中的数据不由它管理。这个实际上和 os 中的页表也差不多，BlockManager中的一个物理块就相当于页表中的一个PTE，而不是真实存放数据的物理块，实际进行内存分配的是 CacheEngine。
 
 <div align="center">
-<img src="../../images/vllm_pagedattention/BlockManager_CacheManager.jpg" width="70%" alt="BlockManager_CacheManager">
+<img src="../../images/vllm_pagedattention/BlockManager_CacheManager.png" width="70%" alt="BlockManager_CacheManager">
 </div>
 
 ### 2.1 Block 管理相关类
@@ -891,7 +895,7 @@ block_tables: Optional[torch.Tensor]
 另外 `vllm/attention/backends/utils.py` 文件中提供了一些函数用于计算“槽映射”（slot mapping），并将序列中的 `token` 索引映射到内存块中的槽索引。
 
 <div align="center">
-<img src="../../images/vllm_pagedattention/compute_slot_mapping_python.png" width="60%" alt="_allocate_kv_cache">
+<img src="../../images/vllm_pagedattention/compute_slot_mapping_python.png" width="60%" alt="allocate_kv_cache">
 </div>
 
 主函数 `compute_slot_mapping`，根据是否进行性能分析、是否需要填充以及使用哪种实现方式（Python 或 NumPy），计算序列的槽映射。
@@ -936,7 +940,7 @@ class FlashAttentionMetadata:
 代码通过循环遍历 self.num_attention_layers，**为每个层分配独立的 KV 缓存张量**，确保每层的 kv 张量能够被单独存储和访问，避免不同层之间的干扰。`num_gpu_blocks` 会通过 `model_executor.determine_num_available_blocks` 函数获取当前模型在指定设备上的每个 `layer` 的最大可用物理 `blocks` 数目。
 
 <div align="center">
-<img src="../../images/vllm_pagedattention/allocate_kv_cache.png" width="65%" alt="allocate_kv_cache">
+<img src="../../images/vllm_pagedattention/allocate_kv_cache.png" width="65%" alt="_allocate_kv_cache">
 </div>
 
 绝大部分后端的 `kv_cache_shape` 形状都是 `[2, num_blocks, block_size, num_kv_heads, head_size]`。
@@ -1081,6 +1085,7 @@ def determine_num_available_blocks(model_config, gpu_memory_utilization = 0.9) -
 
 ## 参考资料
 
+- [vllm First Meetup](https://docs.google.com/presentation/d/1QL-XPFXiFpDBh86DbEegFXBXFXjix4v032GhShbKf3s/edit?pli=1#slide=id.p)
 - [CUDA PagedAttention kernel源码解析--大模型推理服务框架vLLM要点简析（下）](https://zhuanlan.zhihu.com/p/658233994)
 - [PageAttention代码走读](https://zhuanlan.zhihu.com/p/668736097)
 - [vLLM & PagedAttention 论文深度解读（二）—— vLLM 服务架构及源码实现](https://zhuanlan.zhihu.com/p/661360117)
