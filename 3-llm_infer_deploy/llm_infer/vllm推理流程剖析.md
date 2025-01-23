@@ -26,9 +26,12 @@ LLMEngine —> ExecutorBase —> WorkerBase —> ModelRunnerBase
 
 `LLMEngine` 类: vllm/engine/llm_engine.py
 
-（涉及代码 2000 行）： 用于管理大语言模型（LLM）的推理和生成过程。其中：
+（涉及代码 2000 行）： 用于管理大语言模型（LLM）的推理和生成过程。LLMEngine 是整个 vllm 系统的入口类，其中 _initialize_kv_cache、step、add_request 是重点成员函数，其初始化函数会在引擎对象内部组合一个 `Tokenizer`、`Detokenizer`、和一组（pipeline_parallel_size）`Scheduler`。
+
+其中：
 - `step` 方法：是引擎的核心方法，每调用一次执行一次解码步骤。包括调度、执行模型、处理输出和清理任务。
-- `_initialize_kv_caches` 方法：初始化 KV 缓存，动态调整 GPU 和 CPU 缓存块数量。
+- `_initialize_kv_caches` 方法：初始化 CPU/GPU 的 KV cache 的 blocks 数量，每个 block 包含 block_size 个 tokens。
+- `add_request` 方法：负责处理输入的 `prompt` 请求，向引擎的请求池添加新的请求，实现了**规范的请求处理流程**，函数关键步骤包括：通过 _validate_token_prompt 验证输入 token 的有效性、使用 input_preprocessor 对输入进行预处理等等，最后通过 `_add_processed_request` 将处理后的请求添加到系统中。
 
 `step()` 方法中真正调用模型推理的代码只有一行，通过调用 model_executor 类实例的 execute_model 方法执行模型推理。
 
