@@ -6,6 +6,26 @@ summary: DeepSeekv2 模型结构的详细解读，以及代码实现分析并拆
 categories: Transformer
 ---
 
+- [1. 介绍](#1-介绍)
+- [2. 架构](#2-架构)
+  - [2.1 多头潜变量注意力（MLA）：提升推理效率](#21-多头潜变量注意力mla提升推理效率)
+    - [2.1.1 Standard Multi-Head Attention](#211-standard-multi-head-attention)
+    - [2.1.2 Low-Rank Key-Value Joint Compression](#212-low-rank-key-value-joint-compression)
+    - [2.1.3 Decoupled Rotary Position Embedding](#213-decoupled-rotary-position-embedding)
+    - [2.1.4 kv cache 大小的比较](#214-kv-cache-大小的比较)
+  - [2.2 DeepSeekMoE：以经济成本训练强大的模型](#22-deepseekmoe以经济成本训练强大的模型)
+    - [2.2.2. 设备受限路由（Device-Limited Routing）](#222-设备受限路由device-limited-routing)
+    - [2.2.3. 负载均衡的辅助损失（Auxiliary Loss for Load Balance）](#223-负载均衡的辅助损失auxiliary-loss-for-load-balance)
+    - [2.2.4. Token-Dropping 策略](#224-token-dropping-策略)
+- [3. 代码实现](#3-代码实现)
+  - [3.1 MLA 实现拆解](#31-mla-实现拆解)
+    - [3.1.1 Q 向量计算](#311-q-向量计算)
+    - [3.1.2 KV 向量计算](#312-kv-向量计算)
+    - [3.1.3 Self-Attention 计算](#313-self-attention-计算)
+  - [3.2 transformers 代码实现解读](#32-transformers-代码实现解读)
+  - [3.3 MLA 模块的代码优化-Projection Absorption](#33-mla-模块的代码优化-projection-absorption)
+- [参考资料](#参考资料)
+
 ## 1. 介绍
 
 DeepSeek-V2 是一种高效的开源混合专家（MoE）语言模型，基于创新的 Transformer 架构，实现了经济的训练和高效的推理。DeepSeek-V2 具有 2360 亿个参数(`236B`)，每个 token 激活 21 亿个参数，支持 `128K` tokens 的上下文长度。
