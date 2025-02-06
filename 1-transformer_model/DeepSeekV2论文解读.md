@@ -484,20 +484,120 @@ $${q_t^C}^\top k_t^C = (W^{UQ} c_t^Q)^{\top} W^{UK} c_t^{KV} = {c_t^Q}^{\top}{W^
 2，**$V$ 的吸收**，其实现更为复杂。为了更方便表述，采用 Einstein 求和约定描述该过程：
 
 ```python
-v_t = einsum('hdc,blc->blhd', W_UV, c_t_KV) # (1)
-o   = einsum('bqhl,blhd->bqhd', a, v_t)     # (2)
-u   = einsum('hdD,bhqd->bhD', W_o, o)       # (3)
+v_t = einsum('hdc,blc->blhd', W_UV, c_t_KV) # (1) 生成值向量 v_t
+o   = einsum('bqhl,blhd->bqhd', a, v_t)     # (2) 加权求和得到 o
+u   = einsum('hdD,bhqd->bhD', W_o, o)       # (3) 投影到最终输出 u
 
 # 将上述三式合并，得到总的计算过程
 u   = einsum('hdc,blc,bqhl,hdD->bhD', W_UV, c_t_KV, a, W_o)
 
 # 利用结合律改变计算顺序
-o_  = einsum('bhql,blc->bhqc', a, c_t_KV) # (4)
-o   = einsum('bhqc,hdc->bhqd', o_, W_UV)  # (5)
+o_  = einsum('bhql,blc->bhqc', a, c_t_KV) # (4) 避免显式生成 v_t，减少存储 (b, l, h, d) 的开销。
+o   = einsum('bhqc,hdc->bhqd', o_, W_UV)  # (5) 延迟投影操作，减少计算量。
 u   = einsum('hdD,bhqd->bhD', W_o, o)     # (6)
+```
+
+其中生成值向量 v_t：
+输入：
+- W_UV：权重矩阵，形状为 (h, d, c)，其中 h 是注意力头数，d 是值向量维度，c 是输入特征维度。
+- c_t_KV：键值上下文向量，形状为 (b, l, c)，其中 b 是批次大小，l 是序列长度。
+
+操作：
+
+- 将每个位置的 c 维特征通过 W_UV 投影到 d 维，生成多头值向量 v_t，形状为 (b, l, h, d)。
+
+改变计算顺序的优化: **通过结合律调整计算顺序，减少中间张量的内存占用**：
+先计算加权上下文 o_:
+
+**操作：**
+- 将注意力权重 attn_weights 直接作用于原始上下文 c_t_KV，生成中间结果 o_，形状为 (b, h, q, c)。
+
+**意义：**
+- 避免显式生成 v_t，减少存储 (b, l, h, d) 的开销。
+
+上述优化方法的实现和对比测试代码如下所示:
+
+```python
+import torch
+import time
+
+# 配置参数
+b, q, l, h, d, c, D = 32, 64, 128, 64, 64, 128, 256  # 将 h 调整为 64
+n_warmup = 10   # 预热次数
+n_trials = 100  # 正式测试次数
+
+# 初始化张量（GPU）
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+W_UV = torch.randn(h, d, c, device=device)
+c_t_KV = torch.randn(b, l, c, device=device)
+attn_weights = torch.randn(b, q, h, l, device=device)
+W_o = torch.randn(h, d, D, device=device)  # h 维度为 64
+
+# 预热 GPU
+for _ in range(n_warmup):
+    _ = torch.einsum('hdc,blc->blhd', W_UV, c_t_KV)
+    _ = torch.einsum('bqhl,blhd->bqhd', attn_weights, _)
+    _ = torch.einsum('hdD,bhqd->bhD', W_o, _)
+
+# 原始分步实现
+def original_method():
+    v_t = torch.einsum('hdc,blc->blhd', W_UV, c_t_KV)
+    o = torch.einsum('bqhl,blhd->bqhd', attn_weights, v_t)
+    u = torch.einsum('hdD,bhqd->bhD', W_o, o.permute(0, 2, 1, 3))
+
+# 优化后实现
+def optimized_method():
+    o_ = torch.einsum('bhql,blc->bhqc', attn_weights.permute(0, 2, 1, 3), c_t_KV)
+    o = torch.einsum('bhqc,hdc->bhqd', o_, W_UV)
+    u = torch.einsum('hdD,bhqd->bhD', W_o, o)
+
+# 测量时间
+def benchmark(func):
+    times = []
+    for _ in range(n_trials):
+        start = time.time()
+        func()
+        end = time.time()
+        times.append(end - start)
+    return sum(times) / n_trials
+
+# 执行测试
+time_original = benchmark(original_method) * 1000  # 转换为毫秒
+time_optimized = benchmark(optimized_method) * 1000
+
+# 打印结果
+print(f"原始方法平均时间: {time_original:.3f} ms")
+print(f"优化方法平均时间: {time_optimized:.3f} ms")
+print(f"速度提升: {time_original / time_optimized - 1:.1%}")
+
+# 验证等价性
+def validate_equivalence():
+    v_t_orig = torch.einsum('hdc,blc->blhd', W_UV, c_t_KV)
+    o_orig = torch.einsum('bqhl,blhd->bqhd', attn_weights, v_t_orig)
+    u_orig = torch.einsum('hdD,bhqd->bhD', W_o, o_orig.permute(0, 2, 1, 3))
+    
+    v_t_opt = torch.einsum('hdc,blc->blhd', W_UV, c_t_KV)
+    o_opt = torch.einsum('bqhl,blhd->bqhd', attn_weights, v_t_opt)
+    u_opt = torch.einsum('hdD,bhqd->bhD', W_o, o_opt.permute(0, 2, 1, 3))
+    
+    # 检查是否等价
+    assert torch.allclose(u_orig, u_opt, atol=1e-4), "两种方法结果不一致！"
+    print("两种方法结果一致，验证通过。")
+
+# 调用验证函数
+validate_equivalence()
+
+"""
+原始方法平均时间: 28.649 ms
+优化方法平均时间: 20.378 ms
+速度提升: 40.6%
+两种方法结果一致，验证通过。
+"""
 ```
 
 ## 参考资料
 
 - [DeepSeek-V2 论文](https://arxiv.org/pdf/2405.04434)
 - [DeepSeek-V2高性能推理优化笔记：MLA优化](https://github.com/madsys-dev/deepseekv2-profile/blob/main/workspace/blog/optimizing-mla.md)
+- [再读MLA，还有多少细节是你不知道的](https://mp.weixin.qq.com/s/E7NwwMYw14FRT6OKzuVXFA)
