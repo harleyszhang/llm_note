@@ -24,6 +24,8 @@ categories: Transformer
     - [3.1.3 Self-Attention 计算](#313-self-attention-计算)
   - [3.2 transformers 代码实现解读](#32-transformers-代码实现解读)
   - [3.3 MLA 模块的代码优化-Projection Absorption](#33-mla-模块的代码优化-projection-absorption)
+    - [CC (CacheCompressed）](#cc-cachecompressed)
+    - [A\_CC（AbsorbCacheCompressed）](#a_ccabsorbcachecompressed)
 - [参考资料](#参考资料)
 
 ## 1. 介绍
@@ -487,7 +489,11 @@ class DeepseekV2Attention(nn.Module):
 
 ### 3.3 MLA 模块的代码优化-Projection Absorption
 
+#### CC (CacheCompressed）
+
 在 transformers 的最新开源版本中， MLA 算子改为缓存**压缩后的 KV Cache**，并将 RoPE 后的 `k_pe` 一并缓存入 KV Cache 中，与缓存完整的 KV Cache 相比，这将大大减少每个 token 的每层Cache 大小。
+
+#### A_CC（AbsorbCacheCompressed）
 
 上述 `CacheCompressed` 的实现代码其实并不能实质减少 KV Cache 过大的问题，因为在计算 MLA 的时候，仍然需要存储解压后的完整的 `KV Cache`（中间激活），这很可能引起 OOM 崩溃。
 
@@ -498,6 +504,8 @@ DeepSeek-V2 论文中提出，可以将 KV 的解压缩矩阵吸收到Q-projecti
 $${q_t^C}^\top k_t^C = (W^{UQ} c_t^Q)^{\top} W^{UK} c_t^{KV} = {c_t^Q}^{\top}{W^{UQ}}^{\top} W^{UK} c_t^{KV} = ({c_t^Q}^{\top}{W^{UQ}}^{\top} W^{UK}) c_t^{KV}$$
 
 即通过矩阵乘法结合律，可以改为计算 $({c_t^Q}^{\top}{W^{UQ}}^{\top} W^{UK})$，避免了解压缩出完整的 $K$ 矩阵。另外，在原始版本的解压缩的过程中，由于每个 token 的 key 都需要与 $W^{UK}$ 相乘才能得到，因此计算量较大；矩阵吸收后，$W^{UK}$ 只需要对 $q_t^C$ 这一个向量相乘，也大大减少了浮点计算量。
+
+总结：`A_CC` 相比于 CC，把原来属于单 kv 的计算量转移到 q 上了，而 q 的 seq_len=1，可减少计算量。
 
 其中，$c_t^{KV}$ 是我们实际保存的 KV cache。
 
