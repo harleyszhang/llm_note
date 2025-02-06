@@ -1,3 +1,11 @@
+---
+layout: post
+title: DeepSeekV2 论文解读
+date: 2025-02-06 23:00:00
+summary: DeepSeekv2 模型结构的详细解读，以及代码实现分析并拆解。
+categories: Transformer
+---
+
 ## 1. 介绍
 
 DeepSeek-V2 是一种高效的开源混合专家（MoE）语言模型，基于创新的 Transformer 架构，实现了经济的训练和高效的推理。DeepSeek-V2 具有 2360 亿个参数(`236B`)，每个 token 激活 21 亿个参数，支持 `128K` tokens 的上下文长度。
@@ -117,7 +125,6 @@ $$
 
 $$k_t^R = \text{ROPE}(W^{UK} \mathbf{c}_t^{KV})$$
 
-
 很明显式（10）中的 $W^{UK}$ 和 RoPE 旋转矩阵在计算过程中“耦合”在一起—这意味着 $W^{UK}$ 输出的结果会始终被那个依赖于具体位置的旋转矩阵所“修正”或“调制”。
 
 这样会导致在执行 atten weight（$QK^T$）的计算优化中，无法像原本设想的那样，把 $W^{UK}$ 吸收到 $W^Q$  中，因为 当前生成 token 相关的 RoPE 矩阵位于 $W^Q$  和 $W^{UK}$ 之间，而矩阵乘法不满足交换律（commutative law）。这直接导致在推理过程中，我们必须**重新计算**所有 prefix token 的键（keys），这将显著降低推理效率。
@@ -166,7 +173,19 @@ $$
 
 ![Formulas_MLA](../images/deepseekv2/Formulas_MLA.png)
 
+MLA 结构的可视化图如下所示：
+
+<div align="center">
+<img src="../images/deepseekv2/architecture_of_MLA.png" width="80%" alt="architecture_of_MLA">
+</div>
+
 #### 2.1.4 kv cache 大小的比较
+
+多头注意力（MHA）、分组查询注意力（GQA）、多查询注意力（MQA）和多头潜在注意力（MLA）的简化示意图对比如下图 3 所示。通过**将键（Key）和值（Value）压缩到一个潜在向量中**，MLA 在推理时大幅减少了对 KV 缓存的需求。
+
+<div align="center">
+<img src="../images/deepseekv2/figure3.png" width="80%" alt="figure3">
+</div>
 
 下表 1 中对比了不同注意力机制下，每个 token 需要的 KV 缓存大小。MLA 仅需要**少量的 KV 缓存**，其大小相当于仅有 $2.25$ 组（groups）的 GQA，但其性能却强于 MHA。
 
@@ -247,7 +266,7 @@ $$
 
 ## 3. 代码实现
 
-### 3.1 MLA 代码实现解读
+### 3.1 MLA 实现拆解
 
 DeepDeekv2 的模型配置如下所示:
 
@@ -257,11 +276,17 @@ DeepDeekv2 的模型配置如下所示:
 
 #### 3.1.1 Q 向量计算
 
-1，在 DeepSeek-V2 中，Q 向量也采用了低秩压缩的方式。首先，将输入向量投影到一个 1536 维的低维空间。
+1，在 DeepSeek-V2 中，Q 向量也采用了低秩压缩的方式。首先，将输入向量投影到一个 `1536`（**对应模型配置文件中的 `q_lora_rank` 参数**）维的低维空间。
 
-然后，再将其投影到 $\mathbb{R}^{H \times 128}$ 的多头向量空间上（其中 $H=128$ 是 `heads` 数），得到了 Q 向量的第一部分。
+$$c_t^Q = W^{DQ} h_t \in \mathbb{R}^{B \times L \times 1536}$$
 
-再将其投影到 $\mathbb{R}^{H \times 64}$ 上并使用 RoPE 嵌入位置信息，得到 Q 向量的第二部分；
+然后，再将其投影到 $\mathbb{R}^{H \times 128}$ 的多头向量空间上（其中 $H=128$ 是 `heads` 数，对应配置文件中的 `qk_nope_head_dim` 参数），得到了 Q 向量的第一部分。
+
+$$q_t^C = W^{UQ} c_t^Q \in \mathbb{R}^{B \times L \times H \times 128}$$
+
+再将其投影到 $\mathbb{R}^{H \times 64}$（对应模型配置文件中的 `qk_rope_head_dim` 参数）上，并使用 RoPE 嵌入位置信息，得到 Q 向量的第二部分；
+
+$$q_t^R = \mathrm{RoPE}(W^{KR} h_t) \in \mathbb{R}^{B \times L \times H \times 64}$$
 
 最后，将这两部分进行 `concat` 拼接得到最终的 $Q$ 向量：
 
@@ -306,7 +331,7 @@ $$ o = a \cdot v_t \in \mathbb{R}^{B \times L \times H \times 128} \cong \mathbb
 
 $$u = W^O o \in \mathbb{R}^{B \times L \times 5120}$$
 
-### transformers 代码实现解读
+### 3.2 transformers 代码实现解读
 
 transformers 库中的 modeling_deepseek.py 是没有经过推理加速优化的原始实现，代码如下所示：
 
@@ -440,6 +465,37 @@ class DeepseekV2Attention(nn.Module):
         return attn_output, attn_weights if output_attentions else None, past_key_value
 ```
 
+### 3.3 MLA 模块的代码优化-Projection Absorption
+
+在 transformers 的最新开源版本中， MLA 算子改为缓存**压缩后的 KV Cache**，并将 RoPE 后的 `k_pe` 一并缓存入 KV Cache 中，与缓存完整的 KV Cache 相比，这将大大减少每个 token 的每层Cache 大小。
+
+上述 `CacheCompressed` 的实现代码其实并不能实质减少 KV Cache 过大的问题，因为在计算 MLA 的时候，仍然需要存储解压后的完整的 `KV Cache`（中间激活），这很可能引起 OOM 崩溃。
+
+DeepSeek-V2 论文中提出，可以将 KV 的解压缩矩阵吸收到Q-projection 和 Out-projection 中，从而可以在不解压缩 KV Cache的 情况下直接计算最终的 Attention 结果。 
+
+1，**对于 K 的吸收**（吸收进 aelf-attention 算子中， 相当于算子合并），在 Attention Score 的计算公式中，K 向量的非 RoPE 部分的可以做如下展开：
+
+$${q_t^C}^\top k_t^C = (W^{UQ} c_t^Q)^{\top} W^{UK} c_t^{KV} = {c_t^Q}^{\top}{W^{UQ}}^{\top} W^{UK} c_t^{KV} = ({c_t^Q}^{\top}{W^{UQ}}^{\top} W^{UK}) c_t^{KV}$$
+
+即通过矩阵乘法结合律，可以改为计算 $({c_t^Q}^{\top}{W^{UQ}}^{\top} W^{UK})$，避免了解压缩出完整的 $K$ 矩阵。另外，在原始版本的解压缩的过程中，由于每个 token 的 key 都需要与 $W^{UK}$ 相乘才能得到，因此计算量较大；矩阵吸收后，$W^{UK}$ 只需要对 $q_t^C$ 这一个向量相乘，也大大减少了浮点计算量。
+
+其中，$c_t^{KV}$ 是我们实际保存的 KV cache。
+
+2，**$V$ 的吸收**，其实现更为复杂。为了更方便表述，采用 Einstein 求和约定描述该过程：
+
+```python
+v_t = einsum('hdc,blc->blhd', W_UV, c_t_KV) # (1)
+o   = einsum('bqhl,blhd->bqhd', a, v_t)     # (2)
+u   = einsum('hdD,bhqd->bhD', W_o, o)       # (3)
+
+# 将上述三式合并，得到总的计算过程
+u   = einsum('hdc,blc,bqhl,hdD->bhD', W_UV, c_t_KV, a, W_o)
+
+# 利用结合律改变计算顺序
+o_  = einsum('bhql,blc->bhqc', a, c_t_KV) # (4)
+o   = einsum('bhqc,hdc->bhqd', o_, W_UV)  # (5)
+u   = einsum('hdD,bhqd->bhD', W_o, o)     # (6)
+```
 
 ## 参考资料
 
