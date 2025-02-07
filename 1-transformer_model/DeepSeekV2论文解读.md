@@ -509,7 +509,7 @@ class DeepseekV2Attention(nn.Module):
 
 DeepSeek-V2 论文中提出，可以将 KV 的解压缩矩阵吸收到Q-projection 和 Out-projection 中，从而可以在不解压缩 KV Cache的 情况下直接计算最终的 Attention 结果。 
 
-1，**对于 K 的吸收**（吸收进 aelf-attention 算子中， 相当于算子合并），在 Attention Score 的计算公式中，K 向量的非 RoPE 部分的可以做如下展开：
+1，**对于 K 的吸收**（吸收进 self-attention 算子中， 相当于算子合并），在 Attention Score 的计算公式中，K 向量的非 RoPE 部分的可以做如下展开：
 
 $${q_t^C}^\top k_t^C = (W^{UQ} c_t^Q)^{\top} W^{UK} c_t^{KV} = {c_t^Q}^{\top}{W^{UQ}}^{\top} W^{UK} c_t^{KV} = ({c_t^Q}^{\top}{W^{UQ}}^{\top} W^{UK}) c_t^{KV}$$
 
