@@ -185,7 +185,11 @@ $$
 \tag{19}
 $$
 
-其中，$W^{QR} \in \mathbb{R}^{d^R_h n_h \times d'_c}$ 和 $W^{KR} \in \mathbb{R}^{d^R_h \times d}$ 分别是用于生成**解耦查询（decoupled queries）和解耦键（decoupled key）的矩阵**。$\text{RoPE}(\cdot)$ 表示应用 RoPE 矩阵的操作，$\cdot ; \cdot$ 表示拼接（concatenation）操作。
+其中:
+- $W^{QR} \in \mathbb{R}^{d^R_h n_h \times d'_c}$ 表示生成**解耦查询（decoupled queries）矩阵**
+- $W^{KR} \in \mathbb{R}^{d^R_h \times d}$ 表示**解耦键（decoupled key）的矩阵**。
+- $\text{RoPE}(\cdot)$ 表示应用 RoPE 矩阵的操作;
+- $\cdot ; \cdot$ 表示拼接（concatenation）操作。
 
 在推理过程中，解耦后的键（decoupled key）也需要缓存。因此，DeepSeek-V2 的 KV 缓存总大小为 $(d_c + d^R_h)l$ 个元素。
 
@@ -308,7 +312,7 @@ $$q_t^C = W^{UQ} c_t^Q \in \mathbb{R}^{B \times L \times H \times 128}$$
 
 再将其投影到 $\mathbb{R}^{H \times 64}$（对应模型配置文件中的 `qk_rope_head_dim` 参数）上，并使用 RoPE 嵌入位置信息，得到 Q 向量的第二部分；
 
-$$q_t^R = \mathrm{RoPE}(W^{KR} h_t) \in \mathbb{R}^{B \times L \times H \times 64}$$
+$$q_t^R = \mathrm{RoPE}(W^{QR} h_t) \in \mathbb{R}^{B \times L \times H \times 64}$$
 
 最后，将这两部分进行 `concat` 拼接得到最终的 $Q$ 向量：
 
@@ -316,13 +320,17 @@ $$ q_t = [q_t^C, q_t^R] \in \mathbb{R}^{B \times L \times H \times 192}$$
 
 #### 3.1.2 KV 向量计算
 
-计算 KV 向量时，首先，将输入向量投影到一个 512 维的低维空间。
+计算 KV 向量时，首先，将输入向量投影到一个 512（**对应模型配置文件中的 `kv_lora_rank` 参数**）维的低维空间。
 
-然后，和 Q 向量的计算过程类似，再将其投影到 $\mathbb{R}^{H \times 128}$ 的多头向量空间上（其中 $H=128$ 是 `heads` 数），得到了 $K$ 向量的第一部分。
+$$c_t^KV = W^{DKV} h_t \in \mathbb{R}^{B \times L \times 512}$$
 
-$K$ 的第二部分同样也是将输入向量投影到 64 维向量空间并施加 RoPE 嵌入位置信息。
+然后，和 Q 向量的计算过程类似，再将其投影到 $\mathbb{R}^{H \times 128}$ 的多头向量空间上（其中 $H=128$ 是 `heads` 数，$128$ 对应模型配置文件中的 `qk_rope_head_dim` 参数，得到了 $K$ 向量的第一部分。
 
-最后，和 Q 不同的是，完整的 K 是将 K 的第二部分广播到每个 head 后与第一部分拼接得到：
+$K$ 的第二部分同样也是将输入向量投影到 $64$（对应模型配置文件中的 `qk_rope_head_dim` 参数）维向量空间并施加 RoPE 嵌入位置信息。
+
+$$k_t^R = \mathrm{RoPE}(W^{KR} h_t) \in \mathbb{R}^{B \times L \times 64}$$
+
+最后，和 Q 不同的是，完整的 K 是将 K 的第二部分**广播到每个 head 后与第一部分拼接得到**：
 
 $$k_t = \begin{bmatrix}
     k_{t,1}^C & k_t^R \\ 
@@ -392,6 +400,7 @@ class DeepseekV2Attention(nn.Module):
         # Query 投影层（LoRA 分解为 q_a_proj 和 q_b_proj）
         self.q_a_proj = nn.Linear(self.hidden_size, self.q_lora_rank, bias=config.attention_bias)
         self.q_a_layernorm = DeepseekV2RMSNorm(self.q_lora_rank)  # LoRA 后的归一化
+        # q_b_proj 是 q 计算中的升维矩阵，它包含了两部分 W_{UQ} 和 W_{QR}，分别表示对 q 的 nope/rope 部分的计算。
         self.q_b_proj = nn.Linear(self.q_lora_rank, self.num_heads * self.q_head_dim, bias=False)
 
         # Key-Value 投影层（LoRA 分解为 kv_a_proj_with_mqa 和 kv_b_proj）
@@ -401,6 +410,7 @@ class DeepseekV2Attention(nn.Module):
             bias=config.attention_bias,
         )
         self.kv_a_layernorm = DeepseekV2RMSNorm(self.kv_lora_rank)
+        # kv_b_proj：它包含了两部分 W_{UK} 和 W_{UV}，分别表示对 k_nope 和 v 部分的计算。
         self.kv_b_proj = nn.Linear(
             self.kv_lora_rank,
             self.num_heads * (self.qk_nope_head_dim + self.v_head_dim),  # 合并 Key 和 Value
