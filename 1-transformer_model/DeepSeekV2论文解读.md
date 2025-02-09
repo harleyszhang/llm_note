@@ -22,7 +22,7 @@ categories: Transformer
     - [3.1.1 Q 向量计算](#311-q-向量计算)
     - [3.1.2 KV 向量计算](#312-kv-向量计算)
     - [3.1.3 Self-Attention 计算](#313-self-attention-计算)
-  - [3.2 transformers 代码实现解读](#32-transformers-代码实现解读)
+  - [3.2 标准 MLA 模块的代码实现](#32-标准-mla-模块的代码实现)
   - [3.3 MLA 模块的代码优化-Projection Absorption](#33-mla-模块的代码优化-projection-absorption)
     - [CC (CacheCompressed）](#cc-cachecompressed)
     - [A\_CC（AbsorbCacheCompressed）](#a_ccabsorbcachecompressed)
@@ -197,9 +197,11 @@ $$
 
 最后，总结下完成的 MLA 计算过程如下所示：
 
-![Formulas_MLA](../images/deepseekv2/Formulas_MLA.png)
+<div align="center">
+<img src="../images/deepseekv2/Formulas_MLA.png" width="60%" alt="Formulas_MLA">
+</div>
 
-MLA 结构的可视化图如下所示：
+`MLA` 结构的可视化图如下所示：
 
 <div align="center">
 <img src="../images/deepseekv2/architecture_of_MLA.png" width="80%" alt="architecture_of_MLA">
@@ -207,7 +209,7 @@ MLA 结构的可视化图如下所示：
 
 #### 2.1.4 kv cache 大小的比较
 
-多头注意力（MHA）、分组查询注意力（GQA）、多查询注意力（MQA）和多头潜在注意力（MLA）的简化示意图对比如下图 3 所示。通过**将键（Key）和值（Value）压缩到一个潜在向量中**，MLA 在推理时大幅减少了对 KV 缓存的需求。
+多头注意力（MHA）、分组查询注意力（GQA）、多查询注意力（MQA）和多头潜在注意力（MLA）的简化示意图对比如下图 3 所示。通过**将键（Key）和值（Value）压缩到一个潜在向量中，MLA 在推理时大幅减少了对 KV 缓存的需求**。
 
 <div align="center">
 <img src="../images/deepseekv2/figure3.png" width="80%" alt="figure3">
@@ -225,7 +227,7 @@ MLA 结构的可视化图如下所示：
 - **$d_c$ 和 $d^R_h$ 分别表示 MLA 中的 KV 压缩维度和解耦查询与键的 per-head 维度**。
 
 KV 缓存的数量以**元素(elements)个数**计算，不考虑存储精度（storage precision）。对于 DeepSeek-V2，
-- $d_c$ 设定为  $4d_h$，
+- $d_c$ 设定为 $4d_h$。
 - $d^R_h$ 设定为 $\frac{d_h}{2}$。
 
 因此，**DeepSeek-V2 只需要 相当于 GQA $2.25$ 组的 KV 缓存，但相比 MHA 仍能提供更强的性能**。
@@ -301,36 +303,46 @@ DeepDeekv2 的模型配置如下所示:
 </div>
 
 #### 3.1.1 Q 向量计算
+> 大部分参考 [DeepSeek-V2高性能推理优化笔记：MLA优化](https://github.com/madsys-dev/deepseekv2-profile/blob/main/workspace/blog/optimizing-mla.md)，部分细节做了修改和优化。
 
-1，在 DeepSeek-V2 中，Q 向量也采用了低秩压缩的方式。首先，将输入向量投影到一个 `1536`（**对应模型配置文件中的 `q_lora_rank` 参数**）维的低维空间。
+1，在 DeepSeek-V2 中，Q 向量也采用了低秩压缩的方式。首先，将输入向量投影到一个 `1536`（**对应模型配置文件中的 `q_lora_rank` 参数**）维的低维空间，得到 Latent $c_t^Q$。
 
 $$c_t^Q = W^{DQ} h_t \in \mathbb{R}^{B \times L \times 1536}$$
 
-然后，再将其投影到 $\mathbb{R}^{H \times 128}$ 的多头向量空间上（其中 $H=128$ 是 `heads` 数，对应配置文件中的 `qk_nope_head_dim` 参数），得到了 Q 向量的第一部分。
+2，然后，再将其投影到 $\mathbb{R}^{H \times 128}$ 的多头向量空间上（其中 $H=128$ 是 `heads` 数，对应配置文件中的 `qk_nope_head_dim` 参数），得到了 Q 向量的第一部分: $q_t^C$。
 
 $$q_t^C = W^{UQ} c_t^Q \in \mathbb{R}^{B \times L \times H \times 128}$$
 
-再将其投影到 $\mathbb{R}^{H \times 64}$（对应模型配置文件中的 `qk_rope_head_dim` 参数）上，并使用 RoPE 嵌入位置信息，得到 Q 向量的第二部分；
+3，再将其投影到 $\mathbb{R}^{H \times 64}$（对应模型配置文件中的 `qk_rope_head_dim` 参数）上，并使用 RoPE 嵌入位置信息，得到 Q 向量的第二部分: $q_t^R$。
 
 $$q_t^R = \mathrm{RoPE}(W^{QR} h_t) \in \mathbb{R}^{B \times L \times H \times 64}$$
 
-最后，将这两部分进行 `concat` 拼接得到最终的 $Q$ 向量：
+4，最后，将这两部分进行 `concat` 拼接得到最终的 $Q$ 向量：$q_t$。
 
 $$ q_t = [q_t^C, q_t^R] \in \mathbb{R}^{B \times L \times H \times 192}$$
 
+
+其中：
+- $B$: `batch_size` 批量大小；
+- $L$: `seq_len` 序列长度；
+- $H$: `heads` 注意力头数；
+- $\mathbb{R}$ 的最后一维是 `head_dim`。
+
 #### 3.1.2 KV 向量计算
 
-计算 KV 向量时，首先，将输入向量投影到一个 512（**对应模型配置文件中的 `kv_lora_rank` 参数**）维的低维空间。
+1，计算 $KV$ 向量时，首先，将输入向量投影到一个 $512$（**对应模型配置文件中的 `kv_lora_rank` 参数**）维的低维空间，得到 Latent $c_t^{KV}$。
 
-$$c_t^KV = W^{DKV} h_t \in \mathbb{R}^{B \times L \times 512}$$
+$$c_t^{KV} = W^{DKV} h_t \in \mathbb{R}^{B \times L \times 512}$$
 
-然后，和 Q 向量的计算过程类似，再将其投影到 $\mathbb{R}^{H \times 128}$ 的多头向量空间上（其中 $H=128$ 是 `heads` 数，$128$ 对应模型配置文件中的 `qk_rope_head_dim` 参数，得到了 $K$ 向量的第一部分。
+2，然后，和 $Q$ 向量的计算过程类似，再将其投影到 $\mathbb{R}^{H \times 128}$ 的多头向量空间上（其中 $H=128$ 是 `heads` 数，$128$ 对应模型配置文件中的 `qk_rope_head_dim` 参数，得到了 $K$ 向量的第一部分 $k_t^C$。
 
-$K$ 的第二部分同样也是将输入向量投影到 $64$（对应模型配置文件中的 `qk_rope_head_dim` 参数）维向量空间并施加 RoPE 嵌入位置信息。
+$$k_t^C = W^{UK}c_t^{K} \in \mathbb{R}^{B\times L\times H\times 128}$$
 
-$$k_t^R = \mathrm{RoPE}(W^{KR} h_t) \in \mathbb{R}^{B \times L \times 64}$$
+3，将输入向量投影到 $64$（对应模型配置文件中的 `qk_rope_head_dim` 参数）维向量空间，并应用 RoPE 嵌入位置信息得到 $K$ 向量的第二部分： $k_t^R$。
 
-最后，和 Q 不同的是，完整的 K 是将 K 的第二部分**广播到每个 head 后与第一部分拼接得到**：
+$$k_t^R = \mathrm{RoPE}(W^{KR} h_t) \in \mathbb{R}^{B \times L \times 1 \times 64}$$
+
+4，最后，和 $Q$ 不同的是，完整的 $K$ 是将 $k_t^R$ **广播到每个 `head` 后与 $k_t^C$ `concate` 拼接得到**：
 
 $$k_t = \begin{bmatrix}
     k_{t,1}^C & k_t^R \\ 
@@ -340,161 +352,159 @@ $$k_t = \begin{bmatrix}
 
 上述广播后拼接的方式意味着，**每个 head 的 RoPE 部分是完全相同的**。
 
-$V$ 向量因为不需要执行 ROPE 操作，所以它的的计算较为简单，直接将 $c_t^{KV}$ 解压缩（升维）到 $\mathbb{R}^{H \times 128}$ 即可：
+$V$ 向量因为不需要执行 `ROPE` 操作，所以它的的计算较为简单，直接将 $c_t^{KV}$ 解压缩（升维）到 $\mathbb{R}^{H \times 128}$ 即可：
 
-$$ v_t = W^{UV} c_t^{KV} \in \mathbb{R}^{B \times L \times H \times 128} $$
+$$ \mathbf{v}_t = W^{UV} c_t^{KV} \in \mathbb{R}^{B \times L \times H \times 128} $$
 
+注意: $k_t^R$ 和 $c_t^{KV}$ 是需要缓冲的向量。前面计算得到 $q_t$、$k_t$ 和 $\mathbf{v}_t$ 用来执行 self-attention 计算。
 
 #### 3.1.3 Self-Attention 计算
 
 Self-Attention 的计算过程和传统的 `MHA` 一模一样。同样也是首先计算 `attention score`：
 
-$$a = \mathrm{softmax}\left(\frac{q_t^\top k_t + \mathrm{Mask}}{\sqrt{192}}\right) = 
+$$p = \mathrm{softmax}\left(\frac{q_t^\top k_t + \mathrm{Mask}}{\sqrt{192}}\right) = 
 \mathrm{softmax}\left(\frac{{q_t^C}^\top k_t^C + {q_t^R}^\top k_t^R + \mathrm{Mask}}{\sqrt{128 + 64}} \right)
 \in \mathbb{R}^{B \times L \times H \times L} $$
 
 计算对 $V$的加权和，并将所有 heads 压平（即 heads * head_dim），得到 Attention 输出：
 
-$$ o = a \cdot v_t \in \mathbb{R}^{B \times L \times H \times 128} \cong \mathbb{R}^{B \times L \times 16384} $$
+$$ o = p \cdot \mathbf{v}_t \in \mathbb{R}^{B \times L \times H \times 128} \cong \mathbb{R}^{B \times L \times 16384} $$
 
 其中，$16384 = 128 \times 128 = \text{num\;attention\;heads * v\;head\;dim}$。最后，经过另一个注意力输出矩阵的投影（5120 是 `hidden_size`），就能得到 MLA 的最终输出：
 
 $$u = W^O o \in \mathbb{R}^{B \times L \times 5120}$$
 
-### 3.2 transformers 代码实现解读
+### 3.2 标准 MLA 模块的代码实现
 
-transformers 库中的 modeling_deepseek.py 是没有经过推理加速优化的原始实现，代码如下所示：
+transformers 库中的 [modeling_deepseek.py](https://huggingface.co/deepseek-ai/DeepSeek-V2-Lite/blob/main/modeling_deepseek.py) 是没有经过推理加速优化的原始实现，我参考其实现给出了一个更为精简和更易看懂的版本，完整代码在[这里](./src/deepseekv_mla.py)。
 
 ```python
 # 从 LlamaAttention 修改而来，适配 DeepseekV2 模型的注意力模块
-class DeepseekV2Attention(nn.Module):
-    """Multi-headed attention from 'Attention Is All You Need' paper"""
-
-    def __init__(self, config: DeepseekV2Config, layer_idx: Optional[int] = None):
+class DeepseekV2MLA(nn.Module):
+    def __init__(self, config: DeepseekV2Config):
         super().__init__()
-        self.config = config
-        self.layer_idx = layer_idx  # 当前层索引，用于缓存区分
-        if layer_idx is None:
-            logger.warning_once("未提供 layer_idx，可能导致缓存错误")
+        # MHA 初始化相关
+        self.hidden_size = config.hidden_size
+        self.num_heads = config.num_attention_heads
+        self.v_head_dim = config.v_head_dim
 
-        # 基础参数
-        self.attention_dropout = config.attention_dropout  # 注意力权重 Dropout 概率
-        self.hidden_size = config.hidden_size              # 隐藏层维度
-        self.num_heads = config.num_attention_heads        # 注意力头数
-        
-        # RoPE 相关参数：qk_nope_head_dim": 128, "qk_rope_head_dim": 64, v_head_dim = 128,
-        # "num_attention_heads": 128, "num_key_value_heads": 128,
-        self.max_position_embeddings = config.max_position_embeddings  # 最大位置编码长度
-        self.rope_theta = config.rope_theta                            # RoPE 基频参数
-        self.qk_rope_head_dim = config.qk_rope_head_dim                # RoPE 应用的头维度
-        
-        # LoRA 参数
-        self.q_lora_rank = config.q_lora_rank          # Query 低秩矩阵的秩
-        self.kv_lora_rank = config.kv_lora_rank        # Key-Value 低秩矩阵的秩
-        self.qk_nope_head_dim = config.qk_nope_head_dim  # 非位置编码的头维度
-        self.v_head_dim = config.v_head_dim            # Value 头维度
-        self.q_head_dim = self.qk_nope_head_dim + self.qk_rope_head_dim  # Query 总头维度
-
-        self.is_causal = True  # 是否因果注意力（屏蔽未来信息）
-
-        # Query 投影层（LoRA 分解为 q_a_proj 和 q_b_proj）
-        self.q_a_proj = nn.Linear(self.hidden_size, self.q_lora_rank, bias=config.attention_bias)
-        self.q_a_layernorm = DeepseekV2RMSNorm(self.q_lora_rank)  # LoRA 后的归一化
-        # q_b_proj 是 q 计算中的升维矩阵，它包含了两部分 W_{UQ} 和 W_{QR}，分别表示对 q 的 nope/rope 部分的计算。
-        self.q_b_proj = nn.Linear(self.q_lora_rank, self.num_heads * self.q_head_dim, bias=False)
-
-        # Key-Value 投影层（LoRA 分解为 kv_a_proj_with_mqa 和 kv_b_proj）
-        self.kv_a_proj_with_mqa = nn.Linear(
+        self.o_proj = nn.Linear(
+            self.v_head_dim * self.num_heads, 
             self.hidden_size,
-            self.kv_lora_rank + self.qk_rope_head_dim,  # 包含 RoPE 的 Key 部分
             bias=config.attention_bias,
         )
-        self.kv_a_layernorm = DeepseekV2RMSNorm(self.kv_lora_rank)
-        # kv_b_proj：它包含了两部分 W_{UK} 和 W_{UV}，分别表示对 k_nope 和 v 部分的计算。
-        self.kv_b_proj = nn.Linear(
-            self.kv_lora_rank,
-            self.num_heads * (self.qk_nope_head_dim + self.v_head_dim),  # 合并 Key 和 Value
+
+        self.attention_dropout = config.attention_dropout
+        self.training = False
+        self.qk_nope_head_dim = config.qk_nope_head_dim
+        self.qk_rope_head_dim = config.qk_rope_head_dim
+
+        # MLA 相关 part1: 压缩
+        self.q_lora_rank = config.q_lora_rank
+        self.kv_lora_rank = config.kv_lora_rank
+
+        self.q_down_proj = nn.Linear(self.hidden_size, self.q_lora_rank)
+        self.q_down_rmsnorm = DeepseekV2RMSNorm(self.q_lora_rank)
+        
+        self.kv_down_proj = nn.Linear(
+            self.hidden_size, 
+            self.kv_lora_rank + config.qk_rope_head_dim
+        )
+        self.kv_down_rmsnorm = DeepseekV2RMSNorm(self.kv_lora_rank)
+        
+        # MLA 相关 part2: 解压缩
+        self.q_head_dim = self.qk_nope_head_dim  + self.qk_rope_head_dim
+        self.q_up_proj = nn.Linear(
+            self.q_lora_rank, 
+            self.num_heads * self.q_head_dim,
             bias=False,
         )
-
-        # 输出投影层
-        self.o_proj = nn.Linear(
-            self.num_heads * self.v_head_dim, self.hidden_size, bias=config.attention_bias
+        # qk_nope_head_dim = q_head_dim - qk_rope_head_dim
+        self.kv_up_proj = nn.Linear(
+            self.kv_lora_rank, 
+            self.num_heads * (self.q_head_dim - self.qk_rope_head_dim + self.v_head_dim),
+            bias=False,
         )
-        # 注意力缩放因子（考虑 RoPE 缩放配置）
-        self.softmax_scale = self.q_head_dim ** (-0.5)
-
-        # 初始化 RoPE
-        self._init_rope()        
-        if self.config.rope_scaling is not None:
-            scaling_factor = self.config.rope_scaling["factor"]
-            if self.config.rope_scaling.get("mscale_all_dim", 0):
-                mscale = yarn_get_mscale(scaling_factor, self.config.rope_scaling["mscale_all_dim"])
-                self.softmax_scale *= mscale ** 2
-
-    ########省略了 _init_rope、_shape 成员函数代码############
-    def forward(
-        self,
-        hidden_states: torch.Tensor,
-        attention_mask: Optional[torch.Tensor] = None,
-        position_ids: Optional[torch.LongTensor] = None,
-        past_key_value: Optional[Cache] = None,
-        output_attentions: bool = False,
-        use_cache: bool = False,
-        **kwargs,
-    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
-        # 输入形状检查
-        bsz, q_len, _ = hidden_states.size()
-
-        # 1. 计算 Query
-        q = self.q_a_proj(hidden_states)  # LoRA 投影 [bsz, q_len, q_lora_rank]
-        q = self.q_a_layernorm(q)         # 归一化
-        q = self.q_b_proj(q)              # 升维 [bsz, q_len, num_heads * q_head_dim]
-        q = q.view(bsz, q_len, self.num_heads, self.q_head_dim).transpose(1, 2)
-        q_nope, q_pe = torch.split(q, [self.qk_nope_head_dim, self.qk_rope_head_dim], dim=-1)
-
-        # 2. 计算 Key-Value
-        compressed_kv = self.kv_a_proj_with_mqa(hidden_states)  # [bsz, q_len, kv_lora_rank + qk_rope_head_dim]
-        compressed_kv, k_pe = torch.split(compressed_kv, [self.kv_lora_rank, self.qk_rope_head_dim], dim=-1)
-        k_pe = k_pe.view(bsz, q_len, 1, self.qk_rope_head_dim).transpose(1, 2)  # 扩展为多头
         
-        # 低秩投影 Key-Value
-        kv = self.kv_b_proj(self.kv_a_layernorm(compressed_kv))
-        kv = kv.view(bsz, q_len, self.num_heads, self.qk_nope_head_dim + self.v_head_dim).transpose(1, 2)
-        k_nope, value_states = torch.split(kv, [self.qk_nope_head_dim, self.v_head_dim], dim=-1)
+        # MLA 相关 part3: 切片 q k 张量，以及 rope 旋转位置编码
+        self.rotary_emb = DeepseekV2RotaryEmbedding(
+            config.qk_rope_head_dim,
+            config.max_position_embeddings,
+            config.rope_theta,
+        ) 
 
-        # 3. 应用 RoPE 位置编码
-        kv_seq_len = value_states.shape[-2]
-        if past_key_value is not None:
-            # 合并历史缓存长度
-            kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
+    def forward(self, hidden_states, position_ids, casual_mask=None):
+        batch_size, q_len, hidden_size = hidden_states.shape
+
+        # 1，q 压缩和解压缩，以及 split to q_nope, q_rope
+        q = self.q_up_proj(
+            self.q_down_rmsnorm(self.q_down_proj(hidden_states))
+        )
+
+        q = q.view(batch_size, q_len, self.num_heads, self.q_head_dim).transpose(1,2)
+        q_nope, q_rope = torch.split(
+            q,
+            [self.qk_nope_head_dim, self.qk_rope_head_dim],
+            dim = -1,
+        )
+
+        # 2, kv 压缩和解压缩
+        kv_down = self.kv_down_proj(hidden_states)
+        
+        # compressed_kv 压缩后的 kv 张量
+        compressed_kv, k_rope = torch.split(
+            kv_down,
+            [self.kv_lora_rank, self.qk_rope_head_dim],
+            dim = -1,
+        )
+        # num_heads = 1 后续广播其它 heads 上
+        k_rope = k_rope.view(batch_size, q_len, 1, self.qk_rope_head_dim).transpose(1, 2)
+
+        # 对 compressed_kv 解压缩
+        kv = (
+            self.kv_up_proj(self.kv_down_rmsnorm(compressed_kv))
+            .view(batch_size, q_len, self.num_heads, self.qk_nope_head_dim + self.v_head_dim)
+            .transpose(1, 2)
+        )
+
+        k_nope, value_states = torch.split(
+            kv,
+            [self.qk_nope_head_dim, self.v_head_dim],
+            dim = -1,
+        )
+
+        # 3, 计算 cos 和 sin，并应用 rope 旋转位置编码
+        kv_seq_len = value_states.shape[-2] # shape (b, nums_head, seq_len, v_head_dim)
         cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
-        q_pe, k_pe = apply_rotary_pos_emb(q_pe, k_pe, cos, sin, position_ids)
+        
+        q_rope, k_rope = apply_rotary_pos_emb(q_rope, k_rope, cos, sin, position_ids)
 
-        # 4. 合并位置编码与非位置编码部分
-        query_states = torch.cat([q_nope, q_pe], dim=-1)
-        key_states = torch.cat([k_nope, k_pe], dim=-1)
+        # 4, 执行 self-attention 计算
+        query_states = torch.concat([q_nope, q_rope], dim=-1)
+        key_states = torch.concat(
+            [k_nope, k_rope.expand(-1, self.num_heads, -1, -1)], 
+            dim=-1
+        )
+        # qk^t
+        scores = (
+            torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.q_head_dim)
+        )
 
-        # 5. 更新缓存（若启用）
-        if past_key_value is not None:
-            key_states, value_states = past_key_value.update(
-                key_states, value_states, self.layer_idx, {"sin": sin, "cos": cos}
-            )
+        if casual_mask is not None:
+            scores = scores.masked_fill(casual_mask == 0, float('-inf'))
+        
+        attn_weights = F.softmax(scores, dim=-1).to(query_states.dtype)
+        attn_weights = F.dropout(
+            attn_weights, p=self.attention_dropout, training=self.training
+        ) # attn_weights shape: [bs, num_heads, seq_len, seq_len]
+        
+        attn_output = torch.matmul(attn_weights, value_states) # shape: [bs, num_heads, seq_len, head_dim]
+        attn_output = attn_output.transpose(1, 2).contiguous().reshape(batch_size, q_len, self.num_heads * self.v_head_dim)
 
-        ###############这步开始和标准 attention 的实现代码一样###################
-        # 6. 计算注意力权重
-        attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) * self.softmax_scale
-        if attention_mask is not None:
-            attn_weights = attn_weights + attention_mask  # 应用掩码
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
-        attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
+        # 5, MLA 输出映射
+        output = self.o_proj(attn_output)
 
-        # 7. 注意力加权求和
-        attn_output = torch.matmul(attn_weights, value_states)
-        attn_output = attn_output.transpose(1, 2).contiguous().reshape(bsz, q_len, self.num_heads * self.v_head_dim)
-        attn_output = self.o_proj(attn_output)  # 输出投影
-
-        return attn_output, attn_weights if output_attentions else None, past_key_value
+        return output, attn_weights
 ```
 
 ### 3.3 MLA 模块的代码优化-Projection Absorption
