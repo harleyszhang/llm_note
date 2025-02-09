@@ -303,7 +303,7 @@ DeepDeekv2 的模型配置如下所示:
 </div>
 
 #### 3.1.1 Q 向量计算
-> 大部分参考 [DeepSeek-V2高性能推理优化笔记：MLA优化](https://github.com/madsys-dev/deepseekv2-profile/blob/main/workspace/blog/optimizing-mla.md)，部分细节做了修改和优化。
+> 大部分参考 [DeepSeek-V2高性能推理优化笔记：MLA优化](https://github.com/madsys-dev/deepseekv2-profile/blob/main/workspace/blog/optimizing-mla.md)，部分细节做了修改和优化， MLA 结构图以及这章节的公式更多的是给出 MLA 过程和细节，实际的代码实现没有一一对应。
 
 1，在 DeepSeek-V2 中，Q 向量也采用了低秩压缩的方式。首先，将输入向量投影到一个 `1536`（**对应模型配置文件中的 `q_lora_rank` 参数**）维的低维空间，得到 Latent $c_t^Q$。
 
@@ -376,10 +376,10 @@ $$u = W^O o \in \mathbb{R}^{B \times L \times 5120}$$
 
 ### 3.2 标准 MLA 模块的代码实现
 
-transformers 库中的 [modeling_deepseek.py](https://huggingface.co/deepseek-ai/DeepSeek-V2-Lite/blob/main/modeling_deepseek.py) 是没有经过推理加速优化的原始实现，我参考其实现给出了一个更为精简和更易看懂的版本，完整代码在[这里](./src/deepseekv_mla.py)。
+transformers 库中的 [modeling_deepseek.py](https://huggingface.co/deepseek-ai/DeepSeek-V2-Lite/blob/main/modeling_deepseek.py) 是没有经过推理加速优化的原始实现，我参考其实现给出了一个更为精简和更易看懂的版本，完整代码在[这里](https://github.com/harleyszhang/llm_note/blob/main/1-transformer_model/src/deepseekv_mla.py)。
 
 ```python
-# 从 LlamaAttention 修改而来，适配 DeepseekV2 模型的注意力模块
+# 从 LlamaAttention 修改而来，适配 DeepseekV2 模型的注意力模块，简单版本不带 kv cache
 class DeepseekV2MLA(nn.Module):
     def __init__(self, config: DeepseekV2Config):
         super().__init__()

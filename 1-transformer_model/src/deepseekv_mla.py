@@ -262,15 +262,17 @@ def test_mla():
     config = DeepseekV2Config(
         rope_theta=128000,
         max_position_embeddings=1024,
+        hidden_size = 5120
     )
     
     mla = DeepseekV2MLA(config)
-    x = torch.randn(2, config.max_position_embeddings, 5120)
+    # shape: (batch_size, sequence_length, hidden_size)
+    embedding_states = torch.randn(2, config.max_position_embeddings, config.hidden_size)
     position_ids = torch.arange(
         config.max_position_embeddings,
-    ).unsqueeze(0).expand(x.size(0), -1) # (batch_size, seq_len)
+    ).unsqueeze(0).expand(embedding_states.size(0), -1) # (batch_size, seq_len)
     
-    attn_output, attn_weights = mla(x, position_ids=position_ids)
+    attn_output, attn_weights = mla(embedding_states, position_ids=position_ids)
     print(attn_output.shape)
     print(attn_weights.shape)
 
