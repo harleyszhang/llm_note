@@ -362,9 +362,12 @@ $$ \mathbf{v}_t = W^{UV} c_t^{KV} \in \mathbb{R}^{B \times L \times H \times 128
 
 Self-Attention 的计算过程和传统的 `MHA` 一模一样。同样也是首先计算 `attention score`：
 
+<!-- {% raw %} -->
 $$p = \mathrm{softmax}\left(\frac{q_t^\top k_t + \mathrm{Mask}}{\sqrt{192}}\right) = 
 \mathrm{softmax}\left(\frac{{q_t^C}^\top k_t^C + {q_t^R}^\top k_t^R + \mathrm{Mask}}{\sqrt{128 + 64}} \right)
-\in \mathbb{R}^{B \times L \times H \times L} $$
+\mathrm{softmax}\left(\frac{{q_t^C}^\top k_t^C + {q_t^R}^\top k_t^R + \mathrm{Mask}} {\sqrt{128 + 64}} \right)
+\in \mathbb{R}^{B \times L \times H \times L}$$
+<!-- {% endraw %} -->
 
 计算对 $V$的加权和，并将所有 heads 压平（即 heads * head_dim），得到 Attention 输出：
 
@@ -649,3 +652,4 @@ validate_equivalence()
 - [DeepSeek-V2 论文](https://arxiv.org/pdf/2405.04434)
 - [DeepSeek-V2高性能推理优化笔记：MLA优化](https://github.com/madsys-dev/deepseekv2-profile/blob/main/workspace/blog/optimizing-mla.md)
 - [再读MLA，还有多少细节是你不知道的](https://mp.weixin.qq.com/s/E7NwwMYw14FRT6OKzuVXFA)
+- [LLMs-Zero-to-Hero](https://bruceyuan.com/llms-zero-to-hero/the-way-of-moe-model-evolution.html#_2-%E7%89%88%E6%9C%AC2-sparsemoe-%E5%A4%A7%E6%A8%A1%E5%9E%8B%E8%AE%AD%E7%BB%83%E4%BD%BF%E7%94%A8)
