@@ -13,6 +13,7 @@ categories: Transformer
     - [2.1.2 Low-Rank Key-Value Joint Compression](#212-low-rank-key-value-joint-compression)
     - [2.1.3 Decoupled Rotary Position Embedding](#213-decoupled-rotary-position-embedding)
     - [2.1.4 kv cache 大小的比较](#214-kv-cache-大小的比较)
+    - [2.1.5 总结](#215-总结)
   - [2.2 DeepSeekMoE：以经济成本训练强大的模型](#22-deepseekmoe以经济成本训练强大的模型)
     - [2.2.2. 设备受限路由（Device-Limited Routing）](#222-设备受限路由device-limited-routing)
     - [2.2.3. 负载均衡的辅助损失（Auxiliary Loss for Load Balance）](#223-负载均衡的辅助损失auxiliary-loss-for-load-balance)
@@ -231,6 +232,10 @@ KV 缓存的数量以**元素(elements)个数**计算，不考虑存储精度（
 - $d^R_h$ 设定为 $\frac{d_h}{2}$。
 
 因此，**DeepSeek-V2 只需要 相当于 GQA $2.25$ 组的 KV 缓存，但相比 MHA 仍能提供更强的性能**。
+
+#### 2.1.5 总结
+
+MLA 虽然增大了计算量，但 KV Cache 的减少也降低了显存和带宽的压力，且 llm 推理的 decode 阶段是受限于带宽瓶颈和显存瓶颈，因此 MLA 的引入理论上能明显提高 Generation 的速度。
 
 ### 2.2 DeepSeekMoE：以经济成本训练强大的模型
 
