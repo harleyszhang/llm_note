@@ -18,6 +18,8 @@ from transformers.modeling_attn_mask_utils import (
     _prepare_4d_causal_attention_mask,
 )
 
+from lite_llama.models.model_config import LlavaConfig
+
 from transformers.pytorch_utils import (
     ALL_LAYERNORM_LAYERS,
     is_torch_greater_or_equal_than_1_13,
