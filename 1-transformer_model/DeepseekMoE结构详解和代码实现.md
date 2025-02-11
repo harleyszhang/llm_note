@@ -68,23 +68,6 @@ DeepseekV2 模型的 MOE 参数如下：
 
 混合专家（MoE）参数说明：
 
-| 参数                  | 说明                                                              |
-| --------------------- | ----------------------------------------------------------------- |
-| n_routed_experts      | 参与路由的专家总数，此处为 160。                                  |
-| n_shared_experts      | 共享专家数量，此处为 2。                                          |
-| **num_experts_per_tok**   | **每个 Token 选择的专家数量，此处为 6**。                             |
-| moe_intermediate_size | MoE 专家中间层维度大小，此处为 1536。                             |
-| moe_layer_freq        | MoE 层的频率，此处为 1（每层都是 MoE 层）。                       |
-| n_group               | 专家分组数量，此处为 8。                                          |
-| topk_group            | 每组选择的专家数量，此处为 3。                                    |
-| topk_method           | Top-K 选择算法，此处为 group_limited_greedy（分组限制贪婪选择）。 |
-| scoring_func          | 门控分数计算方式，此处为 softmax。                                |
-| routed_scaling_factor | 路由权重缩放因子，此处为 16.0。                                   |
-| norm_topk_prob        | 是否对 Top-K 权重归一化，此处为 false。                           |
-| seq_aux               | 是否使用序列级辅助损失，此处为 true。                             |
-| aux_loss_alpha        | 辅助损失权重，此处为 0.001。                                      |
-
-
 <div align="center">
 <img src="../images/moe/moe_params.png" width="60%" alt="moe_params">
 </div>
