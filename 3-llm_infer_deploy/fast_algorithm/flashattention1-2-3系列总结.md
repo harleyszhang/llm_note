@@ -383,7 +383,7 @@ O'_{r,c, i} &= \sum_{j=1}^i \frac{e^{S_{r, j} - M_{r, i}}}{D'_{r, i}} * V[j, c] 
 
 <!-- 可以看到 $O_{r, c, i}'$ 仅仅和 $O_{r, c, i-1}'$ 以及 $S_{r, i}$、$M_{r, i-1}$、$D_{r, i-1}'$ 有关，不需要“规约”操作。这些变量都是可以在同一个 `for` 循环中计算得到的，即我们可以像 `online softmax` 那样在一个 $[i, N]$ 的循环中完成计算： -->
 
-![compute-s-m-d](../../images/flash_attention1-3/compute-s-m-d.png)
+![compute-s-m-d](../../images/flash_attention/computre-S-M-D.png)
 
 $$\begin{aligned}
 S_{r, i} &= \sum^{Dim}_{j=1}Q[r, j]K[j, i]\\
