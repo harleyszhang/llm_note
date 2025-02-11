@@ -8,6 +8,7 @@
 - [8. Embedding 和 Softmax 层](#8-embedding-和-softmax-层)
 - [9. Positional Encoding](#9-positional-encoding)
 - [10. 为什么使用 self-attention!](#10-为什么使用-self-attention)
+- [11，为什么只有 kv cache 没有 q cache？](#11为什么只有-kv-cache-没有-q-cache)
 - [参考资料](#参考资料)
 
 ### 1. 相关工作
@@ -59,7 +60,7 @@ $$
 
 1，首先，注意力函数可以描述为将一个查询（query）和一组键-值对（key-value pairs）映射到一个输出 output，$q$、$k$、$v$ 都是向量。输出都是对 `value` 进行加权求和得到的，每个 value 对应的权重 `weight` 是通过 $q$ 和 $k$ 之间的相似度计算得到。
 
-2，将 q 和 k 的内积作为相似度（Dot-Product），然后除以向量的长度 $\sqrt{d_k}$（Scaled），结果再应用 `softmax` 函数，就会得到 $n$ 个非负且相加求和等于 $1$ 的权重向量，最后将权重应用于 value，就得到了最终输出 output。
+2，将 q 和 k 的内积作为相似度（Dot-Product），然后除以向量的长度 $\sqrt{d_k}$（Scaled），结果再应用**逐行做 `softmax` 函数**，就会得到 $n$ 个非负且相加求和等于 $1$ 的权重向量，最后将权重应用于 value，就得到了最终输出 output。
 
 **余弦相似度常用来比较两个向量的相似度（距离）**，伪代码如下：
 
@@ -69,7 +70,15 @@ CosineSimilarity = sum(x[i]*y[i])/(sqrt(sum(x[i]*x[i]))*sqrt(sum(y[i]*y[i])))。
 
 实际中，为了方便计算，会同时对一组查询（queries）计算注意力函数，将 q、k、v 都是构建成矩阵 $Q$、$K$、$V$（ 维度相等），涉及到两个矩阵乘法。
 
-作者提到当向量维度变大的时候，softmax 函数会造成梯度消失问题，所以设置了一个 softmax 的 temperature 来缓解这个问题。这里 temperature 被设置为了 $\sqrt{d_k}$。
+3，transformer 论文中注意力机制和之前的点积注意力机制不同之处是引入了除以 $\sqrt{d_k}$ 做 scale，并使用 qk^t 点积，因为矩阵乘法更高效。
+
+**1，为什么需要做 `scale`：**
+- 引入温度调节（`scale`）：在 softmax 前对 qk^t 的结果矩阵**除以一个系数**，系数大于 1 时可以**使得 softmax 输出的概率分布变得平滑，而不是接近一个 `one hot` 分布**（当向量长度较大时，token 之间相似度很大，进而 softmax 结果较大的会接近 1，较小的接近于 0），从而造成梯度消失问题。有实验证明如果不 scale，模型预训练很难收敛。
+
+**2，为什么设置 $\text{scale} = \sqrt{d_k}$：**
+
+- 线性变换后的 Q 和 K 已经标准化（均值接近 0，方差接近 1），$qk^t \in \mathbb{R}^{n\times \sqrt{d_k}}$，经过 $qk^t$ 点积后的矩阵每一行均值为 0，方差为 $d_k$，因此需要除以标准差 $\sqrt{d_k}$ 以达到输出归一化的效果。
+
 > 作者提出的注意力机制算法跟之前的 Dot-Product Attention 相比就是单纯多了 Scaled（除以 $\sqrt{d_k}$）。
 
 另外 decoder 模块的 attention  多了一个 `Mask`，实际是第 $t$ 时刻的 $q$ 只能看前面阶段的对应的 $(k, v)$ 对，计算当中表现就是对于 $q_t$ 和 $k_t$ 及其之后的那些权重值都替换成一个极大的负数，这样经过 `softmax` 后（做指数 $e^{w_t}$），对应位置的 $v$ 就变成了 0。 
@@ -87,7 +96,11 @@ $$
 
 $Q$、$K$ 的线性(映射)层的权重维度是 $[d_\text{model}, d_k]$，$V$ 的线性(映射)层的权重维度是 $[d_{model}, d_v]$，输出线性(映射)层权重维度是 $[h*d_v, d_{model}]$。
 
-作用：**多头注意力机制可以注意到不同子空间的信息，捕捉到更加丰富的特征信息，实现类似卷积核的多通道机制的效果**。
+**多头的作用**：
+- **多头注意力机制可以注意到不同子空间的信息，捕捉到更加丰富的特征信息，实现类似卷积核的多通道机制的效果**（论文的解释）。
+- 多头的核心思想就是 `ensemble`（集成），每个 head 类似一个弱分类器，多个 head 的结果做 concat，可以让最后得到的 embedding 向量关注多方面的特征信息，而不会过拟合到某一种 `pattern` 上。
+- 另外，多头注意力在计算上也更方便做并行计算加速；**每个头的 Q、K、V 矩阵计算相互独立，无数据依赖，天然支持并行**。
+- 另外 head 不是越多越好，head 太多，那么每个 qkv 分到的维度就会变小，导致其表达能力也就变差，即注意力机制可能不能捕捉到 tokens 的语法/句法/词法信息。
 
 <img src="../images/transformer_paper/attention.png" width="60%" alt="从 scaled dot producted attention 到 multi-head attention">
 
@@ -132,8 +145,22 @@ $$
 
 ### 10. 为什么使用 self-attention!
 
-比较了四种不同的层： self-attention、rnn、cnn、self-attention (restricted)，分别比较了计算复杂度FLOPs、顺序操作（并行度）、最大路径长度。
+比较了四种不同的层：self-attention、rnn、cnn、self-attention (restricted)，分别比较了计算复杂度 FLOPs、顺序操作（并行度）、最大路径长度。
+
+- Self-Attention：**能够在一层内直接捕获全局依赖关系**。每个 token 都能与序列中任意位置的 token 进行信息交互，不受固定窗口大小限制。
+- CNN：**典型的卷积操作受限于卷积核的大小，捕获的是局部信息**。虽然可以通过堆叠多层卷积或使用扩张卷积来扩大感受野，但这种扩展是逐层进行的，且依赖于网络深度。
+
+### 11，为什么只有 kv cache 没有 q cache？
+
+**atten 的输出最后一行（最后一个 token）只依赖 q 的最后一行**，所以当然不需 q kache，但是依赖 k 的全部行。
+
+<div align="center">
+<img src="../images/transformer_paper/qkt_result.png" width="60%" alt="qkt_result">
+</div>
+
+具体说，LLM 在 decoding 阶段的每次推理只会用到当前的 Q，这次用的 Q 下次不会用到，所以不用 Cache Q。但是每次都要用到当前和过去所有的 KV，这次用到的 KV 下次马上就要再用一次，所以 Cache KV 可以加速推理。
 
 ### 参考资料
 
 - [李沐读论文-transformer](https://www.bilibili.com/video/BV1pu411o7BE/?spm_id_from=333.788&vd_source=69e98dbaea70afc6b62d55a86d59e408)
+- [Multi-Head-Attention的作用到底是什么](https://zhuanlan.zhihu.com/p/626820422)
