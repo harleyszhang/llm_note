@@ -270,8 +270,7 @@ class DeepseekV2MoE(nn.Module):
     # 此处为简化实现，仅做推理示例，不涉及分布式通信
     @torch.no_grad()
     def moe_infer(self, x, topk_ids, topk_weight):
-        # x: [batch * seq_len, hidden_size]
-        # 对每个 token 依然采用与训练类似的方式进行专家计算
+        # x: [batch * seq_len, hidden_size] # 对每个 token 依然采用与训练类似的方式进行专家计算
         outputs = []
         flat_topk_ids = topk_ids.view(-1)
         for i, expert in enumerate(self.experts):
