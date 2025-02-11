@@ -1,3 +1,12 @@
+- [1. 基础 MOE 结构介绍](#1-基础-moe-结构介绍)
+- [2. DeepseekMOE 结构介绍](#2-deepseekmoe-结构介绍)
+  - [2.1 Gate 网络与 DeepseekMOE 计算流程](#21-gate-网络与-deepseekmoe-计算流程)
+- [3. DeepseekMOE 结构代码实现](#3-deepseekmoe-结构代码实现)
+  - [3.1 DeepseekV2MLP 实现](#31-deepseekv2mlp-实现)
+  - [3.2 门控/路由网络实现](#32-门控路由网络实现)
+  - [3.3 DeepseekMOE 实现](#33-deepseekmoe-实现)
+- [参考资料](#参考资料)
+
 ## 1. 基础 MOE 结构介绍
 
 `Mixtral` 8x7B (announcement, model card) 是高质量的混合专家模型 (Mixed Expert Models，简称 MoEs) 的 Transformer 模型，或者说是一种稀疏的 mixture-of-experts 模型，采用纯解码器结构，并使用 `MOE` 结构，替换原始的 `FFN` 结构。在每一层，对每个 `token`，存在一个 `router network` 会挑选两组 “experts”(即参数量更小的 FFN）来分别处理该 token，并通过**加法方式**融合两组 “experts” 的输出。
@@ -74,6 +83,11 @@ DeepseekV2 模型的 MOE 参数如下：
 | norm_topk_prob        | 是否对 Top-K 权重归一化，此处为 false。                           |
 | seq_aux               | 是否使用序列级辅助损失，此处为 true。                             |
 | aux_loss_alpha        | 辅助损失权重，此处为 0.001。                                      |
+
+
+<div align="center">
+<img src="../images/moe/moe_params.png" width="60%" alt="moe_params">
+</div>
 
 ## 3. DeepseekMOE 结构代码实现
 
@@ -232,6 +246,19 @@ topk_weight shape torch.Size([2048, 6])
 
 ### 3.3 DeepseekMOE 实现
 
+1. **门控计算**
+   - 调用门控网络（self.gate），对输入 hidden_states 计算得到 top‑k 专家索引（topk_idx）、对应权重（topk_weight）以及辅助损失（aux_loss，推理时不参与梯度计算）。
+2. **数据重排**
+    - 将输入 hidden_states 展平为二维张量（形状 $[B \times T, d]$），并将 topk_idx 也展平。
+	- 在推理模式下，通常不需要像训练时那样对每个 token 进行 repeat_interleave，因为每个 token 只会由对应专家处理一次。
+3. **专家计算**
+	- 根据展平后的 `topk_idx`，依次对每个专家负责的 token 子集进行计算。
+	- 由于这里可能存在多个 token 被分配给不同专家，实际实现中需要将每个专家的输出按顺序记录下来。
+4. **输出重构与加权融合**
+	- 将所有专家计算的输出进行合并。通过将输出重新整理（排序）回原始 token 顺序，并按照 topk_weight 对各个专家输出进行加权求和，从而获得最终输出。
+	- 整个过程保证最终输出形状与原始输入保持一致，即 $[B, T, d]$。
+
+代码实现如下所示：
 
 ```python
 # 为了单元测试，模拟不使用分布式（ep_size默认为1）
