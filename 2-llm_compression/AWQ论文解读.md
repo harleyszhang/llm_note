@@ -38,7 +38,7 @@ AWQ: ACTIVATION-AWARE WEIGHT QUANTIZATION
 量化技术通过**将浮点数映射为低位整数**，有效的减少 LLM 模型权重体积和推理成本。本节中，作者首先提出了一种**仅针对权重的量化方法**，通过保护更多“重要”权重，在无需额外训练（`QAT`）或回归的情况下提升模型精度。随后，作者引入了一种**数据驱动的优化方法**，来搜索减少量化误差的最佳**缩放因子**（见图 2）。
 
 <div align="center">
-<img src="../images/awq/figure2.png" width="80%" alt="figure2">
+<img src="../images/awq_paper/figure2.png" width="80%" alt="figure2">
 </div>
 
 图 2b 展示了可以基于激活分布找到 LLM 中 1% 的关键权重，将这些关键权重保留为 FP16 可以显著提升量化后的性能（困惑度从 43.2（左图）降至 13.0（中图））。但这种混合精度格式在硬件上效率较低，基于激活感知原则，作者提出了 AWQ（右图）。AWQ 采用逐通道缩放方式，保护关键权重并减少量化误差。作者测试了 OPT-6.7B 模型上使用 `INT3-g128` 量化下的困惑度 `PPL`(越小越好)表现为 13.0，和前面的混合精度量化一样，说明 AWQ 量化算法有效。
@@ -50,7 +50,7 @@ AWQ: ACTIVATION-AWARE WEIGHT QUANTIZATION
 这里有个问题是，哪部分权重通道更重要呢？通常评估权重重要性的方法是查看其**大小或 L2-范数（所有权重平方和的平方根）** (Han 等，2015；Frankle 和 Carbin，2018)，但在量化推理中也是这样吗？为此，作者做了三个对比实验来判断挑选显著权重方法的有效性，结果发现保留大范数的权重通道（即基于 W 的 FP16%）对量化性能的提升有限，跟随机选择通道带来的提升类似。详细对比结果见表 1 所示：
 
 <div align="center">
-<img src="../images/awq/table1.png" width="80%" alt="table1">
+<img src="../images/awq_paper/table1.png" width="80%" alt="table1">
 </div>
 
 > RTN 量化的核心思想是简单地将每个数值舍入到目标精度下的最接近值，量化缩放系数计算公式为 $\Delta = \frac{\text{max} - \text{min}}{2^n - 1}$。
@@ -111,7 +111,7 @@ $$
 但是前面的设想和公式推导还只是理论层面，因此为了验证该想法，作者在 OPT-6.7B 模型的 `1%` 显著通道上乘以 $s > 1$，并做了相关对比实验，实验结果在表 2 中。
 
 <div align="center">
-<img src="../images/awq/table2.png" width="60%" alt="table2">
+<img src="../images/awq_paper/table2.png" width="60%" alt="table2">
 </div>
 
 先看直接结果（模型精度变化），结果显示，放大显著通道非常有效：模型困惑度 PPL 从 $s = 1$ 时的 23.54（仅为 RTN）降低到 $s = 2$ 时的 11.92。
@@ -203,7 +203,7 @@ for ratio in range(n_grid):
 为了验证 AWQ 算法的有效性，作者做了 OPT 模型在 INT3-g128 量化下的消融实验，实验结果显示 AWQ 明显优于 RTN，并实现了和混合精度（1% FP16）相当的精度，同时对硬件更友好。
 
 <div align="center">
-<img src="../images/awq/table5.png" width="60%" alt="table5">
+<img src="../images/awq_paper/table5.png" width="60%" alt="table5">
 </div>
 
 ## 3. 实验
@@ -217,19 +217,19 @@ for ratio in range(n_grid):
 - 对于 Falcon-7B，由于官方实现未正确支持推理时的 KV 缓存，其速度明显慢于其他模型。在这种情况下，`tinychat` 的 FP16 优化实现了 1.6 倍的加速。在配备 8GB 内存的笔记本 4070 显卡上，`tinychat` 能够以 33 tokens/s 运行 Llama-2-13B，而 FP16 实现无法运行 7B 模型。
 
 <div align="center">
-<img src="../images/awq/figure9.png" width="100%" alt="figure9">
+<img src="../images/awq_paper/figure9.png" width="100%" alt="figure9">
 </div>
 
 表 10 还展示了视觉-语言模型加速效果。在 NVIDIA Jetson Orin 上，TinyChat 为 VILA-7B 和 VILA-13B 提供了约 $3$ 倍的加速。值得一提的是，所有 AWQ 模型的前向传播均使用原生 PyTorch API 实现，并支持多种 GPU 架构，因此 `TinyChat` 具备出色的扩展性。
 
 <div align="center">
-<img src="../images/awq/table10.png" width="50%" alt="table10">
+<img src="../images/awq_paper/table10.png" width="50%" alt="table10">
 </div>
 
 与其他系统的比较。在图 10 中，作者将 TinyChat 与现有的边缘 LLM 推理系统 AutoGPTQ、llama.cpp 和 exllama 进行了对比。在 Orin 上，TinyChat 比 llama.cpp 快最高 1.7 倍。此外，llama.cpp 和 exllama 适应性有限，主要针对 LLaMA 和 Llama-2 模型，而 TinyChat 支持更广泛的应用，包括 StarCoder (Li 等，2023c)、StableCode (GPTNeoX) (Black 等，2022)、Mistral (Jiang 等，2023) 和 Falcon (Penedo 等，2023)，且始终显著快于 AutoGPTQ。**TinyChat 甚至在资源极度受限的 Raspberry Pi 4B 上实现了 LLM 部署，7B 模型的速度达到了 0.7 tokens/s**。
 
 <div align="center">
-<img src="../images/awq/figure10.png" width="100%" alt="figure10">
+<img src="../images/awq_paper/figure10.png" width="100%" alt="figure10">
 </div>
 
 ## 4. 结论
