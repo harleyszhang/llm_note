@@ -15,6 +15,7 @@
   - [triton 保留关键字](#triton-保留关键字)
   - [Pytorch 与 Triton 中的地址计算对比](#pytorch-与-triton-中的地址计算对比)
   - [triton 和 cuda 特性的对比](#triton-和-cuda-特性的对比)
+  - [triton 的 autotune 用法](#triton-的-autotune-用法)
   - [参考资料](#参考资料)
 
 ## 一 tensor 知识
@@ -391,6 +392,69 @@ RESERVED_KWS = ["num_warps", "num_stages", "num_ctas", "enable_fp_fusion", "grid
 | Vectorization | .8/.16/.32/.64/.128 | Automatic |
 | Async SIMT | Support | Limited |
 | Device Function | Support | Not Walable |
+
+### triton 的 autotune 用法
+
+@triton.autotune 装饰器主要用于在运行时自动选择最佳的内核配置，以便在不同硬件或者不同输入尺寸（例如矩阵尺寸、序列长度等）下获得最优性能。它通过两个关键参数来实现这一目标：
+
+**1，configs 参数**
+
+- **作用**：configs 是一个**候选配置列表**，每个候选配置都由一个字典和一些额外的运行参数构成。字典部分通常包含内核中用到的“meta 参数”（例如 BLOCK_M、BLOCK_N、BLOCK_K 等），而额外参数（如 num_warps、num_stages 等）则用于指定内核的调度和执行策略。
+- **工作流程**：当内核第一次运行时，Triton 会遍历 configs 中的每一个候选配置，并对每种配置进行短时间的性能评估。通过比较这些配置在实际工作负载下的执行时间，自动选择出性能最好的配置。之后，对于相同的工作负载（参见下文 key 参数），这个最佳配置会被缓存下来，后续调用就直接使用。
+
+```python
+@triton.autotune(
+    configs=[
+        triton.Config({'BLOCK_M': 64,  'BLOCK_N': 64,  'BLOCK_K': 32},  num_warps=4,  num_stages=2),
+        triton.Config({'BLOCK_M': 128, 'BLOCK_N': 128, 'BLOCK_K': 64},  num_warps=8,  num_stages=3),
+        triton.Config({'BLOCK_M': 256, 'BLOCK_N': 256, 'BLOCK_K': 128}, num_warps=16, num_stages=4),
+    ],
+    key=['M', 'N', 'K']
+)
+```
+
+**2，key 参数**
+- **作用**：key 参数是一个列表，包含了若干字符串，这些字符串对应于内核函数中的参数（通常是通过 tl.constexpr 声明的）。这些参数的值会直接影响最佳配置的选择，因为不同的输入尺寸或问题规模可能需要不同的内核调度策略。
+- **工作流程**：在内核每次调用时，Triton 会根据 key 列表中指定的参数值生成一个“键”（key），用于在内部缓存中查找是否已经为这种输入选择了最优配置。如果没有，则 Triton 会对 configs 中的每个候选配置进行试验，选择出执行最快的一种，并将其与对应的 key 关联起来。之后对于同样的 key 值，直接复用之前选择的配置，避免重复调优带来的额外开销。
+- **示例**：在前面示例代码中，key=['M', 'N', 'K'] 意味着内核运行时会根据**矩阵的行数 M、列数 N 和内积维度 K 来决定选择哪种配置**。对于不同的矩阵尺寸，最佳的 BLOCK 尺寸和调度策略可能会不同，因此需要把这些参数作为区分的依据。
+
+在 flashattentionv2 内核中的应用代码如下所示，完整的 flash_attention2_nopad_kernel 内核代码在[这里](https://github.com/harleyszhang/lite_llama/blob/main/lite_llama/kernels/flashattention2_nopad.py)：
+
+```python
+configs_tma = [
+    triton.Config({'BLOCK_M_SIZE': BM, 'BLOCK_N_SIZE': BN}, num_stages=stages, num_warps=warps) \
+    for BM in [64, 128]\
+    for BN in [32, 64, 128]\
+    for warps in [4, 8, 16]\
+    for stages in [2, 3, 4, 6]\
+]
+
+def keep_tma(conf):
+    BLOCK_M_SIZE = conf.kwargs["BLOCK_M_SIZE"]
+    BLOCK_N_SIZE = conf.kwargs["BLOCK_N_SIZE"]
+    if (torch.cuda.get_device_capability()[0] == 9 and BLOCK_M_SIZE * BLOCK_N_SIZE < 128 * 128 and conf.num_warps == 8):
+        return False
+    return True
+
+# key 参数列表(['B_Seqlen', 'HEAD_DIM'])的值会直接影响最佳配置的选择，因为不同的输入尺寸或问题规模可能需要不同的内核调度策略。
+@triton.autotune(
+    configs=list(filter(keep_tma, configs_tma)), 
+    key=['B_Seqlen', 'HEAD_DIM']
+)
+@triton.jit
+def flash_attention2_nopad_kernel(
+    Q, K, V, O,
+    B_Start_Loc, B_Seqlen, 
+    sm_scale, heads, num_kv_groups,       # group of kv heads
+    stride_q_bs, stride_q_heads, stride_q_dim,  # Q 的 strides
+    stride_k_bs, stride_k_heads, stride_k_dim,  # K 的 strides
+    stride_v_bs, stride_v_heads, stride_v_dim,  # V 的 strides
+    stride_o_bs, stride_o_heads, stride_o_dim,
+    HEAD_DIM: tl.constexpr, # head_dim dimension
+    BLOCK_M_SIZE: tl.constexpr, # BLOCK size of m_size dimension，即 Q 矩阵行数分成了m_size // BLOCK_M_SIZE 块，块大小是 BLOCK_M_SIZE
+    BLOCK_N_SIZE: tl.constexpr, # n_size dimension    
+):
+```
 
 ### 参考资料
 
