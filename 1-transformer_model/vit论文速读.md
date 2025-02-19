@@ -40,7 +40,7 @@ META 于 2020 年发表 `DETR` 论文，紧跟着谷歌从**特征编码的角�
 
 ### 输入切分为多个 path
 
-ViT 将输入图片分为多个 patch（`16x16`），再将每个 patch 投影为固定长度的向量送入 Transformer，后续encoder 的操作和原始 Transformer 中完全相同。另外，对于图片分类问题，在输入序列中加入一个特殊的 token，该 token 对应的输出即为最后的预测类别。
+ViT 将输入图片分为多个 patch（`16x16`），再将每个 patch 投影为固定长度的向量送入 Transformer，后续 encoder 的操作和原始 Transformer 中完全相同。另外，对于图片分类问题，在输入序列中加入一个特殊的 token，该 token 对应的输出即为最后的预测类别。
 
 举个例子来理解 patch embedding 过程: 假设输入图片大小为 $224 \times224$，path 大小为 $16\times 16$，则每张图片都会生成 $(224\times224)/(16\times16) = 196$ 个 patch，类似于 transformer 模型的输入序列长度为 196。每个 patch 维度大小 = $16\times 16\times 3 = 768$，类似于每个 `token` 映射成的向量长度为 768，输入序列会加上一个特俗字符 `cls`，因此最终的输入序列维度 = $197\times 768$（一共有 197 个token）。线性投射层的维度为 $768\times N (N=768)$，因此输入通过**线性投影层**之后的维度依然为 $197\times 768$。到此，我们详细的解析了通过 `patch embedding` 将一个视觉分类问题转换为 `seq2seq` 的问题。
 
