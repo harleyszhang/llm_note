@@ -16,7 +16,7 @@
 	- [Pytorch 与 Triton 中的地址计算对比](#pytorch-与-triton-中的地址计算对比)
 	- [triton 和 cuda 特性的对比](#triton-和-cuda-特性的对比)
 	- [triton 的 autotune 用法](#triton-的-autotune-用法)
-		- [num\_warps 和 num\_stages 性能参数的作用](#num_warps-和-num_stages-性能参数的作用)
+	- [num\_warps 和 num\_stages 性能参数的作用](#num_warps-和-num_stages-性能参数的作用)
 	- [参考资料](#参考资料)
 
 ## 一 tensor 知识
@@ -457,7 +457,7 @@ def flash_attention2_nopad_kernel(
 ):
 ```
 
-#### num_warps 和 num_stages 性能参数的作用
+### num_warps 和 num_stages 性能参数的作用
 
 1, num_warps
 - 作用
