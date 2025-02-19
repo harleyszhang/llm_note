@@ -1,22 +1,23 @@
 - [一 tensor 知识](#一-tensor-知识)
-  - [理解张量维度](#理解张量维度)
-  - [理解 torch.matmul](#理解-torchmatmul)
-  - [理解 dim 参数](#理解-dim-参数)
-  - [规约操作](#规约操作)
+	- [理解张量维度](#理解张量维度)
+	- [理解 torch.matmul](#理解-torchmatmul)
+	- [理解 dim 参数](#理解-dim-参数)
+	- [规约操作](#规约操作)
 - [二 cuda 基础](#二-cuda-基础)
-  - [矩阵元素指针算术](#矩阵元素指针算术)
-  - [网格、块和内核](#网格块和内核)
-  - [cuda 执行模型](#cuda-执行模型)
-  - [num\_warps 概念作用](#num_warps-概念作用)
+	- [矩阵元素指针算术](#矩阵元素指针算术)
+	- [网格、块和内核](#网格块和内核)
+	- [cuda 执行模型](#cuda-执行模型)
+	- [num\_warps 概念作用](#num_warps-概念作用)
 - [三 triton 基础](#三-triton-基础)
-  - [triton 定义](#triton-定义)
-  - [triton 特性](#triton-特性)
-  - [triton 编译过程](#triton-编译过程)
-  - [triton 保留关键字](#triton-保留关键字)
-  - [Pytorch 与 Triton 中的地址计算对比](#pytorch-与-triton-中的地址计算对比)
-  - [triton 和 cuda 特性的对比](#triton-和-cuda-特性的对比)
-  - [triton 的 autotune 用法](#triton-的-autotune-用法)
-  - [参考资料](#参考资料)
+	- [triton 定义](#triton-定义)
+	- [triton 特性](#triton-特性)
+	- [triton 编译过程](#triton-编译过程)
+	- [triton 保留关键字](#triton-保留关键字)
+	- [Pytorch 与 Triton 中的地址计算对比](#pytorch-与-triton-中的地址计算对比)
+	- [triton 和 cuda 特性的对比](#triton-和-cuda-特性的对比)
+	- [triton 的 autotune 用法](#triton-的-autotune-用法)
+		- [num\_warps 和 num\_stages 性能参数的作用](#num_warps-和-num_stages-性能参数的作用)
+	- [参考资料](#参考资料)
 
 ## 一 tensor 知识
 
@@ -455,6 +456,24 @@ def flash_attention2_nopad_kernel(
     BLOCK_N_SIZE: tl.constexpr, # n_size dimension    
 ):
 ```
+
+#### num_warps 和 num_stages 性能参数的作用
+
+1, num_warps
+- 作用
+	- 并行度与延迟隐藏: **num_warps 指定每个线程块（block）中启动的 warps 数量**。更多的 warps 意味着在执行过程中可以调度更多线程，从而更好地隐藏内存访问延迟。
+	- 资源使用与调度开销：然而，过多的 warps 会占用更多的寄存器和共享内存资源，同时可能会使硬件调度器开销增大，影响总体效率。
+- 设置建议
+	- 初始选择时，可以从硬件推荐的 warp 数量开始（通常 `4～8` 个 warps 是一个较为常见的起点）。
+	- 针对不同问题规模和 GPU 架构，实验不同的 num_warps 组合。一般来说，对于计算密集型的 kernel，适当增加 warps 有助于提高利用率，而对于资源受限的 kernel，则需要谨慎增加。
+
+2, num_stages
+- 作用
+	- 软件流水线深度: **num_stages 控制内核中指令流水线的阶段数**。通过增加流水线阶段数，内核可以提前加载数据并将内存访问与计算重叠，从而隐藏内存访问延迟。
+	- 资源与同步开销：过多的流水线阶段虽然有助于延迟隐藏，但同时会增加寄存器压力和同步开销。如果流水线阶段设置得过高，可能反而影响性能。
+- 设置建议
+	- 一般来说, `2～4` 个阶段比较常见。对于内存访问延迟较高或需要更多预取的情况，可以尝试增加阶段数；反之，如果内核计算量较大而内存延迟不是瓶颈，较少的流水线阶段可能更合适。
+	- 同样需要结合具体的内核特点和 GPU 架构，通过实验找到一个平衡点。
 
 ### 参考资料
 
