@@ -1,3 +1,11 @@
+---
+layout: post
+title: 理解 triton 之基础知识
+date: 2024-09-26 20:00:00
+summary: triton 内核编程的背景知识总结
+categories: Hpc
+---
+
 - [一 tensor 知识](#一-tensor-知识)
 	- [理解张量维度](#理解张量维度)
 	- [理解 torch.matmul](#理解-torchmatmul)
