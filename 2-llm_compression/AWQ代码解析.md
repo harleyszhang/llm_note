@@ -16,6 +16,9 @@ categories: LLM_Compression
   - [3.1 pre\_quant.py](#31-pre_quantpy)
   - [3.2 quantizer.py](#32-quantizerpy)
 - [四 量化模型推理](#四-量化模型推理)
+  - [4.1 vllm 的 量化 kernel](#41-vllm-的-量化-kernel)
+    - [基础知识](#基础知识)
+    - [kernel 代码解析](#kernel-代码解析)
 - [参考资料](#参考资料)
 
 ## 一 llm-awq 代码架构
@@ -326,10 +329,9 @@ if isinstance(module, LlamaDecoderLayer):
 
 获取裁剪权重的最大值，在代码实现上本质也是一种**暴力搜索 + 最小化 `MSE` 损失的算法**，其权重最大值的获取也是通过最小 `MSE` 损失来求得，但这里不仅遍历了每个通道的最大值，内层循环里面还遍历了前面提到的 $\alpha$ 值，是双重循环求最小 $MSE$ 损失！
 
-`auto_clip` 的实现和应用我都觉得很神奇，理论层面不理解为什么要这么做，只能基于 `smoothquant` 论文的灵感来给出一点我的推测，个人觉得这是为了直接剔除权重中的异常值，我们都知道激活中有异常值，那么**权重**中也是可能存在的，自然也需要剔除，尤其是这里权重量化位宽是 `INT4`，如果原来的浮点值有异常值，那么很可能会影响模型精度，毕竟 `INT4/INT3` 或者更低位宽表示的范围跟原来的 `FP16` 比差别很大！
-> awq 论文跟 smoothquant 论文还有点不一样的是它没有量化激活，只量化了权重，因此模型中量化 kernel 计算时得先对激活（就是当前层的输入张量）做反量化 dequantize 操作。
+`auto_clip` 的实现和应用我觉得很神奇，理论层面不理解为什么要这么做，只能基于 `smoothquant` 论文的灵感来给出一点我的推测，个人觉得这是为了直接剔除权重中的异常值，我们都知道激活中有异常值，那么**权重**中也是可能存在的，自然也需要剔除，尤其是这里权重量化位宽是 `INT4`，如果原来的浮点值有异常值，那么很可能会影响模型精度，毕竟 `INT4/INT3` 或者更低位宽表示的范围跟原来的 `FP16` 比差别很大！
 
-哎，没有理论说明，这里先假定它还是实验指导理论吧，后续有看到解释再来更新，直接看其代码实现吧。
+因为没找到相关理论说明，所以这里我只能先假定它是实验指导理论，后续有看到解释再来更新，直接看其代码实现吧。
 
 ```python
 # Weight Quantization: 自动裁剪层权重以适应量化
@@ -503,7 +505,7 @@ def run_awq():
 
 `real_quantize_model_weight` 函数中**最关键的操作就是使用量化线性层 `WQLinear` 替换原来的线性层**。
 
-（伪）权重量化函数的实现和 smoothquant 有点区别，基于 min_max + 非线性量化，求计算量化 scale 和 zero_point，同时支持分组量化，`AWQ` 的权重量化一般默认使用分组量化（per-group 量化，通过函数参数传入 group_size 大小），核心代码如下所示:
+`AWQ` 的（伪）权重量化函数的和 `smoothquant` 略有区别，其**基于 `min_max` + 非线性量化算法，计算量化 scale 和 zero_point**，同时默认使用分组量化（即 per-group 量化，group_size 大小通过函数参数传入），核心代码如下所示:
 
 ```python
 def pseudo_quantize_tensor(
@@ -552,7 +554,7 @@ def pseudo_quantize_tensor(
         return w
 ```
 
-dim = 1 维度的权重分组不好直接理解，直接看示例：
+`dim = 1` 维度的权重分组不好直接理解，直接看示例：
 
 ```python
 w = torch.tensor([[1, 2, 3, 4], [5, 6, 7, 8]])
@@ -567,7 +569,6 @@ w = w.reshape(-1, q_group_size)
 ## 四 量化模型推理
 
 量化模型推理的实现主要在于用 cuda 实现量化 kernel，并替换原有的浮点 kernel。这部分代码实现在 `qmodule.py` 文件中，文件实现了 calculate_zeros_width、pack_intweight 函数和 ScaledActivation、WQLinear 类。
-> vllm 框架的 gemm 量化 kernel 实现代码是基于 [llm_awq](https://github.com/mit-han-lab/llm-awq/tree/main) 仓库提供的量化 kernel 修改优化得到，代码地址在[这里](https://github.com/vllm-project/vllm/blob/main/csrc/quantization/awq/gemm_kernels.cu)，推荐看 vllm 的实现，代码相对更为简洁和优雅易懂。
 
 其中 `WQLinear` 类是线性层量化类，其中 `from_linear` 作用是从原始 nn.Linear 层创建量化的 WQLinear 层；forward 函数部分用量化 kernel `gemm_forward_cuda_new` 替换原有的 pytorch 的 `Linear` 浮点线性层函数。主要代码如下所示:
 
@@ -644,6 +645,156 @@ array([65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535,
 > 如果是 C++/CUDA 推理框架，是否也许要这步呢？
 
 部分代码解释，如 `<<` 左移位操作符。示例：`value << num`: value是运算对象，num 是要向左进行移位的位数，左移的时候在低位补0。其实左移n 位，就相当于乘以2 的 n 次方。比如 `120 << 4` 运算的结果是 1920 = 120 * 2^4。
+
+### 4.1 vllm 的 量化 kernel
+
+#### 基础知识 
+
+**1，uint4 数据类型**
+
+在 CUDA 编程中，`uint4` 是一种内置的向量类型，**它由 4 个 32 位无符号整数（unsigned int）组成**。其定义类似于下面的结构体：
+
+```cpp
+typedef struct uint4 {
+    // 每个元素 32 位：因此整个 uint4 类型占用 4×4 = 16 字节
+    unsigned int x, y, z, w;
+} uint4;
+```
+
+`uint4` 数据类型的特点：
+
+- **向量化操作**：uint4 常用于同时处理 4 个数据，便于进行并行计算或内存数据的打包和解包操作。
+- **成员访问**：可以通过 `.x, .y, .z, .w` 分别访问每个分量。
+
+**2，S4 数据类型**
+
+S4 类型通常指的是**用 4 位（bit）表示的有符号整数**，也称为“4 位二补数”。 4 位能表示 2⁴ = 16 个不同的数值，但对于有符号数采用二补数表示，**其取值范围是 –8 到 +7**。一个 32 位整数中，可以存储 32/4 = 8 个 S4 数值，即将其“打包”成 8 个 S4 数据。
+
+**3，half 与 half2 数据类型**
+
+- `half`: 16 位浮点数（也称为**半精度浮点数**），遵循 IEEE 754 binary16 格式。
+- `half2`: CUDA 中的一种向量类型，它包含两个 half 数值。
+
+#### kernel 代码解析
+
+vllm 框架的 gemm 量化 kernel 实现代码是基于 [llm_awq](https://github.com/mit-han-lab/llm-awq/tree/main) 仓库提供的量化 kernel 修改优化得到，代码地址在[这里](https://github.com/vllm-project/vllm/blob/main/csrc/quantization/awq/gemm_kernels.cu)，**推荐看 vllm 的实现，代码相对 awq 更为简洁和优雅易懂**。值得注意的是，awq 量化 kernel 跟 smoothquant 有点不一样的是它没有量化激活，只量化了权重，因此**量化 kernel 计算时得先对权重做反量化 `dequantize` 操作**。
+
+反量化操作的 kernel 函数 dequantize_s4_to_fp16x2 (`vllm/csrc/quantization/awq/dequantize.cuh`)的实现如下所示。
+
+`dequantize_s4_to_fp16x2` 作用是**将一个存储为 32 位的 8 个 S4 格式量化数据转换为 4 个 half2（即 8 个 half 数值）的数据表示**。转换过程中利用了内联 PTX 指令和特殊的立即数常量，以便高效地从 4 位整数编码转换到半精度浮点数。
+
+```cpp
+#pragma once
+
+#include <assert.h>
+#include <cuda_fp16.h>
+#include <stdint.h>
+
+namespace vllm {
+namespace awq {
+
+/*
+ * 该设备函数用于将一个 32 位整数（包含多个4位量化数据，S4 格式）转换为4个 half2 数据，
+ * 最终以 uint4 类型返回（每个成员存放一个 half2，即2个 half，共4*2=8个 half 数值）。
+ *
+ * 注意：该实现仅在 CUDA 架构大于等于750时有效，否则会触发 assert(false)。
+ */
+__device__ uint4 dequantize_s4_to_fp16x2(uint32_t const& source) {
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 750
+  // 若 CUDA 架构小于750，则不支持该转换
+  assert(false);
+#else
+  // 定义返回结果变量 result，类型为 uint4，每个成员对应 half2 数据
+  uint4 result;
+
+  // 将 result 的内存视为一个 uint32_t 数组指针 h，共有4个 uint32_t 对应4个 half2 数据
+  uint32_t* h = reinterpret_cast<uint32_t*>(&result);
+  // 将输入 source 强制转换为 uint32_t，存入 i4s
+  uint32_t const i4s = reinterpret_cast<uint32_t const&>(source);
+
+  // 定义常量：
+  // immLut：立即数查找表，具体位操作组合，用于后续 PTX 指令中的操作
+  static constexpr uint32_t immLut = (0xf0 & 0xcc) | 0xaa;
+  // BOTTOM_MASK：用于提取低位4位的掩码（每个32位整数中，低位部分）
+  static constexpr uint32_t BOTTOM_MASK = 0x000f000f;
+  // TOP_MASK：用于提取高位4位的掩码
+  static constexpr uint32_t TOP_MASK = 0x00f000f0;
+  // I4s_TO_F16s_MAGIC_NUM：转换时使用的魔数，通常用于将整数转换为浮点数格式的中间步骤
+  static constexpr uint32_t I4s_TO_F16s_MAGIC_NUM = 0x64006400;
+
+  // 注：整个转换过程仅需要1次移位指令，这是利用了寄存器打包格式，
+  // 并且我们将整数视为无符号数，后续在 fp16 减法中进行了补偿处理。
+  // 此外利用 sub 和 fma 指令具有相同吞吐量的特性，
+  // 使得我们可以将 elt_23 和 elt_67 转换为 fp16 而无需提前移位到底部位。
+
+  // 先将 i4s 右移 8 位，得到 top_i4s，用于后续提取 elt_45 和 elt_67，
+  // 这样做有助于隐藏 RAW 依赖。
+  const uint32_t top_i4s = i4s >> 8;
+
+  // 使用 inline PTX 指令：使用 lop3.b32 指令提取 elt_01 部分
+  // 计算：(i4s & BOTTOM_MASK) | I4s_TO_F16s_MAGIC_NUM，然后与 immLut 结合
+  asm volatile("lop3.b32 %0, %1, %2, %3, %4;\n"
+               : "=r"(h[0])
+               : "r"(i4s), "n"(BOTTOM_MASK), "n"(I4s_TO_F16s_MAGIC_NUM),
+                 "n"(immLut));
+
+  // 提取 elt_23 部分：(i4s & TOP_MASK) | I4s_TO_F16s_MAGIC_NUM
+  asm volatile("lop3.b32 %0, %1, %2, %3, %4;\n"
+               : "=r"(h[1])
+               : "r"(i4s), "n"(TOP_MASK), "n"(I4s_TO_F16s_MAGIC_NUM),
+                 "n"(immLut));
+
+  // 提取 elt_45 部分：(top_i4s & BOTTOM_MASK) | I4s_TO_F16s_MAGIC_NUM
+  asm volatile("lop3.b32 %0, %1, %2, %3, %4;\n"
+               : "=r"(h[2])
+               : "r"(top_i4s), "n"(BOTTOM_MASK), "n"(I4s_TO_F16s_MAGIC_NUM),
+                 "n"(immLut));
+
+  // 提取 elt_67 部分：(top_i4s & TOP_MASK) | I4s_TO_F16s_MAGIC_NUM
+  asm volatile("lop3.b32 %0, %1, %2, %3, %4;\n"
+               : "=r"(h[3])
+               : "r"(top_i4s), "n"(TOP_MASK), "n"(I4s_TO_F16s_MAGIC_NUM),
+                 "n"(immLut));
+
+  // 以下利用 inline PTX 进行后续转换，原因是不确定编译器是否会生成 float2half 指令，
+  // 此处牺牲了一定可读性以确保性能和可靠性。
+
+  // 定义常量：
+  // FP16_TOP_MAGIC_NUM：代表 half2 {1024, 1024} 的魔数，用于后续转换（减去该值可使结果映射到正确范围）
+  static constexpr uint32_t FP16_TOP_MAGIC_NUM = 0x64006400;
+  // ONE_SIXTEENTH：代表 half2 {1/16, 1/16}，用于缩放，即将整数转换为对应的半精度数
+  static constexpr uint32_t ONE_SIXTEENTH = 0x2c002c00;
+  // NEG_64：代表 half2 {-64, -64}，用于补偿偏移，替代之前的 {-72, -72}
+  static constexpr uint32_t NEG_64 = 0xd400d400;
+
+  // 对每个提取出来的部分进行转换：
+  // 对 elt_01：先用 sub.f16x2 指令将 h[0] 减去 FP16_TOP_MAGIC_NUM
+  asm volatile("sub.f16x2 %0, %1, %2;\n"
+               : "=r"(h[0])
+               : "r"(h[0]), "r"(FP16_TOP_MAGIC_NUM));
+  // 对 elt_23：使用 fma.rn.f16x2 指令，计算 h[1] * ONE_SIXTEENTH + NEG_64
+  asm volatile("fma.rn.f16x2 %0, %1, %2, %3;\n"
+               : "=r"(h[1])
+               : "r"(h[1]), "r"(ONE_SIXTEENTH), "r"(NEG_64));
+  // 对 elt_45：同样使用 sub.f16x2 指令
+  asm volatile("sub.f16x2 %0, %1, %2;\n"
+               : "=r"(h[2])
+               : "r"(h[2]), "r"(FP16_TOP_MAGIC_NUM));
+  // 对 elt_67：使用 fma.rn.f16x2 指令
+  asm volatile("fma.rn.f16x2 %0, %1, %2, %3;\n"
+               : "=r"(h[3])
+               : "r"(h[3]), "r"(ONE_SIXTEENTH), "r"(NEG_64));
+
+  // 返回转换结果，result 中包含了8个 half 数值（4个 half2）
+  return result;
+#endif
+  // 如果编译器流到这里，说明缺少返回值，用 __builtin_unreachable() 消除警告
+  __builtin_unreachable();
+}
+
+}  // namespace awq
+}  // namespace vllm
+```
 
 ## 参考资料
 
