@@ -531,6 +531,6 @@ Llama 3.2 发布的模型权重采用 `BFloat16` 数字格式。
 5. [详解三种常用标准化 Batch Norm & Layer Norm & RMSNorm](https://blog.csdn.net/wxc971231/article/details/139925707)
 6. [open-llm-components](https://github.com/jeff52415/open-llm-components/tree/main)
 7. [Build Your Own Llama 3 Architecture from Scratch Using PyTorch](https://pub.towardsai.net/build-your-own-llama-3-architecture-from-scratch-using-pytorch-2ce1ecaa901c)
-8. [LLaMA: Open and Efficient Foundation Language Models](https://openreview.net/pdf?id=SygkZ3MTJE)
+8. [LLaMA: Open and Efficient Foundation Language Models](https://arxiv.org/pdf/2302.13971)
 9. [Llama 2: Open Foundation and Fine-Tuned Chat Models](https://arxiv.org/pdf/2307.09288)
 10. https://github.com/meta-llama/llama/blob/main/llama/model.py
