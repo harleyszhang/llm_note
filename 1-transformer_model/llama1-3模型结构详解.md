@@ -249,7 +249,7 @@ class FFNSwiGLU(nn.Module):
         
     def forward(self, x):
         # LLaMA 官方提供的代码是使用 F.silu() 激活函数
-        return self.fc2(F.silu(self.fc1(x) * self.fc3(x)))
+        return self.fc2(F.silu(self.fc1(x)) * self.fc3(x)))
     
 layer = FFNSwiGLU(128, 256)
 x = torch.randn(1, 128)
