@@ -21,7 +21,7 @@
 
 `tokenization`: 是指**分词**过程，目的是将输入序列划分成一个个词元（`token`），保证各个词元拥有相对完整和独立的语义，以供后续任务（比如学习 embedding 或作为 LLM 的输入）使用。
 
-`Tokenizer`: 在 transformers 库中，`tokenizer` 就是实现 `tokenization` 的对象，每个 tokenizer 会有不同的 vocabulary。在代码中，tokenizer 用以将输入文本序列划分成 tokenizer vocabulary 中可用的 `tokens`。
+`Tokenizer`: 在 transformers 库中，`tokenizer` 就是实现 `tokenization` 的对象，每个 tokenizer 会有不同的 vocabulary。在代码中，tokenizer 用以将输入文本序列划分成 tokenizer vocabulary 中可用的 `tokens`，或者说让每个文本有唯一的 `tokens indexs` 列表。
 
 举两个 tokenization 例子：
 
