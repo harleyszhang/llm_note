@@ -73,7 +73,7 @@ Transformer 架构更详细的可视化图如下所示:
 
 ### 1.1 tokenizer 预处理
 
-`Transformer` 架构的 `LLM` 的输入通常都是字符串文本，而模型是不能直接处理字符串文本数据，需要通过 `tokenizer` 完成预处理工作，即 tokenized 分词、词元编码以及最后的**转成 input ids 向量**（矩阵）过程，`id` 数值对应的是 `tokenizer` 词汇表中的索引，也叫 `token id`。一句话总结就是，**tokenizer 的作用就是将这些文本/提示词转换为 token-id（词汇表中 token 的索引）**。
+`Transformer` 架构的 `LLM` 的输入通常都是字符串文本，而模型是不能直接处理字符串文本数据，需要通过 `tokenizer` 完成预处理工作，即 tokenized 分词、词元编码以及最后的**转成 input ids 向量**（矩阵）过程，`id` 数值对应的是 `tokenizer` 词汇表中的索引，也叫 `token id`。一句话总结就是，**tokenizer 的作用就是将输入提示词文本转换为 token-ids（词汇表中 token 的索引）**。
 
 这里以 Hugging Face 的 transformers 库为例，展示如何将输入文本处理为 Transformer 模型能够理解的 `input ids` 形式。
 
