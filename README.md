@@ -28,8 +28,26 @@ LLM notes, including model inference, transformer model structure, and lightllm 
     - 课程项目完美支持 FlashAttentionV1、V2、V3 与 `GQA`，以及 `PageAttention` 的具体实现。​
     - 使用 `Triton` 编写融合算子，如 KV 线性层融合等。​
     - 适配最新的 `llama/qwen2.5/llava1.5` 模型，相较 transformers 库，在 llama3 1B 和 3B 模型上，加速比最高可达 `4` 倍。
+4. **项目运行效果**。
 
-感兴趣的同学可以扫码联系课程购买，这个课程是我和《自制深度学习推理框架》作者一起合力打造的，内容也会持续更新优化。
+llama3.2-1.5B-Instruct 模型流式输出结果测试：
+
+![流式输出](./images/read_me/generate.gif)
+
+Qwen2.5-3B 模型（社区版本）流式输出结果测试：
+
+![流式输出](./images/read_me/output.gif)
+
+Llava1.5-7b-hf 模型流式输出结果测试:
+
+<table style="width: 100%; table-layout: fixed;">
+  <tr>
+    <td align="center"><img src="./images/read_me/llava_output2.gif" width="90%" alt="llava_output2"></td>
+    <td align="center"><img src="./images/read_me/llava_output1.gif" width="100%" alt="llava_output"></td>
+  </tr>
+</table>
+
+感兴趣的同学可以扫码联系课程购买，这个课程是我和[《自制深度学习推理框架》作者](https://space.bilibili.com/1822828582)一起合力打造的，内容也会持续更新优化。
 
 <div align="center">
 <img src="./images/read_me/fu_qcode.jpg" width="40%" alt="transformer_block_mp">
