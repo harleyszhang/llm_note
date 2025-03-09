@@ -29,11 +29,11 @@ LLM notes, including model inference, transformer model structure, and lightllm 
     - 使用 `Triton` 编写融合算子，如 KV 线性层融合等。​
     - 适配最新的 `llama/qwen2.5/llava1.5` 模型，相较 transformers 库，在 llama3 1B 和 3B 模型上，加速比最高可达 `4` 倍。
 
-感兴趣的同学可以扫码联系课程购买。
+感兴趣的同学可以扫码联系课程购买，这个课程是我和《自制深度学习推理框架》作者一起合力打造的，内容也会持续更新优化。
 
-<center>
+<div align="center">
 <img src="./images/read_me/fu_qcode.jpg" width="40%" alt="transformer_block_mp">
-</center>
+</div>
 
 ## 一 transformer 模型
 ### 1.1 transformer 系列模型
