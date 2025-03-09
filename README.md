@@ -1,23 +1,41 @@
+- [我的自制大模型推理框架课程介绍](#我的自制大模型推理框架课程介绍)
 - [一 transformer 模型](#一-transformer-模型)
-  - [1.1 transformer 系列模型](#11-transformer-系列模型)
-  - [1.2 LLM 性能分析](#12-llm-性能分析)
+	- [1.1 transformer 系列模型](#11-transformer-系列模型)
+	- [1.2 LLM 性能分析](#12-llm-性能分析)
 - [二 大语言模型压缩](#二-大语言模型压缩)
 - [三 大语言模型推理及部署（服务化）](#三-大语言模型推理及部署服务化)
-  - [3.1 LLM 综合性能分析](#31-llm-综合性能分析)
-  - [3.2 LLM 推理优化-算法层面](#32-llm-推理优化-算法层面)
-  - [3.3 LLM 推理服务框架解析](#33-llm-推理服务框架解析)
-  - [3.4 系统优化方法](#34-系统优化方法)
-  - [3.5 LLM 可视化](#35-llm-可视化)
+	- [3.1 LLM 综合性能分析](#31-llm-综合性能分析)
+	- [3.2 LLM 推理优化-算法层面](#32-llm-推理优化-算法层面)
+	- [3.3 LLM 推理服务框架解析](#33-llm-推理服务框架解析)
+	- [3.4 系统优化方法](#34-系统优化方法)
+	- [3.5 LLM 可视化](#35-llm-可视化)
 - [四 高性能计算](#四-高性能计算)
-  - [4.1 triton 笔记](#41-triton-笔记)
-  - [4.2 cuda 笔记](#42-cuda-笔记)
-  - [4.3 高性能编程学习资料推荐](#43-高性能编程学习资料推荐)
+	- [4.1 triton 笔记](#41-triton-笔记)
+	- [4.2 cuda 笔记](#42-cuda-笔记)
+	- [4.3 高性能编程学习资料推荐](#43-高性能编程学习资料推荐)
 - [参考资料](#参考资料)
 
 LLM notes, including model inference, transformer model structure, and lightllm framework code analysis notes.
 
-## 一 transformer 模型
+## 我的自制大模型推理框架课程介绍
 
+1. **框架亮点**：基于 Triton + PyTorch 开发的轻量级、且简单易用的大模型推理框架，采用类 Pytorch 语法的 Triton 编写算子，绕开 Cuda 复杂语法实现 GPU 加速。
+2. **价格：499**。非常实惠和便宜，课程、项目、面经、答疑质量绝对对得起这个价格。
+3. **课程/项目优势​**：**手把手教你从 0 到 1 实现大模型推理框架，2025 最新的高性能计算/推理框架岗位的大厂面经分享**。
+	- 架构清晰，代码简洁且注释详尽，覆盖大模型离线推理全流程。​
+    - 运用 OpenAI Triton 编写高性能计算 Kernel，开发矩阵乘法内核，效率堪比 cuBLAS。​
+    - 依托 PyTorch 进行高效显存管理。​
+    - 课程项目完美支持 FlashAttentionV1、V2、V3 与 `GQA`，以及 `PageAttention` 的具体实现。​
+    - 使用 `Triton` 编写融合算子，如 KV 线性层融合等。​
+    - 适配最新的 `llama/qwen2.5/llava1.5` 模型，相较 transformers 库，在 llama3 1B 和 3B 模型上，加速比最高可达 `4` 倍。
+
+感兴趣的同学可以扫码联系课程购买。
+
+<center>
+<img src="./images/read_me/fu_qcode.jpg" width="40%" alt="transformer_block_mp">
+</center>
+
+## 一 transformer 模型
 ### 1.1 transformer 系列模型
 
 - [transformer 论文解读](./1-transformer_model/transformer论文解读.md)
