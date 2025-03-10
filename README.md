@@ -30,15 +30,15 @@ LLM notes, including model inference, transformer model structure, and lightllm 
     - 适配最新的 `llama/qwen2.5/llava1.5` 模型，相较 transformers 库，在 llama3 1B 和 3B 模型上，加速比最高可达 `4` 倍。
 4. **项目运行效果**。
 
-llama3.2-1.5B-Instruct 模型流式输出结果测试：
+`llama3.2-1.5B-Instruct` 模型流式输出结果测试：
 
 ![流式输出](./images/read_me/generate.gif)
 
-Qwen2.5-3B 模型（社区版本）流式输出结果测试：
+`Qwen2.5-3B` 模型（社区版本）流式输出结果测试：
 
 ![流式输出](./images/read_me/output.gif)
 
-Llava1.5-7b-hf 模型流式输出结果测试:
+`Llava1.5-7b-hf` 模型流式输出结果测试:
 
 <table style="width: 100%; table-layout: fixed;">
   <tr>
