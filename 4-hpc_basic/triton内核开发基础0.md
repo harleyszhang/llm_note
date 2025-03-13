@@ -7,25 +7,25 @@ categories: Hpc
 ---
 
 - [一 tensor 知识](#一-tensor-知识)
-	- [理解张量维度](#理解张量维度)
-	- [理解 torch.matmul](#理解-torchmatmul)
-	- [理解 dim 参数](#理解-dim-参数)
-	- [规约操作](#规约操作)
+  - [理解张量维度](#理解张量维度)
+  - [理解 torch.matmul](#理解-torchmatmul)
+  - [理解 dim 参数](#理解-dim-参数)
+  - [规约操作](#规约操作)
 - [二 cuda 基础](#二-cuda-基础)
-	- [矩阵元素指针算术](#矩阵元素指针算术)
-	- [网格、块和内核](#网格块和内核)
-	- [cuda 执行模型](#cuda-执行模型)
-	- [num\_warps 概念作用](#num_warps-概念作用)
+  - [矩阵元素指针算术](#矩阵元素指针算术)
+  - [网格、块和内核](#网格块和内核)
+  - [cuda 执行模型](#cuda-执行模型)
+  - [num\_warps 概念作用](#num_warps-概念作用)
 - [三 triton 基础](#三-triton-基础)
-	- [triton 定义](#triton-定义)
-	- [triton 特性](#triton-特性)
-	- [triton 编译过程](#triton-编译过程)
-	- [triton 保留关键字](#triton-保留关键字)
-	- [Pytorch 与 Triton 中的地址计算对比](#pytorch-与-triton-中的地址计算对比)
-	- [triton 和 cuda 特性的对比](#triton-和-cuda-特性的对比)
-	- [triton 的 autotune 用法](#triton-的-autotune-用法)
-	- [num\_warps 和 num\_stages 性能参数的作用](#num_warps-和-num_stages-性能参数的作用)
-	- [参考资料](#参考资料)
+  - [triton 定义](#triton-定义)
+  - [triton 特性](#triton-特性)
+  - [triton 编译过程](#triton-编译过程)
+  - [triton 保留关键字](#triton-保留关键字)
+  - [Pytorch 与 Triton 中的地址计算对比](#pytorch-与-triton-中的地址计算对比)
+  - [triton 和 cuda 特性的对比](#triton-和-cuda-特性的对比)
+  - [triton 的 autotune 用法](#triton-的-autotune-用法)
+  - [num\_warps 和 num\_stages 性能参数的作用](#num_warps-和-num_stages-性能参数的作用)
+  - [参考资料](#参考资料)
 
 ## 一 tensor 知识
 
@@ -139,11 +139,12 @@ tensor([[5.0000, 5.0000, 4.3333, 2.6667, 5.3333],
 - `torch.all`：按指定维度检查所有元素是否为 True。
 - `torch.any`：按指定维度检查是否存在 True 元素。
 
-1，torch.mean 函数用于计算张量沿指定维度的平均值。其基本语法和参数解释如下：
+**1，torch.mean 函数用于计算张量沿指定维度的平均值**。其基本语法和参数解释如下：
 
 ```python
 torch.mean(input, dim, keepdim=False, *, dtype=None) -> Tensor
 ```
+
 - `input`：输入张量。
 - `dim`：沿哪个维度计算平均值。可以是单个整数或整数元组。
 - `keepdim`：是否保留被缩减的维度。默认为 False。
@@ -158,7 +159,8 @@ torch.mean(input, dim, keepdim=False, *, dtype=None) -> Tensor
    - NLP 领域的 3D 张量，dim = 2，输出张量的形状去掉这个 dim 维度，得到输出张量形状为 `(batch_size, sequence_length)`。
    - CV 领域的 4D 张量，dim = 0，输出张量形状为 `(channels, height, width)`。
 
-2，`torch.sum` 沿着指定维度求和。
+**2，`torch.sum` 沿着指定维度求和**。
+
 ```bash
 >>> x = torch.randn([4,5])
 >>> x
@@ -174,7 +176,7 @@ tensor([ 2.5269, -2.0317, -1.2381,  0.7056])
 
 当 dim = 0 时，就是沿着 `dim = 0`即 `x` 轴进行累加，sum 函数为规约函数会压缩维度，所以x.sum(dim=0) 结果为 tensor([-0.6453,  2.1187,  0.3796, -1.0821, -0.8082])，形状为 `[5]`。
 
-3，`torch.cumprod` 沿着 dim 维度计算累积。`min()` 沿着指定 dim 找
+**3，`torch.cumprod` 沿着 dim 维度计算累积。**
 
 ```bash
 >>> x = torch.Tensor([ # shape is [2, 5]
@@ -377,7 +379,6 @@ RESERVED_KWS = ["num_warps", "num_stages", "num_ctas", "enable_fp_fusion", "grid
 
 ### Pytorch 与 Triton 中的地址计算对比
 
-以下是图片中表格的 Markdown 源码：
 
 | 步骤 | Python(PyTorch) | Triton |
 | --- | --- | --- |
