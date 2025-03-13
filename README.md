@@ -1,25 +1,25 @@
 - [我的自制大模型推理框架课程介绍](#我的自制大模型推理框架课程介绍)
 - [一 transformer 模型](#一-transformer-模型)
-	- [1.1 transformer 系列模型](#11-transformer-系列模型)
-	- [1.2 LLM 性能分析](#12-llm-性能分析)
+  - [1.1 transformer 系列模型](#11-transformer-系列模型)
+  - [1.2 LLM 性能分析](#12-llm-性能分析)
 - [二 大语言模型压缩](#二-大语言模型压缩)
 - [三 大语言模型推理及部署（服务化）](#三-大语言模型推理及部署服务化)
-	- [3.1 LLM 综合性能分析](#31-llm-综合性能分析)
-	- [3.2 LLM 推理优化-算法层面](#32-llm-推理优化-算法层面)
-	- [3.3 LLM 推理服务框架解析](#33-llm-推理服务框架解析)
-	- [3.4 系统优化方法](#34-系统优化方法)
-	- [3.5 LLM 可视化](#35-llm-可视化)
+  - [3.1 LLM 综合性能分析](#31-llm-综合性能分析)
+  - [3.2 LLM 推理优化-算法层面](#32-llm-推理优化-算法层面)
+  - [3.3 LLM 推理服务框架解析](#33-llm-推理服务框架解析)
+  - [3.4 系统优化方法](#34-系统优化方法)
+  - [3.5 LLM 可视化](#35-llm-可视化)
 - [四 高性能计算](#四-高性能计算)
-	- [4.1 triton 笔记](#41-triton-笔记)
-	- [4.2 cuda 笔记](#42-cuda-笔记)
-	- [4.3 高性能编程学习资料推荐](#43-高性能编程学习资料推荐)
+  - [4.1 triton 笔记](#41-triton-笔记)
+  - [4.2 cuda 笔记](#42-cuda-笔记)
+  - [4.3 高性能编程学习资料推荐](#43-高性能编程学习资料推荐)
 - [参考资料](#参考资料)
 
 LLM notes, including model inference, transformer model structure, and lightllm framework code analysis notes.
 
 ## 我的自制大模型推理框架课程介绍
 
-1. **框架亮点**：基于 Triton + PyTorch 开发的轻量级、且简单易用的大模型推理框架，采用类 Pytorch 语法的 Triton 编写算子，绕开 Cuda 复杂语法实现 GPU 加速。
+1. **框架亮点**：基于 `Triton + PyTorch` 开发的轻量级、且简单易用的大模型推理框架，采用类 `Pytorch` 语法的 `Triton` 编写算子，绕开 Cuda 复杂语法实现 GPU 内核开发。
 2. **价格：499**。非常实惠和便宜，课程、项目、面经、答疑质量绝对对得起这个价格。
 3. **课程优势​**：
    - **手把手教你从 0 到 1 实现大模型推理框架**。
@@ -27,9 +27,9 @@ LLM notes, including model inference, transformer model structure, and lightllm 
    - 2025 最新的高性能计算/推理框架岗位的大厂面试题汇总
 4. **项目优势​**：
 	- 架构清晰，代码简洁且注释详尽，覆盖大模型离线推理全流程。​
-    - 运用 OpenAI Triton 编写高性能计算 Kernel，开发矩阵乘法内核，效率堪比 cuBLAS。​
-    - 依托 PyTorch 进行高效显存管理。​
-    - 课程项目完美支持 FlashAttentionV1、V2、V3 与 `GQA`，以及 `PageAttention` 的具体实现。​
+    - 运用 OpenAI `Triton` 编写高性能计算 `Kernel`，其中矩阵乘法内核效率堪比 `cuBLAS`。​
+    - 基于 `PyTorch` 实现高效显存管理。​
+    - 课程项目完美支持 `FlashAttentionV1、V2、V3` 与 `GQA`，以及 `PageAttention` 的具体实现。​
     - 使用 `Triton` 编写融合算子，如 KV 线性层融合等。​
     - 适配最新的 `llama/qwen2.5/llava1.5` 模型，相较 transformers 库，在 llama3 1B 和 3B 模型上，加速比最高可达 `4` 倍。
 5. **分类总结部分面试题**：
@@ -87,6 +87,7 @@ LLM notes, including model inference, transformer model structure, and lightllm 
 - [SmoothQuant 论文解读](./2-llm_compression/SmoothQuant论文解读.md)
 - [SmoothQuant 算法源码剖析](./2-llm_compression/SmoothQuant源码剖析.md)
 - [AWQ 论文解读](./2-llm_compression/SmoothQuant论文解读.md)
+- [AWQ 算法源码剖析](./2-llm_compression/AWQ代码解析.md)
 
 ## 三 大语言模型推理及部署（服务化）
 
@@ -130,11 +131,12 @@ LLM 推理服务框架技术总结和源码解析：
 
 ### 4.1 triton 笔记
 
-- [理解 triton 之基础知识](./4-hpc_basic/理解triton之基础知识.md)
-- [理解 triton 内核教程 1](./4-hpc_basic/理解triton内核教程1.md)
-- [理解 triton 内核教程 2](./4-hpc_basic/理解triton内核教程2.md)
-- [理解 triton 内核教程 3](./4-hpc_basic/理解triton内核教程3.md)
-- [理解 triton 内核教程 4](./4-hpc_basic/理解triton内核教程4.md)
+- [理解 triton 之基础知识](./4-hpc_basic/trito内核开发基础0.md)
+- [trito 内核开发基础 1](./4-hpc_basic/trito内核开发基础1.md)
+- [trito 内核开发基础 2](./4-hpc_basic/trito内核开发基础2.md)
+- [trito 内核开发基础 3](./4-hpc_basic/trito内核开发基础3.md)
+- [trito 内核开发基础 4](./4-hpc_basic/trito内核开发基础4.md)
+- [trito 内核开发基础 5](./4-hpc_basic/trito内核开发基础5.md)
 
 ### 4.2 cuda 笔记
 
