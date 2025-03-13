@@ -8,7 +8,7 @@
 - [3. Triton 编程和 CUDA 编程的相同及不同](#3-triton-编程和-cuda-编程的相同及不同)
 - [参考资料](#参考资料)
 
-torch 中 Tensor 的乘法有几种方法，如 *、torch.mul、torch.multiply、torch.dot、torch.mv、torch.mm、torch.matmul、torch.einsum 等，主要分为 3 种：
+torch 中 Tensor 的乘法有几种方法，如 `*`、`torch.mul`、torch.multiply、torch.dot、torch.mv、torch.mm、torch.matmul、torch.einsum 等，主要分为 3 种：
 1. **逐元素（element-wise）乘法**：对于两个Tensor对象（如矩阵和矩阵、矩阵和实数等，向量也是矩阵的一种），分别按对应元素进行实数普通乘法。\*、torch.mul、torch.multiply 三者操作含义是相同的。torch.multiply 是 torch.mul 的别名，* 是 torch.mul 的简写。
 2. **矩阵点乘也叫矩阵乘法**：`c = torch.matmul(x, y)`。
 3. **爱因斯坦求和约定函数**：能够包含上面所有乘法运算，如矩阵乘法 `torch.einsum("ij,jk->ik", x, y)`。
@@ -381,8 +381,8 @@ kernel 函数每次调用都会对应一个 `pid`，前面的内容就是讲怎�
 可以看出，即使在 pid 内部也是需要循环的，循环的次数是 9，K 维度上块数 = `tl.cdiv(K, BLOCK_SIZE_K)`。
 
 每个 block 中都有很多 elements，如何找到这些 elements 的 pointers_list 呢？Python 代码逻辑很简单，直接切片就可以得到：
-- 获取矩阵 A 的子块：A[m:m+block_size_m, k:k+block_size_k]
-- 获取矩阵 B 的子块：B[k:k+block_size_k, n:n+block_size_n] 
+- 获取矩阵 A 的子块：`A[m:m+block_size_m, k:k+block_size_k]`
+- 获取矩阵 B 的子块：`B[k:k+block_size_k, n:n+block_size_n]`
 
 对于行优先存储的二维张量 `X`，元素 `X[i, j]` 的内存位置为：`&X[i, j] = X + i*stride_xi + j*stride_xj`。因此，矩阵 A 的指针块 `[m : m+BLOCK_SIZE_M, k : k+BLOCK_SIZE_K]` 和矩阵 B 的指针块 `[k : k+BLOCK_SIZE_K, n : n+BLOCK_SIZE_N]` 可以用以下伪代码表示：
 
