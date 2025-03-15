@@ -200,7 +200,7 @@ for ratio in range(n_grid):
     best_scales = best_scales.view(-1)
 ```
 
-为了验证 AWQ 算法的有效性，作者做了 OPT 模型在 INT3-g128 量化下的消融实验，实验结果显示 AWQ 明显优于 RTN，并实现了和混合精度（1% FP16）相当的精度，同时对硬件更友好。
+为了验证 AWQ 算法的有效性，作者做了 `OPT` 模型在 `INT3-g128` 量化下的消融实验，实验结果显示 AWQ 明显优于 RTN，并实现了和混合精度（1% FP16）相当的精度，同时对硬件更友好。
 
 <div align="center">
 <img src="../images/awq_paper/table5.png" width="60%" alt="table5">
