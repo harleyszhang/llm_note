@@ -1,5 +1,5 @@
-- [1. 基础 MOE 结构介绍](#1-基础-moe-结构介绍)
-- [2. DeepseekMOE 结构介绍](#2-deepseekmoe-结构介绍)
+- [1. 标准 MOE 结构](#1-标准-moe-结构)
+- [2. DeepseekMOE 结构](#2-deepseekmoe-结构)
   - [2.1 Gate 网络与 DeepseekMOE 计算流程](#21-gate-网络与-deepseekmoe-计算流程)
 - [3. DeepseekMOE 结构代码实现](#3-deepseekmoe-结构代码实现)
   - [3.1 DeepseekV2MLP 实现](#31-deepseekv2mlp-实现)
@@ -7,7 +7,7 @@
   - [3.3 DeepseekMOE 实现](#33-deepseekmoe-实现)
 - [参考资料](#参考资料)
 
-## 1. 基础 MOE 结构介绍
+## 1. 标准 MOE 结构
 
 `Mixtral 8x7B` (announcement, model card) 是高质量的混合专家模型 (Mixed Expert Models，简称 `MoEs`) 的 Transformer 模型，或者说是一种稀疏的 mixture-of-experts 模型，采用纯解码器结构，并使用 `MOE` 结构，替换原始的 `FFN` 结构。在每一层，对每个 `token`，存在一个 `router network` 会挑选两组 “experts”(即参数量更小的 FFN）来分别处理该 token，并通过**加法方式**融合两组 “experts” 的输出。
 
@@ -19,9 +19,9 @@
 - **门控或 Router 网络**：模块负责根据输入 token 的特征动态选择激活哪些专家，路由器是由带学习的参数组成的网络。
 - **“experts” 网络（小型 FFN）**：每层 MOE 都包含若干个（稀疏）专家网络，其通常是小型的 FFN，**在实际推理中只有部分专家(通常 8 个)会被激活参与计算**。
 
-## 2. DeepseekMOE 结构介绍
+## 2. DeepseekMOE 结构
 
-和基础 MOE 结构的区别是：
+和基础 `MOE` 结构的区别是：
 1. **更精细地划分专家网络**，提升每个专家的专业性，提高知识表达的准确度。
 2. **引入部分共享专家**，减少不同专家间的知识冗余，提升计算效率；所有 tokens 都会经过的共享专家，每个 token 会用计算的 Router 权重，来选择 topK 个专家，然后和共享的专家的输出一起加权求和。
 
@@ -31,7 +31,7 @@ DeepseekMOE 其实是有两类专家的：
 
 ### 2.1 Gate 网络与 DeepseekMOE 计算流程
 
-当一个 token 的向量传入 MoE 层时，首先会经过一个专门的 Gate 网络，该网络负责计算 token 与各个路由专家之间的匹配得分。具体流程如下：
+当一个 token 的向量传入 MoE 层时，先经过一个专门的 `Gate` 网络，该网络负责计算 token 与各个路由专家之间的匹配得分。具体流程如下：
 
 1. **计算 tokens 和专家的匹配得分**
    - Gate 网络通过**线性变换**计算每个 token 与所有路由专家的兼容性得分。得分可以反映 token 和各专家“契合”的程度。
