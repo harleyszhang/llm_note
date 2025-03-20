@@ -12,6 +12,7 @@ categories: Transformer
 - [LLaVA1.5](#llava15)
   - [LLaVA-1.5-HD](#llava-15-hd)
 - [LLaVA1.6（LLaVA-NeXT）](#llava16llava-next)
+- [LLaVA 模型推理流程](#llava-模型推理流程)
 - [参考资料](#参考资料)
 
 ## 前言
@@ -77,6 +78,14 @@ $$H_v = W\cdot X_v, with Z_v = g(X_v)$$
 ## LLaVA1.6（LLaVA-NeXT）
 
 模型推理层面新的升级点在于，Vision Encoder 分辨率支持更大的分辨率，包括 672x672, 336x1344, 1344x336 几种分辨率的输入，并且支持通过图片裁切，编码，合并来实现，和前作一样的方法。毕竟，当提供高分辨率图像和保留细节的表征时，模型感知图像中复杂细节的能力会显著提高。它减少了面对低分辨率图像时的模型幻觉，即猜测想象的视觉内容。
+
+## LLaVA 模型推理流程
+
+1. prompts 预处理；
+2. 视觉特征预处理；
+3. 视觉特征模型 clip 推理；
+4. 视觉特征和文本特征合并成一组 tokens；
+5. 语言模型 llama 推理。
 
 ## 参考资料
 
