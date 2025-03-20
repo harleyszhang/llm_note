@@ -10,7 +10,7 @@
 
 Prompt Cache 和之前全自回归生成、KV 缓存方法之间的区别如下图所示:
 
-![prompt_cache_figure1](../../images/vllm_technology/prompt_cache_figure1.png)
+![prompt_cache_figure1](../../images/prompt_cache/prompt_cache_figure1.png)
 
 > LLM token 生成方法的比较，每种方法展示了三个步骤（1 到 3）。每个方框表示一个 token。蓝色方框代表提示词。(a) 一个 LLM 接收一个提示词（蓝色 token）并预测下一个 token (A) (1)。然后将生成的 token (A) 添加到提示词中以预测下一个 token (B) (2)。这一过程称为自回归，直到满足停止条件。(b) KV Cache 仅对提示词的注意力状态计算一次 (1)，并在后续步骤中复用这些状态；(c) Prompt Cache 跨服务复用 KV 状态，从而省略提示词的注意力计算。在加载模式时，Prompt Cache 填充缓存，并在基于该模式的提示词中复用缓存状态 (1)。
 
@@ -24,7 +24,7 @@ Prompt Cache 和之前全自回归生成、KV 缓存方法之间的区别如下�
 
 图 2 显示了一个基于示例 `schema` 的提示词示例。当 Prompt Cache 接收到提示词时，会首先处理 `schema` 并计算提示模块的注意力状态。随后，这些状态会被复用于提示词中的提示模块及所有从相同 `schema` 派生的其他提示词。
 
-![prompt_cache_figure2](../../images/vllm_technology/prompt_cache_figure2.png)
+![prompt_cache_figure2](../../images/prompt_cache/prompt_cache_figure2.png)
 
 ## 3. Prompt Cache 的设计
 
