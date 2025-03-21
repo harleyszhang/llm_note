@@ -106,24 +106,23 @@ Stream 管理的 API 在 cuda runtime api 文档的这个[链接](https://docs.n
 
 stream 类型为 `cudaStream_t`:
 
-```cpp
-cudaStream_t stream
-```
-
 `Stream` 模块（类）常用的函数包括：
 
 - `cudaStreamCreate()`：创建一个 stream。
+- `cudaStreamCreateWithPriority()`: 创建一个具有指定优先级的异步流。
 - `cudaStreamDestroy`：**销毁并清理异步 stream**。
 - `cudaStreamGetDevice()`: 查询 stream 的设备。
 - `cudaStreamQuery()`：**查询异步 stream 的状态**。
 - `cudaStreamSynchronize()`: 等待 stream 中的任务全部完成。
 - `cudaStreamWaitEvent()`: 等待事件并使计算 stream 暂停。
+- `cudaStreamBeginCapture()`: 在流中开始图捕获。
 
 1，创建异步 stream 的接口
 
 - cudaStreamCreate
 - cudaStreamCreateWithFlags
 - cudaStreamCreateWithPriority: 创建具有指定优先级的异步 stream。
+
 ```cpp
 __host__​cudaError_t cudaStreamCreate ( cudaStream_t* pStream)
 __host__​__device__​cudaError_t cudaStreamCreateWithFlags ( cudaStream_t* pStream, unsigned int  flags )
@@ -143,9 +142,9 @@ __host__​cudaError_t cudaStreamSynchronize ( cudaStream_t stream)
 
 ```cpp
 __host__​cudaError_t cudaStreamGetAttribute ( cudaStream_t hStream, cudaStreamAttrID attr, cudaStreamAttrValue* value_out )
+__host__​cudaError_t cudaStreamGetDevice ( cudaStream_t hStream, int* device )
+__host__​cudaError_t cudaStreamGetPriority ( cudaStream_t hStream, int* priority )
 __host__​cudaError_t cudaStreamGetCaptureInfo ( cudaStream_t stream, cudaStreamCaptureStatus ** captureStatus_out, unsigned long long* id_out = 0, cudaGraph_t* graph_out = 0, const cudaGraphNode_t** dependencies_out = 0, size_t* numDependencies_out = 0 )
-_host__​cudaError_t cudaStreamGetDevice ( cudaStream_t hStream, int* device)
-__host__​cudaError_t cudaStreamGetPriority ( cudaStream_t hStream, int* priority)
 ```
 
 `cudaStreamGetDevice` 接口的参数:
