@@ -1,21 +1,21 @@
 - [背景知识](#背景知识)
-	- [cuda api 分类](#cuda-api-分类)
+  - [cuda api 分类](#cuda-api-分类)
 - [一 Stream 概述](#一-stream-概述)
-	- [1.1 Stream 理解](#11-stream-理解)
-	- [1.2 Stream 应用分析](#12-stream-应用分析)
-		- [一个 CPU thread 和一个 GPU Stream](#一个-cpu-thread-和一个-gpu-stream)
-		- [一个 CPU thread 和四个 GPU Stream](#一个-cpu-thread-和四个-gpu-stream)
-	- [1.3 Streams 数量设置总结](#13-streams-数量设置总结)
+  - [1.1 Stream 理解](#11-stream-理解)
+  - [1.2 Stream 应用分析](#12-stream-应用分析)
+    - [一个 CPU thread 和一个 GPU Stream](#一个-cpu-thread-和一个-gpu-stream)
+    - [一个 CPU thread 和四个 GPU Stream](#一个-cpu-thread-和四个-gpu-stream)
+  - [1.3 Streams 数量设置总结](#13-streams-数量设置总结)
 - [三 Stream API 和用法](#三-stream-api-和用法)
-	- [3.1 default Stream](#31-default-stream)
-	- [3.2 Stream 管理 API](#32-stream-管理-api)
-	- [3.3 Stream 用法](#33-stream-用法)
-	- [3.4 stream 示例代码](#34-stream-示例代码)
+  - [3.1 default Stream](#31-default-stream)
+  - [3.2 Stream 管理 API](#32-stream-管理-api)
+  - [3.3 Stream 用法](#33-stream-用法)
+  - [3.4 stream 示例代码](#34-stream-示例代码)
 - [四 Event 概述](#四-event-概述)
-	- [4.1 Event 理解](#41-event-理解)
-	- [4.2 Event 管理 API](#42-event-管理-api)
-	- [4.3 Event 用法](#43-event-用法)
-	- [4.4 Event 示例代码](#44-event-示例代码)
+  - [4.1 Event 理解](#41-event-理解)
+  - [4.2 Event 管理 API](#42-event-管理-api)
+  - [4.3 Event 用法](#43-event-用法)
+  - [4.4 Event 示例代码](#44-event-示例代码)
 - [参考资料](#参考资料)
 
 ## 背景知识
@@ -52,7 +52,7 @@ runtime API 通过提供隐式初始化、上下文管理和模块管理来简�
 
 从时间维度分析 cpu、gpu（stream）任务的执行顺序，是会有两条并行的程序运行线，如下图所示:
 
-![cpu_cuda_stream](../../images/streams/cpu_cuda_stream.png)
+![cpu_cuda_stream](../../images/cuda_stream_event/cpu_cuda_stream.png)
 
 上图 cpu/gpu 任务执行的顺序分析：
 1. CPU launch kernel 1，kernel 1 入默认 Stream，此时 Stream 里面只有 kernel1，于是 kernel 1 马上在 GPU执行；
@@ -66,7 +66,7 @@ runtime API 通过提供隐式初始化、上下文管理和模块管理来简�
 
 下图展示了，使用 4 个 `streams` 和异步方式执行数据传输和计算的并行效果和串行执行的效果对比。
 
-![cuda-4streams](../../images/streams/cuda-4streams.png)
+![cuda-4streams](../../images/cuda_stream_event/cuda-4streams.png)
 
 在 Concurrent streams Model 中，我们可以将从 host 到 device 的内存拷贝、 kernel 的执行以及从 device 到 host 的内存拷贝都设为**异步操作**，同时将内存划分为 $N$ trunks（块）。
 
