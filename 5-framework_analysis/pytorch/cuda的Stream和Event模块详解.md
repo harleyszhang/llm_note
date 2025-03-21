@@ -31,12 +31,15 @@ runtime API 通过提供隐式初始化、上下文管理和模块管理来简�
 
 **cuda runtime api 模块主要分为 Device、Thread、Stream、Event 和 Memory 管理**。
 
-下文介绍的 API 及用法都是指 cuda runtime api。
+下文介绍的 API 及用法都是指 cuda runtime api。CUDA API 可分为同步和异步两类，**同步函数会阻塞 `host` 端的线程执行**，异步函数会立刻将控制权返还给 `host` 从而继续执行之后的动作。
+
 ## 一 Stream 概述
 
 ### 1.1 Stream 理解
 
-`Stream` 是一种抽象概念，译为**流**, 官方定义: A sequence of operations that execute in issue-order on the GPU。其本质上是用来**控制 GPU 侧任务（主要是kernel，memory 搬运及 graph）异步执行的顺序**，即**维护 GPU 任务执行顺序的队列**。通过显式或隐式 Stream 能保证 GPU 测的任务执行顺序与CPU 侧定义的提交任务顺序一致。
+`Stream` 是一种抽象概念，译为**流**, 官方定义: A sequence of operations that execute in issue-order on the GPU。其本质上是用来**控制 GPU 侧任务（主要是 compute kernel，memory 搬运及 graph）异步执行的顺序**，即**维护 GPU 任务执行顺序的队列**，CUDA runtime 会决定这些任务合适的执行时机。
+
+通过显式或隐式 Stream 能保证 GPU 测的任务执行顺序与CPU 侧定义的提交任务顺序一致。
 
 - Stream 内的 kernels 是串行（顺序）执行的；
 - 不同 CUDA 流中的操作可能会并发执行；
@@ -64,7 +67,7 @@ runtime API 通过提供隐式初始化、上下文管理和模块管理来简�
 
 在大部分 cuda 程序中，设计多个 streams 的主要目的是交错执行（interleaved）kernel 计算和内存拷贝。
 
-下图展示了，使用 4 个 `streams` 和异步方式执行数据传输和计算的并行效果和串行执行的效果对比。
+当使用 CUDA 异步函数和多流（Multi Stream）时，多线程间可以实现并行数据传输与计算交错执行。下图展示了，使用 4 个 `streams` 和异步方式执行数据传输和计算的并行效果和串行执行的效果对比。
 
 ![cuda-4streams](../../images/cuda_stream_event/cuda-4streams.png)
 
