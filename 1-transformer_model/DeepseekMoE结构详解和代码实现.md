@@ -230,9 +230,9 @@ topk_weight shape torch.Size([2048, 6])
 ### 3.3 DeepseekMOE 实现
 
 1. **门控计算**
-   - 调用门控网络（self.gate），对输入 hidden_states 计算得到 top‑k 专家索引（topk_idx）、对应权重（topk_weight）以及辅助损失（aux_loss，推理时不参与梯度计算）。
+   - 调用门控网络（`self.gate`），对输入 `hidden_states` 计算得到 top‑k 专家索引（topk_idx）、对应权重（topk_weight）以及辅助损失（aux_loss，推理时不参与梯度计算）。
 2. **数据重排**
-    - 将输入 hidden_states 展平为二维张量（形状 $[B \times T, d]$），并将 topk_idx 也展平。
+    - 将输入 `hidden_states` 展平为二维张量（形状 $[B \times T, d]$），并将 topk_idx 也展平。
 	- 在推理模式下，通常不需要像训练时那样对每个 token 进行 repeat_interleave，因为每个 token 只会由对应专家处理一次。
 3. **专家计算**
 	- 根据展平后的 `topk_idx`，依次对每个专家负责的 token 子集进行计算。
