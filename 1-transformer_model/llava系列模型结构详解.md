@@ -17,13 +17,13 @@ categories: Transformer
 
 ## 前言
 
-视觉语言模型 VIA 或者说多模态大模型 `MLLM` 架构通常都是: LLM + 视觉编码器 + 映射层的组合。英伟达发布的视觉语言模型 VILA 架构和训练流程如下图所示：
+视觉语言模型 `VIA` 或者说多模态大模型 `MLLM` 架构通常都是: LLM + 视觉编码器 + 映射层的组合。英伟达发布的视觉语言模型 `VILA` 架构和训练流程如下图所示：
 
 <div align="center">
 <img src="../images/llava_model/VILA_infer_train.jpg" width="80%" alt="VILA_infer_train">
 </div>
 
-可以看出视觉语言模型的架构是由视觉 encoder、映射层和语言 decoder 组成。常见的视觉语言模型如下所示，模型架构都很相似。
+可以看出视觉语言模型的架构是由**视觉 encoder、映射层和语言 decoder** 组成。常见的视觉语言模型如下所示，模型架构都很相似。
 - VILA-1.5 (B/8B/13B/40B)
 - LLaVA(1.5,1.6) (7B-34B)
 - InternLM-XComposer2 (7B, 4khd-7B)
@@ -32,7 +32,7 @@ categories: Transformer
 
 ## LLaVA1
 
-Llava1 的模型结构很简洁，**CLIP 模型的视觉编码器 + 映射层 + LLM（Vicuna、LLama）** ，利用 CLIP 模型的 Vison Encoder 结构对输入图片提取视觉特征，即转换为形状为 `[N=1, grid_H x grid_W, hidden_dim]` 的 feature map，然后通过一个映射层（线性层）将图像特征对齐到文本特征维度，即得到形状为 `[N=1, grid_H x grid_W, embedding_dim]` 的 image tokens embedding 向量，再然后将图片 tokens 向量和输入文本 tokens 向量 `concat` 后作为 `LLM` 的输入，生成回答文本。
+Llava1 的模型结构很简洁，**CLIP 模型的视觉编码器 + 映射层 + LLM（Vicuna、LLama）** ，利用 `CLIP` 模型的 Vison Encoder 结构对输入图片提取视觉特征，即转换为形状为 `[N=1, grid_H x grid_W, hidden_dim]` 的 feature map，然后通过一个映射层（线性层）将图像特征对齐到文本特征维度，即得到形状为 `[N=1, grid_H x grid_W, embedding_dim]` 的 image tokens embedding 向量，再然后将图片 tokens 向量和输入文本 tokens 向量 `concat` 后作为 `LLM` 的输入，生成回答文本。
 
 LLaVA 模型架构如下图所示吧:
 
