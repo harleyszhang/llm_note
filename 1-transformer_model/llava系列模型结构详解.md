@@ -17,14 +17,12 @@ categories: Transformer
 
 ## 前言
 
-视觉语言模型 `VIA` 或者说多模态大模型 `MLLM` 架构通常都是: LLM + 视觉编码器 + 映射层的组合。英伟达发布的视觉语言模型 `VILA` 架构和训练流程如下图所示：
-其中，NVIDIA 和 MIT 的研究人员推出了一种新的视觉语言模型 `VILA`，其模型架构和训练流程如下图所示：
+NVIDIA 和 MIT 的研究人员推出的视觉语言模型 `VILA`，其模型架构和训练流程如下图所示：
 
 <div align="center">
 <img src="../images/llava_model/VILA_infer_train.jpg" width="80%" alt="VILA_infer_train">
 </div>
 
-可以看出视觉语言模型的架构是由**视觉 encoder、映射层和语言 decoder** 组成。常见的视觉语言模型如下所示，模型架构都很相似。
 上图可以看出 VILA 模型架构是由视觉 encoder（ViT）、映射层（线性层）和 LLM 组成。
 
 目前常见的视觉语言模型（也叫多模态模型）的类别有如下所示，它们的模型架构都很相似，都是: **视觉编码器 + 映射层 + LLM 的组合**。
