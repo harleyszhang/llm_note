@@ -98,7 +98,7 @@ $$
 \text{RMS(x)} = \sqrt{\frac{1}{d} \sum_{x_i \in \textrm{x}} x_i^2 + \text{eps}}
 $$
 
-其中，$\gamma$ 是可学习的缩放参数，$\text{eps}$ 的作用是为了保持数值稳定性。$d$ 输入 `tokens` 的数量，大小为 `batch_size * seq_len`。
+其中，$\gamma$ 是可学习的缩放参数, 在 transformer 模型中，通常 1 个维度并初始化为全1。$\text{eps}$ 的作用是为了保持数值稳定性。$d$ 输入 `tokens` 的数量，大小为 `batch_size * seq_len`。
 
 以下是 RMSNorm 在 PyTorch 中的简单实现，使用了 RMS（均方根）来对输入进行归一化处理。
 
