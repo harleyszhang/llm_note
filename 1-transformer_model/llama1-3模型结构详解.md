@@ -113,7 +113,7 @@ class LlamaRMSNorm(nn.Module):
         :param dim: 输入的维度
         """
         super(RMSNorm, self).__init__()
-        self.scale = nn.Parameter(torch.ones(dim))  # 可学习的缩放参数
+        self.scale = nn.Parameter(torch.ones(dim))  # 可学习的缩放参数 scale, 通常 1 个维度, 初始化为全1。
         self.variance_epsilon = eps
     
     def forward(self, hidden_states):
