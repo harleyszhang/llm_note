@@ -7,12 +7,13 @@ categories: Transformer
 ---
 
 - [1. 前言](#1-前言)
-- [2. LLaVA1](#2-llava1)
-  - [2.1 ViT-L/14 模型结构](#21-vit-l14-模型结构)
-- [3. LLaVA1.5](#3-llava15)
-  - [3.1 LLaVA-1.5-HD](#31-llava-15-hd)
-- [4. LLaVA1.6（LLaVA-NeXT）](#4-llava16llava-next)
-- [5. LLaVA 多模态模型推理流程](#5-llava-多模态模型推理流程)
+- [二 LLaVA 系列模型](#二-llava-系列模型)
+- [2.1 LLaVA1](#21-llava1)
+    - [2.1.1 ViT-L/14 模型结构](#211-vit-l14-模型结构)
+  - [2.2. LLaVA1.5](#22-llava15)
+    - [2.2.1 LLaVA-1.5-HD](#221-llava-15-hd)
+  - [2.3. LLaVA1.6（LLaVA-NeXT）](#23-llava16llava-next)
+- [三. LLaVA 多模态模型推理流程](#三-llava-多模态模型推理流程)
 - [参考资料](#参考资料)
 
 ## 1. 前言
@@ -32,7 +33,9 @@ NVIDIA 和 MIT 的研究人员推出的视觉语言模型 `VILA`，其模型架�
 - QWen-VL (7B)
 - DeepSeek-VL (7B)
 
-## 2. LLaVA1
+## 二 LLaVA 系列模型
+
+## 2.1 LLaVA1
 
 Llava1 的模型结构很简洁，**CLIP 模型的视觉编码器 + 映射层 + LLM（Vicuna、LLama）** ，利用 `CLIP` 模型的 Vison Encoder 结构对输入图片提取视觉特征，即转换为形状为 `[N=1, grid_H x grid_W, hidden_dim]` 的 feature map，然后通过一个映射层（线性层）将图像特征对齐到文本特征维度，即得到形状为 `[N=1, grid_H x grid_W, embedding_dim]` 的 image tokens embedding 向量，再然后将图片 tokens 向量和输入文本 tokens 向量 `concat` 后作为 `LLM` 的输入，生成回答文本。
 
@@ -44,7 +47,7 @@ LLaVA 模型架构如下图所示吧:
 
 $$H_v = W\cdot X_v, with Z_v = g(X_v)$$
 
-### 2.1 ViT-L/14 模型结构
+#### 2.1.1 ViT-L/14 模型结构
 
 `ViT-L/14` 模型的 `L` 表示模型的规模，为 “Large”，ViT(Vision Transformer) 模型有不同规模的模型，例如：
 - `ViT-B`（Base）：通常有 12 层 Transformer。
@@ -63,11 +66,11 @@ $$H_v = W\cdot X_v, with Z_v = g(X_v)$$
 | ViT-L/14   | 24               | 1024     | 307M    | 14x14        |
 | ViT-H/14   | 32               | 1280     | 632M    | 14x14        |
 
-## 3. LLaVA1.5
+### 2.2. LLaVA1.5
 
 模型结构上和前作相比，LLaVA1.5 将之前用于维度映射的的简单一层线性层替换为 `2` 层 线性层的 `MLP` 结构，并将 `clip-L/14` 的输入分辨率从 `224*224` 提升到 `336*336`，因为作者发现提高输入图像分辨率能够增强模型性能，LLM 换成了 Vicuna1.5（在 `LLama2` 上微调的模型）
 
-### 3.1 LLaVA-1.5-HD
+#### 2.2.1 LLaVA-1.5-HD
 
 目前开源的 CLIP 视觉编码器的分辨率上限为 `336*336`，这意味着无法简单地替换视觉编码器来支持更高分辨率的图像。为了解决这个问题，论文探索了一种方法，既能让多模态语言模型（LMM）处理高分辨率图像，又能保持 LLaVA-1.5 的高效数据使用。
 
@@ -77,12 +80,13 @@ $$H_v = W\cdot X_v, with Z_v = g(X_v)$$
 
 这样的设计允许我们处理任意分辨率的图像，同时保持 LLaVA-1.5 的数据高效性。这一新模型被作者命名为 `LLaVA-1.5-HD`。
 
-## 4. LLaVA1.6（LLaVA-NeXT）
+### 2.3. LLaVA1.6（LLaVA-NeXT）
 
 模型推理层面新的升级点在于，Vision Encoder 分辨率支持更大的分辨率，包括 672x672, 336x1344, 1344x336 几种分辨率的输入，并且支持通过图片裁切，编码，合并来实现，和前作一样的方法。毕竟，当提供高分辨率图像和保留细节的表征时，模型感知图像中复杂细节的能力会显著提高。它减少了面对低分辨率图像时的模型幻觉，即猜测想象的视觉内容。
 
-## 5. LLaVA 多模态模型推理流程
+## 三. LLaVA 多模态模型推理流程
 
+LLaVA 多模态模型推理 pipline：
 1. prompts 预处理；
 2. 视觉特征预处理；
 3. 视觉特征模型 clip 推理；
