@@ -9,11 +9,13 @@ categories: Transformer
 - [1. 前言](#1-前言)
 - [二 LLaVA 系列模型](#二-llava-系列模型)
 - [2.1 LLaVA1](#21-llava1)
-    - [2.1.1 ViT-L/14 模型结构](#211-vit-l14-模型结构)
-  - [2.2. LLaVA1.5](#22-llava15)
-    - [2.2.1 LLaVA-1.5-HD](#221-llava-15-hd)
-  - [2.3. LLaVA1.6（LLaVA-NeXT）](#23-llava16llava-next)
+		- [2.1.1 ViT-L/14 模型结构](#211-vit-l14-模型结构)
+	- [2.2. LLaVA1.5](#22-llava15)
+		- [2.2.1 LLaVA-1.5-HD](#221-llava-15-hd)
+	- [2.3. LLaVA1.6（LLaVA-NeXT）](#23-llava16llava-next)
 - [三. LLaVA 多模态模型推理流程](#三-llava-多模态模型推理流程)
+	- [3.1 查看模型结构信息](#31-查看模型结构信息)
+	- [3.2 实现 LLaVA 模型结构](#32-实现-llava-模型结构)
 - [参考资料](#参考资料)
 
 ## 1. 前言
@@ -92,6 +94,214 @@ LLaVA 多模态模型推理 pipline：
 3. 视觉特征模型 clip 推理；
 4. 视觉特征和文本特征合并成一组 tokens；
 5. 语言模型 llama 推理。
+
+### 3.1 查看模型结构信息
+
+查看模型结构信息最简单直接的办法是去看模型源代码，但是直接源代码可能没那么直观，因此也可以通过 transformers 库加载模型并打印模型结构信息的方式，代码如下所示：
+
+```python
+from accelerate import init_empty_weights, load_checkpoint_and_dispatch
+from transformers import LlavaConfig
+import sys, os
+
+# 获取 lite_llama 目录的绝对路径并添加到 sys.path 中
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from lite_llama.models.llava import LlavaLlama
+
+hf_model_path = "/gemini/code/liuhaotian/llava-v1.5-7b"
+
+def test_LlavaLlama_structure(hf_model_path):
+    
+    # 使用 init_empty_weights 初始化空模型
+    with init_empty_weights():
+        config = LlavaConfig.from_pretrained(hf_model_path)
+        model = LlavaLlama(config)
+        
+        # 打印没有加载权重的 LlavaLlama 模型结构
+        print(model)
+        # 打印模型的简单摘要
+        print(f"模型总参数量: {sum(p.numel() for p in model.parameters()) / 1e6:.2f} M")
+
+        # 可选择打印部分参数信息
+        for name, param in list(model.named_parameters())[:]:  # 打印模型参数
+            print(name, param.shape)
+
+if __name__ == "__main__":
+    test_LlavaLlama_structure(hf_model_path)
+```
+
+模型结构信息输出如下所示:
+
+```bash
+LlavaForConditionalGeneration(
+  (vision_tower): CLIPVisionModel(
+    (vision_model): CLIPVisionTransformer(
+      (embeddings): CLIPVisionEmbeddings(
+        (patch_embedding): Conv2d(3, 1024, kernel_size=(14, 14), stride=(14, 14), bias=False)
+        (position_embedding): Embedding(577, 1024)
+      )
+      (pre_layrnorm): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+      (encoder): CLIPEncoder(
+        (layers): ModuleList(
+          (0-23): 24 x CLIPEncoderLayer(
+            (self_attn): CLIPSdpaAttention(
+              (k_proj): Linear(in_features=1024, out_features=1024, bias=True)
+              (v_proj): Linear(in_features=1024, out_features=1024, bias=True)
+              (q_proj): Linear(in_features=1024, out_features=1024, bias=True)
+              (out_proj): Linear(in_features=1024, out_features=1024, bias=True)
+            )
+            (layer_norm1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+            (mlp): CLIPMLP(
+              (activation_fn): QuickGELUActivation()
+              (fc1): Linear(in_features=1024, out_features=4096, bias=True)
+              (fc2): Linear(in_features=4096, out_features=1024, bias=True)
+            )
+            (layer_norm2): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+          )
+        )
+      )
+      (post_layernorm): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+    )
+  )
+  (multi_modal_projector): LlavaMultiModalProjector(
+    (linear_1): Linear(in_features=1024, out_features=4096, bias=True)
+    (act): GELUActivation()
+    (linear_2): Linear(in_features=4096, out_features=4096, bias=True)
+  )
+  (language_model): LlamaForCausalLM(
+    (model): LlamaModel(
+      (embed_tokens): Embedding(32064, 4096)
+      (layers): ModuleList(
+        (0-31): 32 x LlamaDecoderLayer(
+          (self_attn): LlamaSdpaAttention(
+            (q_proj): Linear(in_features=4096, out_features=4096, bias=False)
+            (k_proj): Linear(in_features=4096, out_features=4096, bias=False)
+            (v_proj): Linear(in_features=4096, out_features=4096, bias=False)
+            (o_proj): Linear(in_features=4096, out_features=4096, bias=False)
+            (rotary_emb): LlamaRotaryEmbedding()
+          )
+          (mlp): LlamaMLP(
+            (gate_proj): Linear(in_features=4096, out_features=11008, bias=False)
+            (up_proj): Linear(in_features=4096, out_features=11008, bias=False)
+            (down_proj): Linear(in_features=11008, out_features=4096, bias=False)
+            (act_fn): SiLU()
+          )
+          (input_layernorm): LlamaRMSNorm((4096,), eps=1e-05)
+          (post_attention_layernorm): LlamaRMSNorm((4096,), eps=1e-05)
+        )
+      )
+      (norm): LlamaRMSNorm((4096,), eps=1e-05)
+      (rotary_emb): LlamaRotaryEmbedding()
+    )
+    (lm_head): Linear(in_features=4096, out_features=32064, bias=False)
+  )
+)
+```
+
+从上述模型结构信息也能明显看出 LlaVA 模型结构主要包括 3 个模块: 
+
+1. vision_tower 视觉模块：`CLIPVisionModel`；
+2. multi_modal_projector 映射层: LlavaMultiModalProjector（实际是两个直连的线性层）。
+3. language_model 大语言模型: LlamaForCausalLM。
+
+占据 LLaV1.5 模型主要参数量和计算量的是 LlamaForCausalLM, 视觉模块和特征映射模块只有几百MB的参数量。
+
+### 3.2 实现 LLaVA 模型结构
+
+1，模型初始化函数 __init__
+
+主要是解析模型配置类，主要是获取视觉模块配置 + 映射层配置 + llama 模型配置，代码如下所示:
+
+```python
+class LlavaLlama(nn.Module):
+    def __init__(self, llava_config: LlavaConfig):
+        super().__init__()
+        self.device = "cuda"  # 默认运行在 GPU 上
+        self.llava_config = llava_config
+
+        # 提取文本模型配置并转为 LlamaConfig 类型（为了自定义加载）
+        text_config = self.llava_config.text_config
+        self.llama_config = LlamaConfig.from_dict(text_config.to_dict())
+
+        # 指定提取哪一层视觉特征
+        self.select_layer = llava_config.vision_feature_layer
+        self.select_feature = llava_config.vision_feature_select_strategy
+
+        # 初始化视觉编码器（比如 CLIP）
+        self.vision_tower = AutoModel.from_config(llava_config.vision_config)
+
+        # 初始化多模态投影模块
+        self.multi_modal_projector = LlavaMultiModalProjector(
+            vision_hidden_size=llava_config.vision_config.hidden_size,
+            text_hidden_size=llava_config.text_config.hidden_size,
+            projector_hidden_act=llava_config.projector_hidden_act
+        )
+
+        # 初始化 LLaMA 语言模型
+        self.language_model = LlamaModel(self.llama_config)
+
+        # 设置 pad token（防止 None 类型报错）
+        self.pad_token_id = self.llava_config.pad_token_id if self.llava_config.pad_token_id is not None else -1
+```
+
+2，定义视觉编码函数 vision_encode
+
+__init__ 初始化函数通过解析 LlavaConfig 配置，并通过 transformers 库的 `AutoModel.from_config`从配置中获取 vision_tower 模型结构，也就是初始化函数中已经定义好了视觉编码模块结构。
+
+视觉编码函数的流程：
+
+1. **视觉特征提取**：提取图像（视频）视觉特征；
+2. **特征筛选**：根据策略选择图像特征是 "default" 还是 "pad";
+3. **特征空间对齐**：最后通过 `multi_modal_projector` 特征投影模块，将提取的视觉特征投影到与文本模型相同的表示空间中，本质上是让**视觉特征张量的最后一个维度是 `hidden_size`**。这一步是多模态融合的关键，它确保视觉信息能够以语言模型理解的方式表示。
+
+```python
+def vision_encode(self, image_tensor):
+	x = image_tensor.half().to(device=self.device)
+	
+	# 1. 通过视觉处理模块提取图像特征
+	x = self.vision_tower(x, output_hidden_states = True)
+	x = x.hidden_states[self.select_layer]
+	x = self._select_image_features(x, self.select_feature)
+	
+	# 2. 通过多模态投影器将图像特征转换为多模态嵌入
+	image_features = self.multi_modal_projector(x)
+
+	assert not torch.isnan(image_features).any(), f"After vision_tower image_features tensor contains NaN values!"
+	return image_features
+```
+
+3，文本和图像特征合并函数 get_multi_modal_input_embeddings
+
+get_multi_modal_input_embeddings 方法是 LLaVA 模型中实现多模态融合的核心函数，它将文本和图像特征整合成一个统一的表示空间，使得语言模型能够同时理解和处理两种模态的信息。
+
+1. 首先，该方法接收两个关键参数：input_ids（文本的词元ID序列）和可选的 vision_embeddings（已经通过视觉编码器处理过的图像特征）。方法开始时，它调用语言模型的词嵌入层将文本词元ID转换为对应的嵌入向量，这一步将形状为 [1, 22] 的输入转换为形状为 [1, 22, 4096] 的嵌入表示，其中4096是嵌入维度。
+
+2. 其次，当提供了视觉嵌入（vision_embeddings）时，方法会调用 merge_input_ids_with_image_features 函数将文本嵌入和图像特征合并。这个合并过程非常精巧：它首先在文本序列中定位特殊的图像词元（由 image_token_index 指定），然后用对应的图像特征向量替换这些词元。从相关实现看，一个图像词元通常会被展开为多个图像块（patches）的特征表示，这使得最终的序列长度会比原始文本序列长得多。合并过程还会同时生成适当的位置ID（position_ids），这对于Transformer模型中的位置编码至关重要，确保模型能够识别每个词元在序列中的相对位置，无论它是来自文本还是图像。
+
+3. 最后，函数通过断言确保生成的嵌入不包含任何NaN值，这是一种质量控制措施，防止后续计算中出现数值问题。
+
+```python
+def get_multi_modal_input_embeddings(
+        self,
+        input_ids: torch.Tensor,
+        vision_embeddings = None,
+    ) -> torch.Tensor:
+        """获取输入嵌入，包括文本和视觉嵌入的合并。"""
+        llm_inputs_embeds = self.language_model.get_input_embeddings(input_ids) # torch.Size([1, 22]) --> torch.Size([1, 22, 4096])
+        
+        # torch.Size([1, 576, 4096]) torch.Size([1, 22, 4096]) torch.Size([1, 22])
+        # print("self.llava_config.image_token_index is ", self.llava_config.image_token_index)
+        if vision_embeddings is not None:
+            inputs_embeds, position_ids = merge_input_ids_with_image_features(
+                input_ids, llm_inputs_embeds, vision_embeddings, 
+                self.llava_config.pad_token_id,
+                self.llava_config.image_token_index,
+            )
+        
+        assert not torch.isnan(inputs_embeds).any(), f"After merge inputs_embeds tensor contains NaN values!"
+
+        return inputs_embeds, position_ids
+```
 
 ## 参考资料
 
