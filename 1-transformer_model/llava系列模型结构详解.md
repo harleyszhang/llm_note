@@ -244,7 +244,7 @@ class LlavaLlama(nn.Module):
         self.pad_token_id = self.llava_config.pad_token_id if self.llava_config.pad_token_id is not None else -1
 ```
 
-2，定义视觉编码函数 vision_encode
+2，定义视觉编码函数 `vision_encode`
 
 __init__ 初始化函数通过解析 LlavaConfig 配置，并通过 transformers 库的 `AutoModel.from_config`从配置中获取 vision_tower 模型结构，也就是初始化函数中已经定义好了视觉编码模块结构。
 
@@ -270,38 +270,55 @@ def vision_encode(self, image_tensor):
 	return image_features
 ```
 
-3，文本和图像特征合并函数 get_multi_modal_input_embeddings
+3，文本和图像特征合并函数 `get_multi_modal_input_embeddings`
 
-get_multi_modal_input_embeddings 方法是 LLaVA 模型中实现多模态融合的核心函数，它将文本和图像特征整合成一个统一的表示空间，使得语言模型能够同时理解和处理两种模态的信息。
+`get_multi_modal_input_embeddings` 函数有两个参数，其实现流程可以总结如下:
 
-1. 首先，该方法接收两个关键参数：input_ids（文本的词元ID序列）和可选的 vision_embeddings（已经通过视觉编码器处理过的图像特征）。方法开始时，它调用语言模型的词嵌入层将文本词元ID转换为对应的嵌入向量，这一步将形状为 [1, 22] 的输入转换为形状为 [1, 22, 4096] 的嵌入表示，其中4096是嵌入维度。
-
-2. 其次，当提供了视觉嵌入（vision_embeddings）时，方法会调用 merge_input_ids_with_image_features 函数将文本嵌入和图像特征合并。这个合并过程非常精巧：它首先在文本序列中定位特殊的图像词元（由 image_token_index 指定），然后用对应的图像特征向量替换这些词元。从相关实现看，一个图像词元通常会被展开为多个图像块（patches）的特征表示，这使得最终的序列长度会比原始文本序列长得多。合并过程还会同时生成适当的位置ID（position_ids），这对于Transformer模型中的位置编码至关重要，确保模型能够识别每个词元在序列中的相对位置，无论它是来自文本还是图像。
-
-3. 最后，函数通过断言确保生成的嵌入不包含任何NaN值，这是一种质量控制措施，防止后续计算中出现数值问题。
+1. **获取文本的嵌入向量**：使用语言模型的嵌入层（`nn.Embedding`）将 `input_ids` 映射到固定尺寸的连续稠密向量（`embedding vectors`）。
+2. **合并文本 `embedding` 向量和视觉 `embedding` 向量**：这个过程很复杂，通过抽象出一个专门的函数 `merge_input_ids_with_image_features` 将文本嵌入和图像特征合并。
 
 ```python
 def get_multi_modal_input_embeddings(
-        self,
-        input_ids: torch.Tensor,
-        vision_embeddings = None,
-    ) -> torch.Tensor:
-        """获取输入嵌入，包括文本和视觉嵌入的合并。"""
-        llm_inputs_embeds = self.language_model.get_input_embeddings(input_ids) # torch.Size([1, 22]) --> torch.Size([1, 22, 4096])
-        
-        # torch.Size([1, 576, 4096]) torch.Size([1, 22, 4096]) torch.Size([1, 22])
-        # print("self.llava_config.image_token_index is ", self.llava_config.image_token_index)
-        if vision_embeddings is not None:
-            inputs_embeds, position_ids = merge_input_ids_with_image_features(
-                input_ids, llm_inputs_embeds, vision_embeddings, 
-                self.llava_config.pad_token_id,
-                self.llava_config.image_token_index,
-            )
-        
-        assert not torch.isnan(inputs_embeds).any(), f"After merge inputs_embeds tensor contains NaN values!"
+    self,
+    input_ids: torch.Tensor,
+    vision_embeddings = None,
+) -> torch.Tensor:
+    """获取输入嵌入，包括文本和视觉嵌入的合并。"""
+    # torch.Size([1, 22]) --> torch.Size([1, 22, 4096])
+    llm_inputs_embeds = self.language_model.get_input_embeddings(input_ids) 
+    
+    if vision_embeddings is not None:
+        inputs_embeds, position_ids = merge_input_ids_with_image_features(
+            input_ids,              # 文本 token ID
+            llm_inputs_embeds,      # 文本嵌入向量 torch.Size([1, 22, 4096]) 
+            vision_embeddings,      # 视觉嵌入向量 shape torch.Size([1, 576, 4096])
+            self.llava_config.pad_token_id,       # pad token ID
+            self.llava_config.image_token_index,  # 图像 token 的插入索引 32000
+        )
 
-        return inputs_embeds, position_ids
+    return inputs_embeds, position_ids
 ```
+
+4, merge_input_ids_with_image_features 合并文本和图像特征函数
+
+函数声明如下:
+
+```python
+def merge_input_ids_with_image_features(
+    input_ids: torch.Tensor, 
+    inputs_embeds: torch.Tensor, 
+    image_features: torch.Tensor,
+    pad_token_id: int,
+    image_token_index: int
+):
+```
+
+这里的函数参数不好理解，先看下它们各自的意义和作用：
+- `input_ids`: 输入的 token IDs, 形状为 (batch_size, sequence_length)。
+- `inputs_embeds`: 文本嵌入，形状为 (batch_size, sequence_length, embed_dim)。
+- `image_features (torch.Tensor)`: 视觉编码后的图像特征，形状为 (num_images, num_image_patches, embed_dim)。
+- `pad_token_id` (int): 填充 token 的 ID，因为 batch 输入的请求长短不一。
+- `image_token_index` 参数用于**标识输入文本中预留来插入图像特征的位置**。也就是说，当输入的 token 序列中出现值等于 `image_token_index` 的 token 时，说明这个位置不是真正的文本 token，而是一个**占位符**，后续将用图像特征来替换或扩展该位置的信息。示例：llava 系列模型，image_token_index = 32000.
 
 ## 参考资料
 
