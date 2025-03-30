@@ -16,6 +16,10 @@ categories: Transformer
 - [三. LLaVA 多模态模型推理流程](#三-llava-多模态模型推理流程)
 	- [3.1 查看模型结构信息](#31-查看模型结构信息)
 	- [3.2 实现 LLaVA 模型结构](#32-实现-llava-模型结构)
+		- [模型初始化函数](#模型初始化函数)
+		- [定义视觉编码函数 `vision_encode`](#定义视觉编码函数-vision_encode)
+		- [文本和图像特征合并函数 `get_multi_modal_input_embeddings`](#文本和图像特征合并函数-get_multi_modal_input_embeddings)
+		- [merge\_input\_ids\_with\_image\_features 合并文本和图像特征函数](#merge_input_ids_with_image_features-合并文本和图像特征函数)
 - [参考资料](#参考资料)
 
 ## 1. 前言
@@ -208,7 +212,7 @@ LlavaForConditionalGeneration(
 
 ### 3.2 实现 LLaVA 模型结构
 
-1，模型初始化函数 __init__
+#### 模型初始化函数
 
 主要是解析模型配置类，主要是获取视觉模块配置 + 映射层配置 + llama 模型配置，代码如下所示:
 
@@ -244,7 +248,7 @@ class LlavaLlama(nn.Module):
         self.pad_token_id = self.llava_config.pad_token_id if self.llava_config.pad_token_id is not None else -1
 ```
 
-2，定义视觉编码函数 `vision_encode`
+#### 定义视觉编码函数 `vision_encode`
 
 __init__ 初始化函数通过解析 LlavaConfig 配置，并通过 transformers 库的 `AutoModel.from_config`从配置中获取 vision_tower 模型结构，也就是初始化函数中已经定义好了视觉编码模块结构。
 
@@ -270,7 +274,7 @@ def vision_encode(self, image_tensor):
 	return image_features
 ```
 
-3，文本和图像特征合并函数 `get_multi_modal_input_embeddings`
+#### 文本和图像特征合并函数 `get_multi_modal_input_embeddings`
 
 `get_multi_modal_input_embeddings` 函数有两个参数，其实现流程可以总结如下:
 
@@ -299,7 +303,7 @@ def get_multi_modal_input_embeddings(
     return inputs_embeds, position_ids
 ```
 
-4, merge_input_ids_with_image_features 合并文本和图像特征函数
+#### merge_input_ids_with_image_features 合并文本和图像特征函数
 
 函数声明如下:
 
