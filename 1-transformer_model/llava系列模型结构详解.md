@@ -20,6 +20,7 @@ categories: Transformer
 		- [定义视觉编码函数 `vision_encode`](#定义视觉编码函数-vision_encode)
 		- [文本和图像特征合并函数 `get_multi_modal_input_embeddings`](#文本和图像特征合并函数-get_multi_modal_input_embeddings)
 		- [merge\_input\_ids\_with\_image\_features 合并文本和图像特征函数](#merge_input_ids_with_image_features-合并文本和图像特征函数)
+		- [forward 推理函数](#forward-推理函数)
 - [参考资料](#参考资料)
 
 ## 1. 前言
@@ -323,6 +324,128 @@ def merge_input_ids_with_image_features(
 - `image_features (torch.Tensor)`: 视觉编码后的图像特征，形状为 (num_images, num_image_patches, embed_dim)。
 - `pad_token_id` (int): 填充 token 的 ID，因为 batch 输入的请求长短不一。
 - `image_token_index` 参数用于**标识输入文本中预留来插入图像特征的位置**。也就是说，当输入的 token 序列中出现值等于 `image_token_index` 的 token 时，说明这个位置不是真正的文本 token，而是一个**占位符**，后续将用图像特征来替换或扩展该位置的信息。示例：llava 系列模型，image_token_index = 32000.
+
+代码来源 [transformers 库](https://github.com/jianxx/transformers/blob/72d1a4cd53d90d5db384df948ccc293b3c1e3b9d/src/transformers/models/llava/modeling_llava.py)，代码详解如下所示：
+
+```python
+def merge_input_ids_with_image_features(
+    input_ids: torch.Tensor, 
+    inputs_embeds: torch.Tensor, 
+    image_features: torch.Tensor,
+    pad_token_id: int,
+    image_token_index: int
+):
+    """
+    将 input_ids 与 image_features 合并，生成最终的嵌入和位置 ID。
+    
+    Args:
+        input_ids (torch.Tensor): 输入的 token IDs, 形状为 (batch_size, sequence_length)
+        inputs_embeds (torch.Tensor): 文本嵌入，形状为 (batch_size, sequence_length, embed_dim)
+        image_features (torch.Tensor): 视觉编码后的图像特征，形状为 (num_images, num_image_patches, embed_dim)
+        pad_token_id (int): 填充 token 的 ID
+        image_token_index (int): 图像 token 的 ID
+    
+    Returns:
+        final_embedding (torch.Tensor): 合并后的嵌入，形状为 (batch_size, max_embed_dim, embed_dim)
+        position_ids (torch.Tensor): 位置 ID, 形状为 (batch_size, max_embed_dim)
+    """
+    num_images, num_image_patches, embed_dim = image_features.shape # torch.Size([1, 576, 4096])
+    batch_size, sequence_length = input_ids.shape # torch.Size([1, 22])
+
+    # 计算 attention_mask 从 input_ids
+    attention_mask = (input_ids != pad_token_id).long()
+
+    # 检查每个样本的最后一个 token 是否为填充 token
+    left_padding = not torch.sum(input_ids[:, -1] == pad_token_id).bool().any() # True
+
+    # 创建图像占位符 token 的掩码，获取特殊图像 token 的位置
+    """
+    tensor([[False, False, False, False,  True, False, False, False, False, False,
+         False, False, False, False, False, False, False, False, False, False,
+         False, False]], device='cuda:0')
+    """
+    special_image_token_mask = input_ids == image_token_index
+    # 统计每个样本中图像 token 的数量, 形状为 [batch_size, *]
+    num_special_image_tokens = torch.sum(special_image_token_mask, dim=-1) # 1
+
+    # 计算文本和图像特征合并后的新序列的最大长度。
+    # 每个图像占位符 token 的位置会被替换为 (num_image_patches - 1) 个图像 patches embedding token。
+    max_embed_dim = (num_special_image_tokens.max() * (num_image_patches - 1)) + sequence_length # tensor(597, device='cuda:0')
+
+    # 获取非图像占位符 token 的位置索引
+    """
+    torch.where() 的输出
+	    - batch_indices 包含满足条件元素所在的行号
+        - non_image_indices 包含对应元素在行中的列索引
+    """
+    batch_indices, non_image_indices = torch.where(input_ids != image_token_index) 
+
+    # 计算文本 token 在新序列中的位置
+    """
+    对于每个 token：
+	    - 如果该 token 不是特殊图像 token（mask 为 0）：意味着该 token 占用 1 个位置。
+        - 如果该 token 是特殊图像 token（mask 为 1）：意味着该 token将扩展成 num_image_patches 个位置，
+        其中后面 num\_image\_patches - 1 位置用于放置图像 patch 嵌入，而原位置仍保留（但后续会用图像特征覆盖）。
+    使用 torch.cumsum(..., dim=-1) 对上一步结果做累积和，得到每个 token 在新序列中的“终止位置”，再减 1 得到 token 实际开始的索引。
+    这一步给出了新序列中，每个原始 token 对应的新位置索引。
+    """
+    new_token_positions = torch.cumsum((special_image_token_mask * (num_image_patches - 1) + 1), -1) - 1 
+    # new_token_positions = torch.cumsum((special_image_token_mask * (num_image_patches - 1) + 1).float(), dim=-1).long() - 1 # torch.Size([1, 22])
+    # nb_image_pad 表示新序列中需要额外填充的图像 token 数量，以使总长度达到 max_embed_dim
+    nb_image_pad = max_embed_dim - 1 - new_token_positions[:, -1] 
+
+    # 如果存在左侧填充 (left_padding 为 True)，则将 new_token_positions 进行偏移调整。
+    """
+    tensor([[  0,   1,   2,   3, 579, 580, 581, 582, 583, 584, 585, 586, 587, 588,
+         589, 590, 591, 592, 593, 594, 595, 596]], device='cuda:0')
+    """
+    if left_padding:
+        new_token_positions += nb_image_pad[:, None]  # offset for left padding
+
+    # 确定文本 token 在新序列中的位置
+    text_to_overwrite = new_token_positions[batch_indices, non_image_indices]
+
+    # 初始化最终的嵌入, torch.Size([1, 597, 4096])
+    final_embedding = torch.zeros(
+        batch_size, max_embed_dim, embed_dim, dtype=inputs_embeds.dtype, device=inputs_embeds.device
+    )
+    
+    # 将 tensors 移动到目标设备
+    target_device = inputs_embeds.device
+    batch_indices = batch_indices.to(target_device)
+    non_image_indices = non_image_indices.to(target_device)
+    text_to_overwrite = text_to_overwrite.to(target_device)
+
+    # 填充文本嵌入
+    final_embedding[batch_indices, text_to_overwrite] = inputs_embeds[batch_indices, non_image_indices]
+
+    # 确定图像特征插入位置，通过找到 final_embedding 中所有全 0 的位置
+    image_to_overwrite = torch.all(final_embedding == 0, dim=-1)  # 找出 final_embedding 中所有维度为0的位置
+    image_to_overwrite &= image_to_overwrite.cumsum(-1) - 1 >= nb_image_pad[:, None].to(target_device)
+
+    if image_to_overwrite.sum() != image_features.shape[0] * image_features.shape[1]:
+        raise ValueError(      
+            f"The input provided to the model are wrong. The number of image tokens is {torch.sum(special_image_token_mask)} while"
+            f" the number of image given to the model is {num_images}. This prevents correct indexing and breaks batch generation."
+        )
+
+    # 将 image_features 重新排列为 (num_images * num_image_patches, embed_dim)，并填充到 final_embedding 的相应位置。
+    final_embedding[image_to_overwrite] = image_features.contiguous().view(-1, embed_dim).to(target_device)
+    
+    # 生成 position_ids
+    position_ids = torch.arange(max_embed_dim, dtype=torch.long, device=inputs_embeds.device).unsqueeze(0).expand(batch_size, -1)
+
+    # 处理填充位置的嵌入, 将填充位置的嵌入设为0：
+    batch_indices_pad, pad_indices = torch.where(input_ids == pad_token_id)
+    indices_to_mask = new_token_positions[batch_indices_pad, pad_indices]
+
+    final_embedding[batch_indices_pad, indices_to_mask] = 0
+
+    return final_embedding, position_ids
+```
+
+#### forward 推理函数
+
 
 ## 参考资料
 
