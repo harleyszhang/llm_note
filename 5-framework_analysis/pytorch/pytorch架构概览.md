@@ -4,7 +4,8 @@
 - [二 pytorch 源码目录](#二-pytorch-源码目录)
   - [2.1 c10 核心基础库](#21-c10-核心基础库)
 - [三 pytorch 前后端](#三-pytorch-前后端)
-  - [3.1 前后端交互](#31-前后端交互)
+  - ["import torch" 时相关重要的初始化](#import-torch-时相关重要的初始化)
+  - [torch.Tensor 类的初始化和实现](#torchtensor-类的初始化和实现)
 - [参考资料](#参考资料)
 
 ## 一 pytorch 框架概述
@@ -134,7 +135,33 @@ c10 作为 PyTorch 框架的**核心基础库**，其包含多个子模块：
 
 后端指的是 PyTorch 的底层 C++ 引擎，它负责执行前端指定的计算。后端引擎使用张量表示计算图的节点和边，并使用高效的线性代数运算和卷积运算来执行计算。后端引擎支持多设备（如 cpu、cuda、rocm等）执行计算，将 python 计算代码转换为底层设备平台能够执行的代码。
 
-pytorch 中的 tensor 实现在 torch/_tensor.py 中，其继承了 C++ 中实现的 `TensorBase`。torch/_tensor.py 是 PyTorch 中定义和包装张量（Tensor）的 Python 端接口文件，它连接了 C++ 内核实现与 Python 用户接口。总体来说，
+### "import torch" 时相关重要的初始化
+
+当在 python 文件中执行 import torch 时，python 将执行 ”torch/__init__.py“ 导入该模块，其中和本章内容相关重要的操作按照执行顺序有：
+
+代码清单 1-1
+
+```bash
+# [1] 初始化 _C module。
+126 from torch._C import * 
+...
+# [2] 初始化 Tensor。
+229 from .tensor import Tensor 
+...
+# [3] 存储 Tensor 的其他类类型对象。
+289 # The _tensor_classes set is initialized by the call to _C._initialize_tensor_type_bindings()
+290 _tensor_classes = set() 
+...
+# [4] 初始化 _C 其他组件，在本文中重点关注其初始化 Tensor 的其他类类型。
+307 # Shared memory manager needs to know the exact location of manager executable
+308 _C._initExtension(manager_path())
+```
+
+这四个语句初始化了 pytorch 的 "Tensor 系统"，使得 "pytorch" 的 "py" 名副其实。其中第一步导入了 _C 模块； 第二步导入了 Tensor，也就是客户端最常见到的 Tensor 类型（class Tensor）; 第三步创建了一个空的 set 这个变量会在 c++ 源码 _initialize_tensor_type_bindings() 函数中被填充，用来存储初始化的其他 Tensor 类型，如 DoubleTensor 等，显然这里是一个 Python 代码产生的变量在 C 中被调用，源码中存在大量这样的相互调用；而第四步则是初始化 Python classs 扩展，在这个函数中初始化了 DoubleTensor 等类，并放入了第三步的集合中。
+
+### torch.Tensor 类的初始化和实现
+
+torch/_tensor.py 是 PyTorch 中定义和包装张量（Tensor）的 Python 端接口文件，它连接了 C++ 内核实现与 Python 用户接口。总体来说，
 
 <div align="center">
 <img src="../../images/pytorch/Tensor.jpg" width="60%" alt="Tensor">
@@ -152,14 +179,50 @@ PyTorch 通过 pybind11 将 C++ 函数、类暴露给 Python，在这个过程�
 <img src="../../images/pytorch/TensorBase.jpg" width="60%" alt="TensorBase">
 </div>
 
-在 python_variable.cpp 文件中，可以看到 PyTorch 实际是用了 pybind，将 c++ 和 Python 进行交互的。
+在 python_variable.cpp 文件中，可以看到 PyTorch 实际是用了 pybind，将 C++ 和 Python 进行交互的。
 
 > `“THPVariable”` 全称为`“Torch Python Variable”`，用于表示 `PyTorch` 源码中用于 `Python` 绑定的 C 结构体类型，其代表了 Python 层中的 `Tensor` 对象（历史上称为 `Variable`）
 
-### 3.1 前后端交互
+pytorch python 中的 tensor 实现是继承自 _C module 的 `_TensorBase class`，而 `_TensorBase` 是在 C++ 代码中实现并添加到 `_C` 模块中，如下：
 
-以 Tensor 对象为例分析 Python 和 C++ 黏合的部分（pybind）
+```cpp
+bool THPVariable_initModule(PyObject* module) {
+  THPVariableMetaType.tp_base = &PyType_Type;
+  if (PyType_Ready(&THPVariableMetaType) < 0)
+    return false;
+  Py_INCREF(&THPVariableMetaType);
+  PyModule_AddObject(module, "_TensorMeta", (PyObject*)&THPVariableMetaType);
+
+  static std::vector<PyMethodDef> methods;
+  THPUtils_addPyMethodDefs(methods, torch::autograd::variable_methods);
+  THPUtils_addPyMethodDefs(methods, extra_methods);
+  THPVariableType.tp_methods = methods.data();
+  if (PyType_Ready(&THPVariableType) < 0)
+    return false;
+  Py_INCREF(&THPVariableType);
+  PyModule_AddObject(module, "TensorBase", (PyObject*)&THPVariableType);
+  Py_INCREF(&THPVariableType);
+  PyModule_AddObject(module, "_TensorBase", (PyObject*)&THPVariableType);
+  torch::autograd::initTorchFunctions(module);
+  torch::autograd::initTensorImplConversion(module);
+  torch::utils::validate_numpy_for_dlpack_deleter_bug();
+  return true;
+}
+```
+
+THPVariable_initModule 里相关操作, 初始化 THPVariableType 类类型，增加 THPVariableType 计数等是 C API 往 python 模块里添加类类型的标准做法。
+
+下述代码是实现了往 python 的 module 中添加了名为 “TensorBase” 的类类型对象 THPVariableType，而这里传入的参数 module 正是 _C module。
+
+```cpp
+PyModule_AddObject(module, "_TensorBase",   (PyObject *)&THPVariableType);
+```
+
+在 PyTorch 中，Tensor 类依赖于 _TensorBase，因此在 Tensor 被实例化之前，必须先完成 _TensorBase 的初始化。而 _TensorBase 是属于 _C 模块的一部分，所以在代码清单1-1中，当执行 import _C 时，实际上也完成了 _TensorBase 的初始化。
+
+深入源码后，我们可以观察到整个初始化过程，其中涉及到一定的 Python C API 知识。由于 _C 模块是用 C++ 编写的 Python 模块，根据 Python 3.x 的 API 规范，模块的初始化入口必须以 “PyInit” 作为前缀，紧跟模块名称。在这个例子中，对应的初始化函数即为 PyInit__C()。该函数正是定义在 stub.cpp 文件中，而这个文件正是之前提到在构建过程中生成 _C.python-37m-x86_64-linux-gnu.so 动态库时所使用的三个目标文件之一（另外两个则为其他动态库文件）。
 
 ## 参考资料
 
 - [万字综述，核心开发者全面解读PyTorch内部张量机制](https://mp.weixin.qq.com/s/8J-vsOukt7xwWQFtwnSnWw)
+- [【Pytorch 源码 Detail 系列】Tensor“函数工厂” 上](https://zhuanlan.zhihu.com/p/346926464)
