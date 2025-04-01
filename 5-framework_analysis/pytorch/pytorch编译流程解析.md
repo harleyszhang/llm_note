@@ -465,14 +465,14 @@ def configure_extension_build():
 
     # 定义主扩展模块： torch._C
     C = Extension(
-        "torch._C",
-        libraries=main_libraries,               # 需要链接的库列表
-        sources=main_sources,                   # 源文件
-        language="c",                           # 语言类型（C/C++/Objective-C等）
-        extra_compile_args=main_compile_args + extra_compile_args, # 编译标志
-        include_dirs=[],                        # 包含头文件目录
-        library_dirs=library_dirs,              # 库搜索路径
-        extra_link_args=(
+        "torch._C",                             # 模块的全名, 安装后可通过 torch._C 导入核心
+        libraries=main_libraries,               # 链接所依赖的库名列表
+        sources=main_sources,                   # 源文件列表，编译这些文件生成模块
+        language="c",                           # 指定语言，决定使用哪种编译器
+        extra_compile_args=main_compile_args + extra_compile_args, # 编译时传递的额外命令行参数
+        include_dirs=[],                        # 头文件搜索路径
+        library_dirs=library_dirs,              # 库文件搜索路径
+        extra_link_args=(                       # 链接时传递的额外命令行参数，通常用于设置 rpath 等
             extra_link_args
             + main_link_args
             + make_relative_rpath_args("lib")   # rpath 配置
@@ -532,7 +532,7 @@ def configure_extension_build():
 ```python
 # 定义主扩展模块： torch._C
 C = Extension(
-    "torch._C",
+    "torch._C",                             # 模块的全名, 安装后可通过 torch._C 导入
     libraries=main_libraries,               # 链接所依赖的库名列表
     sources=main_sources,                   # 源文件列表，编译这些文件生成模块
     language="c",                           # 指定语言，决定使用哪种编译器

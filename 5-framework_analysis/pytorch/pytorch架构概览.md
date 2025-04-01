@@ -1,11 +1,16 @@
 - [一 pytorch 框架概述](#一-pytorch-框架概述)
   - [1.1 pytorch 概述](#11-pytorch-概述)
-  - [1.2 在 macOS 上的编译安装](#12-在-macos-上的编译安装)
+  - [1.2 pytorch 前后端](#12-pytorch-前后端)
+  - [1.3 在 macOS 上的编译安装](#13-在-macos-上的编译安装)
 - [二 pytorch 源码目录](#二-pytorch-源码目录)
-  - [2.1 c10 核心基础库](#21-c10-核心基础库)
-- [三 pytorch 前后端](#三-pytorch-前后端)
-  - ["import torch" 时相关重要的初始化](#import-torch-时相关重要的初始化)
+  - [2.1 pytorch 核心目录概述](#21-pytorch-核心目录概述)
+  - [2.2 c10 核心基础库](#22-c10-核心基础库)
+  - [2.3 \_C 模块概述](#23-_c-模块概述)
+- [三 从 torch.tensor 理解前后端交互](#三-从-torchtensor-理解前后端交互)
+  - ["import torch" 时重要的初始化](#import-torch-时重要的初始化)
+  - [`torch._C` 分析](#torch_c-分析)
   - [torch.Tensor 类的初始化和实现](#torchtensor-类的初始化和实现)
+  - [Python 3.x 扩展模块初始化规范](#python-3x-扩展模块初始化规范)
 - [参考资料](#参考资料)
 
 ## 一 pytorch 框架概述
@@ -20,7 +25,13 @@
 <img src="../../images/pytorch/tensor_define.png" width="60%" alt="tensor_define">
 </div>
 
-### 1.2 在 macOS 上的编译安装
+### 1.2 pytorch 前后端
+
+在 pytorch 中前端指的是 pytorch 的 python  接口，用于构建数据集处理 pipeline、定义模型结构和训练评估模型的工具接口。
+
+后端指的是 PyTorch 的底层 C++ 引擎，它负责执行前端指定的计算。后端引擎使用张量表示计算图的节点和边，并使用高效的线性代数运算和卷积运算来执行计算。后端引擎支持多设备（如 cpu、cuda、rocm等）执行计算，将 python 计算代码转换为底层设备平台能够执行的代码。
+
+### 1.3 在 macOS 上的编译安装
 
 1，前置安装条件：
 
@@ -94,6 +105,8 @@ PyTorch 2.x 的源码主要划分为多个顶级目录，每个目录承担不�
 └── torchgen   # PyTorch 算子代码生成相关脚本和生成文件目录，如算子注册、shape 函数生成、static_runtime、decompositions 等。
 ```
 
+### 2.1 pytorch 核心目录概述
+
 虽然第一级的子目录很多，但是对于开发者来说，最核心和重要的子目录就那几个，简单总结下其作用和相互关系：
 
 1. `c10/`：c10 指的是 caffe tensor library，相当于 caffe 的 aten, PyTorch 的**核心基础库目录**。
@@ -115,7 +128,7 @@ PyTorch 2.x 的源码主要划分为多个顶级目录，每个目录承担不�
 	- `distributed`: PyTorch 的分布式训练支持。
 4. `tools`: 供 PyTorch 库使用的代码生成脚本。
 
-### 2.1 c10 核心基础库
+### 2.2 c10 核心基础库
 
 c10 作为 PyTorch 框架的**核心基础库**，其包含多个子模块：
 - `c10/core/`：核心组件，定义了 PyTorch **核心数据结构和机制**。例如包含 `TensorImpl`（张量底层实现类）​、`Storage`（张量存储）、`DispatchKey` 和 `Dispatcher`（动态算子调度）、设备类型 `Device`、类型元信息 `TypeMeta` 等基础定义。
@@ -129,37 +142,96 @@ c10 作为 PyTorch 框架的**核心基础库**，其包含多个子模块：
 - `c10/mobile/`：移动端支持代码，为在移动/嵌入式场景下裁剪和优化 PyTorch 而设。
 - `c10/test/`：c10 本身的一些单元测试代码。
 
-## 三 pytorch 前后端
+### 2.3 _C 模块概述
 
-在 pytorch 中前端指的是 pytorch 的 python  接口，用于构建数据集处理 pipeline、定义模型结构和训练评估模型的工具接口。
+在 PyTorch 中，`_C` 模块（通常以 `torch._C` 命名）是 PyTorch 的核心 C/C++ 层的接口。它是一个经过编译的动态库（例如在 Linux 下为 `.so` 文件，在 macOS 下为 `.dylib`，在 Windows 下为 `.dll`），用于向 Python 层暴露底层高性能实现的功能。
 
-后端指的是 PyTorch 的底层 C++ 引擎，它负责执行前端指定的计算。后端引擎使用张量表示计算图的节点和边，并使用高效的线性代数运算和卷积运算来执行计算。后端引擎支持多设备（如 cpu、cuda、rocm等）执行计算，将 python 计算代码转换为底层设备平台能够执行的代码。
+实现原理：
 
-### "import torch" 时相关重要的初始化
+1. **C++/CUDA 内核实现**：PyTorch 的大部分核心运算、数据结构和算法均在 C++ 层实现，并且支持 CPU/GPU/XPU 多设备后端。
+2. **绑定机制**：使用 `pybind11` 将 `C++` 类和函数暴露为 `Python` 模块中的对象和方法。
+3. **编译与打包**：在构建过程中，通过 `setuptools` 或 `CMake` 调用编译器将 C++ 源文件编译成动态库，并在打包时将其放入 Python 包（例如 `torch/_C.so`），从而实现跨平台分发。
 
-当在 python 文件中执行 import torch 时，python 将执行 ”torch/__init__.py“ 导入该模块，其中和本章内容相关重要的操作按照执行顺序有：
+## 三 从 torch.tensor 理解前后端交互
 
-代码清单 1-1
+### "import torch" 时重要的初始化
 
-```bash
-# [1] 初始化 _C module。
-126 from torch._C import * 
-...
-# [2] 初始化 Tensor。
-229 from .tensor import Tensor 
-...
-# [3] 存储 Tensor 的其他类类型对象。
-289 # The _tensor_classes set is initialized by the call to _C._initialize_tensor_type_bindings()
-290 _tensor_classes = set() 
-...
-# [4] 初始化 _C 其他组件，在本文中重点关注其初始化 Tensor 的其他类类型。
-307 # Shared memory manager needs to know the exact location of manager executable
-308 _C._initExtension(manager_path())
+当在 python 代码中执行 `import torch` 时，import 会去寻找 */`site-packages/torch/__init__.py` 文件，其是 PyTorch 的顶层入口文件。而 `__init__.py` 文件的作用是完成 PyTorch 的**模块初始化与全局配置和子模块加载过程**等。具体来说，负责完成以下主要任务：
+1. 模块初始化与全局配置：读取和设置版本信息、配置信息，以及初始化日志、环境变量等全局状态。
+2. 动态库加载: 加载 `_C` 模块时，会调用其中的初始化函数（例如 `PyInit__C()`），完成低层核心组件的初始化。
+3. API 封装和命名空间构建。
+4. 子模块导入：将 torch.nn、torch.optim、torch.cuda 等子模块导入到顶层命名空间。
+5. 错误处理和兼容性支持：确保在不同操作系统、不同 CUDA/ROCm 环境下的兼容性，并给出相应的警告或提示信息。
+
+`__init__.py` 文件中包含了多种与张量初始化相关的关键组件，以下是对主要部分的总结和详细解释：
+
+1. 核心 Tensor 类的导入与定义
+
+```python
+from torch._tensor import Tensor  # 导入核心 Tensor 类
 ```
 
-这四个语句初始化了 pytorch 的 "Tensor 系统"，使得 "pytorch" 的 "py" 名副其实。其中第一步导入了 _C 模块； 第二步导入了 Tensor，也就是客户端最常见到的 Tensor 类型（class Tensor）; 第三步创建了一个空的 set 这个变量会在 c++ 源码 _initialize_tensor_type_bindings() 函数中被填充，用来存储初始化的其他 Tensor 类型，如 DoubleTensor 等，显然这里是一个 Python 代码产生的变量在 C 中被调用，源码中存在大量这样的相互调用；而第四步则是初始化 Python classs 扩展，在这个函数中初始化了 DoubleTensor 等类，并放入了第三步的集合中。
+这一行导入了 PyTorch 的核心 Tensor 类，它继承自 C++ 实现的 `torch._C.TensorBase`，是所有张量操作的基础。张量创建时都会实例化这个类。
+
+2. **动态链接库加载**
+
+```python
+def _load_global_deps() -> None:
+    #############省略代码############
+if USE_GLOBAL_DEPS:
+        _load_global_deps()
+    from torch._C import *  # noqa: F403
+```
+
+3. **符号张量支持**
+
+```python
+class SymInt: ...
+class SymFloat: ...
+class SymBool: ...
+
+def sym_int(a): ... 
+def sym_float(a): ...
+def _constrain_as_size(symbol, min=None, max=None): ...
+```
+
+4. 设置设备和数据类型配置函数定义
+
+```python    
+def set_default_device(device):
+    # 设置默认设备，影响张量创建时的默认位置
+    _GLOBAL_DEVICE_CONTEXT.device_context = device_context
+
+def set_default_dtype(d: "torch.dtype") -> None:
+    # 设置默认浮点数据类型
+```
+
+这些函数会控制新创建张量的默认设备和数据类型。例如，
+- set_default_device('cuda') 会使新张量默认创建在 GPU 上。
+- set_default_dtype(torch.float64) 会改变浮点张量的默认精度。
+- set_default_tensor_type 是一个较旧的 API，现在推荐使用 set_default_dtype 加 set_default_device 的组合来代替。
+
+5. **张量存储类定义**
+
+现在推荐使用 `TypedStorage` 和 `UntypedStorage` 作为 PyTorch storage object。
+
+```python
+from torch.storage import (
+    _LegacyStorage,
+    _StorageBase,
+    _warn_typed_storage_removal,
+    TypedStorage,
+    UntypedStorage,
+)
+```
+
+### `torch._C` 分析
+
+在我的 macos 电脑中对应的就是 `torch/_C.cpython-312-darwin.so` 文件，文件名指明了编译它的 python 版本和所在平台系统，这种命名是 python c module 的一种规范。
 
 ### torch.Tensor 类的初始化和实现
+
+> `Python` 中的类型也是对象，类型是 `PyTypeObject` 对象。
 
 torch/_tensor.py 是 PyTorch 中定义和包装张量（Tensor）的 Python 端接口文件，它连接了 C++ 内核实现与 Python 用户接口。总体来说，
 
@@ -212,17 +284,87 @@ bool THPVariable_initModule(PyObject* module) {
 
 THPVariable_initModule 里相关操作, 初始化 THPVariableType 类类型，增加 THPVariableType 计数等是 C API 往 python 模块里添加类类型的标准做法。
 
-下述代码是实现了往 python 的 module 中添加了名为 “TensorBase” 的类类型对象 THPVariableType，而这里传入的参数 module 正是 _C module。
+下述代码是实现了往 python 的 module 中添加了名为 “TensorBase” 的类类型对象 THPVariableType，第一个参数 module 是 _C module 类型。
 
 ```cpp
 PyModule_AddObject(module, "_TensorBase",   (PyObject *)&THPVariableType);
 ```
 
-在 PyTorch 中，Tensor 类依赖于 _TensorBase，因此在 Tensor 被实例化之前，必须先完成 _TensorBase 的初始化。而 _TensorBase 是属于 _C 模块的一部分，所以在代码清单1-1中，当执行 import _C 时，实际上也完成了 _TensorBase 的初始化。
+因为 Tensor 类继承自 `_TensorBase`，所以在 Tensor 被实例化之前，必须先完成 _TensorBase 的初始化。又因为 `_TensorBase` 是属于 _C 模块的一部分，所以在代码 `torch/__init__` 中，当执行 `from torch._C import * ` 时，实际上也完成了 `_TensorBase` 的初始化。
+ 
+当在 Python 中执行 `import torch._C`（或间接通过 import torch 导入时）时，Python 解释器会自动调用 `PyInit__C()` 来初始化该模块。
 
-深入源码后，我们可以观察到整个初始化过程，其中涉及到一定的 Python C API 知识。由于 _C 模块是用 C++ 编写的 Python 模块，根据 Python 3.x 的 API 规范，模块的初始化入口必须以 “PyInit” 作为前缀，紧跟模块名称。在这个例子中，对应的初始化函数即为 PyInit__C()。该函数正是定义在 stub.cpp 文件中，而这个文件正是之前提到在构建过程中生成 _C.python-37m-x86_64-linux-gnu.so 动态库时所使用的三个目标文件之一（另外两个则为其他动态库文件）。
+`PyInit__C()` 的具体实现是在 `torch/csrc/stub.c` （关键源文件）中，其包含以下内容：
+
+- **构建过程**：在编译过程中，`stub.cpp` 会被编译成目标文件（.o 文件），与其他目标文件一起链接生成最终的动态库，例如文件名为 `_C.python-37m-x86_64-linux-gnu.so` 的共享库。
+- **多个目标文件**：通常构建这样的大型项目时，除了 `stub.c` 之外，还会有其他源文件编译生成目标文件。这些目标文件一起被链接成最终的动态库 `_C.python-37m-x86_64-linux-gnu.so`，其中 `stub.c` 中包含的 `PyInit__C()` 函数就是模块初始化的入口。
+
+`torch/csrc/stub.c` 文件内容如下：
+
+```cpp
+#include <Python.h>
+
+extern PyObject* initModule(void);
+
+#ifndef _WIN32
+#ifdef __cplusplus
+extern "C"
+#endif
+__attribute__((visibility("default"))) PyObject* PyInit__C(void);
+#endif
+
+PyMODINIT_FUNC PyInit__C(void)
+{
+  return initModule();
+}
+```
+
+### Python 3.x 扩展模块初始化规范
+
+根据 Python 3.x 的 C API 规范，每个用 C 或 C++ 编写的扩展模块都必须提供一个初始化函数，该函数的名称必须以 `PyInit_` 开头，后面紧跟模块的名称。例如：
+- 如果模块名称为 `_C`，那么初始化函数的名称就必须是 `PyInit__C()`。
+- 这个函数在模块导入时由 Python 解释器自动调用，用来创建并返回一个模块对象。
+
+假设我们有一个 C 扩展模块初始化函数 PyInit__C，其部分代码如下:
+
+```cpp
+static struct PyModuleDef moduledef = {
+    PyModuleDef_HEAD_INIT,
+    "_C",                /* m_name */
+    "Module for PyTorch core.", /* m_doc */
+    -1,                  /* m_size */
+    NULL,                /* m_methods */
+    NULL,                /* m_reload */
+    NULL,                /* m_traverse */
+    NULL,                /* m_clear */
+    NULL,                /* m_free */
+};
+
+PyMODINIT_FUNC PyInit__C(void) {
+    PyObject *module = PyModule_Create(&moduledef);
+    if (!module)
+        return NULL;
+    
+    // 将 THPVariableType 绑定为 _TensorBase 属性
+    if (PyModule_AddObject(module, "_TensorBase", (PyObject *)&THPVariableType) < 0) {
+        Py_DECREF(module);
+        return NULL;
+    }
+    
+    // ... 其他初始化代码 ...
+    
+    return module;
+}
+```
+
+初始化函数会负责执行模块内的各项初始化操作，比如设置模块的全局变量、注册函数、创建类型对象等。只有初始化函数返回一个有效的模块对象后，Python 才能将该模块添加到全局命名空间中供后续使用。
+
+`_C` 模块是用 C++ 编写的 Python 模块，根据 Python 3.x 的 API 规范，模块的初始化入口必须以 “PyInit” 作为前缀，紧跟模块名称。在这个例子中，对应的初始化函数即为 `PyInit__C()`。该函数正是定义在 `stub.cpp` 文件中，而这个
+
+
 
 ## 参考资料
 
 - [万字综述，核心开发者全面解读PyTorch内部张量机制](https://mp.weixin.qq.com/s/8J-vsOukt7xwWQFtwnSnWw)
 - [【Pytorch 源码 Detail 系列】Tensor“函数工厂” 上](https://zhuanlan.zhihu.com/p/346926464)
+- [Let’s talk about the PyTorch dispatcher](https://blog.ezyang.com/2020/09/lets-talk-about-the-pytorch-dispatcher/)

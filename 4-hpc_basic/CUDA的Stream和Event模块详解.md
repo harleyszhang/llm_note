@@ -55,7 +55,7 @@ runtime API 通过提供隐式初始化、上下文管理和模块管理来简�
 
 从时间维度分析 cpu、gpu（stream）任务的执行顺序，是会有两条并行的程序运行线，如下图所示:
 
-![cpu_cuda_stream](../../images/cuda_stream_event/cpu_cuda_stream.png)
+![cpu_cuda_stream](../images/cuda_stream_event/cpu_cuda_stream.png)
 
 上图 cpu/gpu 任务执行的顺序分析：
 1. CPU launch kernel 1，kernel 1 入默认 Stream，此时 Stream 里面只有 kernel1，于是 kernel 1 马上在 GPU执行；
