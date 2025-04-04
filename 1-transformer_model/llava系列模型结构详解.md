@@ -9,18 +9,18 @@ categories: Transformer
 - [1. 前言](#1-前言)
 - [二 LLaVA 系列模型](#二-llava-系列模型)
 - [2.1 LLaVA1](#21-llava1)
-		- [2.1.1 ViT-L/14 模型结构](#211-vit-l14-模型结构)
-	- [2.2. LLaVA1.5](#22-llava15)
-		- [2.2.1 LLaVA-1.5-HD](#221-llava-15-hd)
-	- [2.3. LLaVA1.6（LLaVA-NeXT）](#23-llava16llava-next)
+    - [2.1.1 ViT-L/14 模型结构](#211-vit-l14-模型结构)
+  - [2.2. LLaVA1.5](#22-llava15)
+    - [2.2.1 LLaVA-1.5-HD](#221-llava-15-hd)
+  - [2.3. LLaVA1.6（LLaVA-NeXT）](#23-llava16llava-next)
 - [三. LLaVA 多模态模型推理流程](#三-llava-多模态模型推理流程)
-	- [3.1 查看模型结构信息](#31-查看模型结构信息)
-	- [3.2 实现 LLaVA 模型结构](#32-实现-llava-模型结构)
-		- [模型初始化函数](#模型初始化函数)
-		- [定义视觉编码函数 `vision_encode`](#定义视觉编码函数-vision_encode)
-		- [文本和图像特征合并函数 `get_multi_modal_input_embeddings`](#文本和图像特征合并函数-get_multi_modal_input_embeddings)
-		- [merge\_input\_ids\_with\_image\_features 合并文本和图像特征函数](#merge_input_ids_with_image_features-合并文本和图像特征函数)
-		- [forward 推理函数](#forward-推理函数)
+  - [3.1 查看模型结构信息](#31-查看模型结构信息)
+  - [3.2 实现 LLaVA 模型结构](#32-实现-llava-模型结构)
+    - [模型初始化函数](#模型初始化函数)
+    - [定义视觉编码函数 `vision_encode`](#定义视觉编码函数-vision_encode)
+    - [文本和图像特征合并函数 `get_multi_modal_input_embeddings`](#文本和图像特征合并函数-get_multi_modal_input_embeddings)
+    - [merge\_input\_ids\_with\_image\_features 合并文本和图像特征函数](#merge_input_ids_with_image_features-合并文本和图像特征函数)
+    - [forward 推理函数](#forward-推理函数)
 - [参考资料](#参考资料)
 
 ## 1. 前言
@@ -251,7 +251,7 @@ class LlavaLlama(nn.Module):
 
 #### 定义视觉编码函数 `vision_encode`
 
-__init__ 初始化函数通过解析 LlavaConfig 配置，并通过 transformers 库的 `AutoModel.from_config`从配置中获取 vision_tower 模型结构，也就是初始化函数中已经定义好了视觉编码模块结构。
+__init__ 初始化函数通过解析 `LlavaConfig` 配置，并通过 transformers 库的 `AutoModel.from_config`从配置中获取 vision_tower 模型结构，也就是初始化函数中已经定义好了视觉编码模块结构。
 
 视觉编码函数的流程：
 
@@ -322,8 +322,8 @@ def merge_input_ids_with_image_features(
 - `input_ids`: 输入的 token IDs, 形状为 (batch_size, sequence_length)。
 - `inputs_embeds`: 文本嵌入，形状为 (batch_size, sequence_length, embed_dim)。
 - `image_features (torch.Tensor)`: 视觉编码后的图像特征，形状为 (num_images, num_image_patches, embed_dim)。
-- `pad_token_id` (int): 填充 token 的 ID，因为 batch 输入的请求长短不一。
-- `image_token_index` 参数用于**标识输入文本中预留来插入图像特征的位置**。也就是说，当输入的 token 序列中出现值等于 `image_token_index` 的 token 时，说明这个位置不是真正的文本 token，而是一个**占位符**，后续将用图像特征来替换或扩展该位置的信息。示例：llava 系列模型，image_token_index = 32000.
+- `pad_token_id` (int): 填充 token 的 ID，因为 `batch` 输入的请求长短不一。
+- `image_token_index` 参数用于**标识输入文本中预留来插入图像特征的位置**。也就是说，当输入的 token 序列中出现值等于 `image_token_index` 的 token 时，说明这个位置不是真正的文本 token，而是一个**占位符**，后续将用图像特征来替换或扩展该位置的信息。示例：llava 系列模型，image_token_index = 32000。
 
 代码来源 [transformers 库](https://github.com/jianxx/transformers/blob/72d1a4cd53d90d5db384df948ccc293b3c1e3b9d/src/transformers/models/llava/modeling_llava.py)，代码详解如下所示：
 
