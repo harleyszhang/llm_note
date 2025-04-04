@@ -34,7 +34,7 @@ RoPE 的核心思想是将位置编码与词向量通过旋转矩阵相乘，使
 
 1，`torch.outer` 
 
-函数作用：torch.outer(a, b) 计算两个 1D 向量 a 和 b 的外积，生成一个二维矩阵，其中每个元素的计算方式为：
+函数作用：`torch.outer(a, b)` 计算两个 1D 向量 `a` 和 `b` 的外积，生成一个二维矩阵，其中每个元素的计算方式为：
 
 $$\text{result}[i, j] = a[i] \times b[j]$$
 
@@ -77,8 +77,10 @@ tensor([[ 8,  4,  6],
 # 第一个参数是绝对值（模），第二个参数是角度
 torch.polar(abs, angle, *, out=None) → Tensor
 ```
-构造一个复数张量，其元素是极坐标对应的笛卡尔坐标，绝对值为 abs，角度为 angle。
+**构造一个复数张量**，其元素是极坐标对应的笛卡尔坐标，绝对值为 abs，角度为 angle。
+
 $$\text{out=abs⋅cos(angle)+abs⋅sin(angle)⋅j}$$
+
 ```python
 # 假设 freqs = [x, y], 则 torch.polar(torch.ones_like(freqs), freqs) 
 # = [cos(x) + sin(x)j, cos(y) + sin(y)j]
