@@ -101,6 +101,7 @@ tensor([6.1232e-17], dtype=torch.float64)
 # dim: 沿着该维度重复元素。如果未指定维度，默认会将输入数组展平成一维，并返回一个平坦的输出数组。
 torch.repeat_interleave(input, repeats, dim=None, *, output_size=None) → Tensor
 ```
+
 返回一个具有与输入相同维度的重复张量
 
 ```bash
