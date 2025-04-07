@@ -142,7 +142,6 @@ o_m = \sum_{n=1}^{N} a_{m,n} v_n \quad (2)$$
 
 方程 (1) 的一种常见选择是：
 
-
 $$f_t:t∈\{q,k,v\}(x_i, i) := W_{t}(x_i + p_i)，\quad (3)$$
 
 其中，$p_i \in \mathbb{R}^d$  是与 `token` $x_i$  的位置相关的 $d$ 维向量。Devlin 等人 [2019]、Lan 等人 [2020]、Clark 等人 [2020]、Radford 等人 [2019]、Radford 和 Narasimhan [2018] 使用了一组可训练向量  $p_i \in \{p_t\}_{t=1}^L$ ，其中 $L$ 表示最大序列长度。Vaswani 等人 [2017] 则提出了通过正弦函数来生成 $p_i$ 的方法:
@@ -369,7 +368,7 @@ def apply_rotary_emb(xq: torch.Tensor, xk: torch.Tensor, freqs_cis: torch.Tensor
     return xq_out.type_as(xq), xk_out.type_as(xk)
 ```
 
-结合 rope 位置编码的 attention 结构的完整代码在[这里](https://github.com/harleyszhang/llm_note/blob/main/1-transformer_model/src/rope.py)，运行后，单元测试结果如下所示：
+结合 `rope` 位置编码的 attention 结构的完整代码在[这里](https://github.com/harleyszhang/llm_note/blob/main/1-transformer_model/src/rope.py)，运行后，单元测试结果如下所示：
 
 ```bash
 test_compute_theta passed.
