@@ -207,9 +207,9 @@ LlavaForConditionalGeneration(
 
 1. vision_tower 视觉模块：`CLIPVisionModel`；
 2. multi_modal_projector 映射层: LlavaMultiModalProjector（实际是两个直连的线性层）。
-3. language_model 大语言模型: LlamaForCausalLM。
+3. language_model 大语言模型: `LlamaForCausalLM`。
 
-占据 LLaV1.5 模型主要参数量和计算量的是 LlamaForCausalLM, 视觉模块和特征映射模块只有几百MB的参数量。
+占据 LLaV1.5 模型主要参数量和计算量的是 `LlamaForCausalLM`, 视觉模块和特征映射模块只有几百MB的参数量。
 
 ### 3.2 实现 LLaVA 模型结构
 
