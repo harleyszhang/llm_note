@@ -319,7 +319,7 @@ def merge_input_ids_with_image_features(
 ```
 
 这里的函数参数不好理解，先看下它们各自的意义和作用：
-- `input_ids`: 输入的 token IDs, 形状为 (batch_size, sequence_length)。
+- `input_ids`: 输入的 `token IDs`, 形状为 (batch_size, sequence_length)。
 - `inputs_embeds`: 文本嵌入，形状为 (batch_size, sequence_length, embed_dim)。
 - `image_features (torch.Tensor)`: 视觉编码后的图像特征，形状为 (num_images, num_image_patches, embed_dim)。
 - `pad_token_id` (int): 填充 token 的 ID，因为 `batch` 输入的请求长短不一。
