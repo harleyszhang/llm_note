@@ -65,7 +65,7 @@ categories: Transformer
 - $o$: 输出 `tokens` 数量，用于计算 kv cache 的形状。
 - $h$: 隐藏层的维度，也叫 $d_{model}$,即序列中每个 `token` 的 `embedding` 向量的维度。**它定义了输入和输出的特征向量的大小，也是模型内部各个组件（特别是注意力机制和前馈网络）操作的主要向量维度**。
 - $V$：词表大小 `vocab_size`。也是每个 token 在做 embedding 前的 one-hot 向量维度。
-- $n$：模型中 decoder layers 层数，对应 hf 模型配置文件中的 num_hidden_layers。
+- $n$：模型中 `decoder layers` 层数，对应 `hf` 模型配置文件中的 num_hidden_layers。
 
 这些变量值都可以在模型配置文件中找到，以 `llama-13b` 模型配置文件为例，主要字段解释如下：
 
