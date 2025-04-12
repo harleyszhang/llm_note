@@ -9,18 +9,17 @@ categories: Transformer
 - [1. 前言](#1-前言)
 - [二 LLaVA 系列模型](#二-llava-系列模型)
 - [2.1 LLaVA1](#21-llava1)
-    - [2.1.1 ViT-L/14 模型结构](#211-vit-l14-模型结构)
-  - [2.2. LLaVA1.5](#22-llava15)
-    - [2.2.1 LLaVA-1.5-HD](#221-llava-15-hd)
-  - [2.3. LLaVA1.6（LLaVA-NeXT）](#23-llava16llava-next)
-- [三. LLaVA 多模态模型推理流程](#三-llava-多模态模型推理流程)
-  - [3.1 查看模型结构信息](#31-查看模型结构信息)
-  - [3.2 实现 LLaVA 模型结构](#32-实现-llava-模型结构)
-    - [模型初始化函数](#模型初始化函数)
-    - [定义视觉编码函数 `vision_encode`](#定义视觉编码函数-vision_encode)
-    - [文本和图像特征合并函数 `get_multi_modal_input_embeddings`](#文本和图像特征合并函数-get_multi_modal_input_embeddings)
-    - [merge\_input\_ids\_with\_image\_features 合并文本和图像特征函数](#merge_input_ids_with_image_features-合并文本和图像特征函数)
-    - [forward 推理函数](#forward-推理函数)
+		- [2.1.1 ViT-L/14 模型结构](#211-vit-l14-模型结构)
+	- [2.2. LLaVA1.5](#22-llava15)
+		- [2.2.1 LLaVA-1.5-HD](#221-llava-15-hd)
+	- [2.3. LLaVA1.6（LLaVA-NeXT）](#23-llava16llava-next)
+- [三 查看 llava 模型结构](#三-查看-llava-模型结构)
+- [四. LLaVA 模型推理](#四-llava-模型推理)
+	- [4.1 模型初始化函数](#41-模型初始化函数)
+	- [4.2 定义视觉编码函数](#42-定义视觉编码函数)
+	- [4.3 文本和图像特征合并函数](#43-文本和图像特征合并函数)
+	- [4.4 forward 函数](#44-forward-函数)
+- [五 文本和图像特征合并函数](#五-文本和图像特征合并函数)
 - [参考资料](#参考资料)
 
 ## 1. 前言
@@ -91,18 +90,9 @@ $$H_v = W\cdot X_v, with Z_v = g(X_v)$$
 
 模型推理层面新的升级点在于，Vision Encoder 分辨率支持更大的分辨率，包括 672x672, 336x1344, 1344x336 几种分辨率的输入，并且支持通过图片裁切，编码，合并来实现，和前作一样的方法。毕竟，当提供高分辨率图像和保留细节的表征时，模型感知图像中复杂细节的能力会显著提高。它减少了面对低分辨率图像时的模型幻觉，即猜测想象的视觉内容。
 
-## 三. LLaVA 多模态模型推理流程
+## 三 查看 llava 模型结构
 
-LLaVA 多模态模型推理 pipline：
-1. prompts 预处理；
-2. 视觉特征预处理；
-3. 视觉特征模型 clip 推理；
-4. 视觉特征和文本特征合并成一组 tokens；
-5. 语言模型 llama 推理。
-
-### 3.1 查看模型结构信息
-
-查看模型结构信息最简单直接的办法是去看模型源代码，但是直接源代码可能没那么直观，因此也可以通过 transformers 库加载模型并打印模型结构信息的方式，代码如下所示：
+查看模型结构信息最简单直接的办法是去看模型源代码，但是直接源代码可能没那么直观，因此也可以通过 `transformers` 库加载模型并打印模型结构信息的方式，代码如下所示：
 
 ```python
 from accelerate import init_empty_weights, load_checkpoint_and_dispatch
@@ -206,16 +196,23 @@ LlavaForConditionalGeneration(
 从上述模型结构信息也能明显看出 LlaVA 模型结构主要包括 3 个模块: 
 
 1. vision_tower 视觉模块：`CLIPVisionModel`；
-2. multi_modal_projector 映射层: LlavaMultiModalProjector（实际是两个直连的线性层）。
+2. multi_modal_projector 映射层: `LlavaMultiModalProjector`（实际是两个直连的线性层）。
 3. language_model 大语言模型: `LlamaForCausalLM`。
 
-占据 LLaV1.5 模型主要参数量和计算量的是 `LlamaForCausalLM`, 视觉模块和特征映射模块只有几百MB的参数量。
+占据 `LLaVa1.5` 模型主要参数量和计算量的是 `LlamaForCausalLM`, 视觉模块和特征映射模块只有几百 `MB` 的参数量。
 
-### 3.2 实现 LLaVA 模型结构
+## 四. LLaVA 模型推理
 
-#### 模型初始化函数
+LLaVA 多模态模型推理 pipline：
+1. prompts 预处理；
+2. 视觉特征预处理；
+3. 视觉特征模型 `clip` 推理；
+4. 视觉特征和文本特征合并成一组 tokens；
+5. 语言模型 llama 推理。
 
-主要是解析模型配置类，主要是获取视觉模块配置 + 映射层配置 + llama 模型配置，代码如下所示:
+### 4.1 模型初始化函数
+
+主要是解析模型配置类，主要是**获取视觉模块配置 + 映射层配置 + llama 模型配置**，代码如下所示:
 
 ```python
 class LlavaLlama(nn.Module):
@@ -249,35 +246,37 @@ class LlavaLlama(nn.Module):
         self.pad_token_id = self.llava_config.pad_token_id if self.llava_config.pad_token_id is not None else -1
 ```
 
-#### 定义视觉编码函数 `vision_encode`
+### 4.2 定义视觉编码函数
 
-__init__ 初始化函数通过解析 `LlavaConfig` 配置，并通过 transformers 库的 `AutoModel.from_config`从配置中获取 vision_tower 模型结构，也就是初始化函数中已经定义好了视觉编码模块结构。
+`__init__` 初始化函数通过解析 `LlavaConfig` 配置，并通过 transformers 库的 `AutoModel.from_config` 从配置中获取 `vision_tower` 模型结构，也就是初始化函数中已经定义好了视觉编码模块结构。
 
 视觉编码函数的流程：
 
 1. **视觉特征提取**：提取图像（视频）视觉特征；
-2. **特征筛选**：根据策略选择图像特征是 "default" 还是 "pad";
+2. **特征筛选**：根据策略选择图像特征是 `"default"` 还是 `"pad"`;
 3. **特征空间对齐**：最后通过 `multi_modal_projector` 特征投影模块，将提取的视觉特征投影到与文本模型相同的表示空间中，本质上是让**视觉特征张量的最后一个维度是 `hidden_size`**。这一步是多模态融合的关键，它确保视觉信息能够以语言模型理解的方式表示。
 
 ```python
 def vision_encode(self, image_tensor):
-	x = image_tensor.half().to(device=self.device)
-	
-	# 1. 通过视觉处理模块提取图像特征
-	x = self.vision_tower(x, output_hidden_states = True)
-	x = x.hidden_states[self.select_layer]
-	x = self._select_image_features(x, self.select_feature)
-	
-	# 2. 通过多模态投影器将图像特征转换为多模态嵌入
-	image_features = self.multi_modal_projector(x)
+    x = image_tensor.half().to(device=self.device)
 
-	assert not torch.isnan(image_features).any(), f"After vision_tower image_features tensor contains NaN values!"
-	return image_features
+    # 1. 通过视觉处理模块提取图像特征
+    x = self.vision_tower(x, output_hidden_states = True)
+    x = x.hidden_states[self.select_layer]
+    x = self._select_image_features(x, self.select_feature)
+
+    # 2. 通过多模态投影器将图像特征转换为多模态嵌入
+    image_features = self.multi_modal_projector(x)
+
+    assert not torch.isnan(image_features).any(), f"After vision_tower image_features tensor contains NaN values!"
+    return image_features
 ```
 
-#### 文本和图像特征合并函数 `get_multi_modal_input_embeddings`
+代码中的 `vision_tower` 就是初始化函数中解析配置得到的视觉编码器类，`llava` 中是 `clip` 模型。
 
-`get_multi_modal_input_embeddings` 函数有两个参数，其实现流程可以总结如下:
+### 4.3 文本和图像特征合并函数
+
+`get_multi_modal_input_embeddings` 函数作用是，实现文本和视觉嵌入特征的合并，函数输入有两个参数，其实现流程可以总结如下:
 
 1. **获取文本的嵌入向量**：使用语言模型的嵌入层（`nn.Embedding`）将 `input_ids` 映射到固定尺寸的连续稠密向量（`embedding vectors`）。
 2. **合并文本 `embedding` 向量和视觉 `embedding` 向量**：这个过程很复杂，通过抽象出一个专门的函数 `merge_input_ids_with_image_features` 将文本嵌入和图像特征合并。
@@ -304,7 +303,45 @@ def get_multi_modal_input_embeddings(
     return inputs_embeds, position_ids
 ```
 
-#### merge_input_ids_with_image_features 合并文本和图像特征函数
+### 4.4 forward 函数
+> 基于自回归生成的特性，`prefill` 阶段: 会输入完整提示词，后续生成 `decode` 阶段时每次只输入一个 `token`。
+
+`forward` 函数是 `LLaVA` 模型的推理流程实现，主要分为以下几个步骤：
+
+1. `prefill/decode` 处理阶段判断：通过检查 input_ids.shape[1] != 1 来判断当前是 prefill 阶段还是 decode 阶段,
+	- `prefill` 阶段：将图像（原始尺寸 [1, 3, 336, 336]）转换为视觉特征（[1, 576, 4096]），并将文本嵌入和视觉特征合并，同时更新位置编码。
+	- `decode` 阶段：无需视觉处理。
+
+2. 调用底层语言模型（如 Llama），传入处理好的输入 tokens，这个步骤跟正常 llm 的 forward 函数一模一样，可复用。
+
+```python
+def forward(
+    self, 
+    input_ids: torch.Tensor, 
+    position_ids: torch.Tensor,  
+    atten_info, 
+    image_tensor: Optional[torch.FloatTensor] = None,
+):
+    input_ids = input_ids.to(self.device) # 将 input_ids 移动到设备
+    if position_ids is not None: # 如果提供了 position_ids，将其移动到设备
+        position_ids = position_ids.to(self.device)
+        
+    if input_ids.shape[1] != 1: # 判断是不是首次 token 输出
+        vision_embeddings = self.vision_encode(image_tensor) #  torch.Size([1, 3, 336, 336]) --> torch.Size([1, 576, 4096])
+        inputs_embeds, position_ids = self.get_multi_modal_input_embeddings(input_ids, vision_embeddings)
+    else: # 进入 decode 阶段, 无需再做视觉编码
+        inputs_embeds = None
+    
+    hidden_states = self.language_model(input_ids = input_ids,
+                                        position_ids = position_ids,
+                                        atten_info = atten_info,
+                                        inputs_embeds = inputs_embeds
+                                        )
+    
+    return hidden_states
+```
+
+## 五 文本和图像特征合并函数
 
 函数声明如下:
 
@@ -320,10 +357,34 @@ def merge_input_ids_with_image_features(
 
 这里的函数参数不好理解，先看下它们各自的意义和作用：
 - `input_ids`: 输入的 `token IDs`, 形状为 (batch_size, sequence_length)。
+- `input_ids`: 输入的 `token IDs`, 形状为 (batch_size, sequence_length)。
 - `inputs_embeds`: 文本嵌入，形状为 (batch_size, sequence_length, embed_dim)。
 - `image_features (torch.Tensor)`: 视觉编码后的图像特征，形状为 (num_images, num_image_patches, embed_dim)。
 - `pad_token_id` (int): 填充 token 的 ID，因为 `batch` 输入的请求长短不一。
 - `image_token_index` 参数用于**标识输入文本中预留来插入图像特征的位置**。也就是说，当输入的 token 序列中出现值等于 `image_token_index` 的 token 时，说明这个位置不是真正的文本 token，而是一个**占位符**，后续将用图像特征来替换或扩展该位置的信息。示例：llava 系列模型，image_token_index = 32000。
+
+**merge_input_ids_with_image_features 主要步骤详解**
+1. **基础信息提取**：获取图像特征尺寸如 (1, 576, 4096) 和输入文本序列尺寸 (1, 22)
+2. **掩码与填充处理**：
+	- 创建注意力掩码区分真实 token 和填充 token
+	- 检测填充方向（左填充或右填充）
+	- 创建图像标记掩码，找出所有特殊图像 token 的位置
+3. **计算新序列长度**：
+	- 对于每个图像 token，需要将其扩展为 576 个位置（对应 576 个图像 patch）
+	- 总序列长度 = 原始文本长度 + (图像 patch 数量-1) × 图像 token 数量
+	- 例如：22 + (576-1) × 1 = 597
+4. **位置映射计算**：
+	- 使用累积和计算每个原始 token 在新序列中的位置
+	- 对于普通 token，在新序列中占一个位置
+	- 对于图像 token，在新序列中占用 576 个位置
+	- 处理可能的填充偏移
+5. **构建融合嵌入**：
+	- 创建空的目标嵌入张量 (1, 597, 4096)
+	- 将文本嵌入复制到对应位置
+	- 识别需要填充图像特征的位置（即嵌入全为零的位置）
+	- 将图像特征重塑并填充到这些位置
+6. **生成新的位置编码**：创建对应的位置 ID 张量，用于后续的 transformer 位置编码
+7. **处理填充位置**：将填充 token 对应的嵌入重置为零。
 
 代码来源 [transformers 库](https://github.com/jianxx/transformers/blob/72d1a4cd53d90d5db384df948ccc293b3c1e3b9d/src/transformers/models/llava/modeling_llava.py)，代码详解如下所示：
 
@@ -349,93 +410,45 @@ def merge_input_ids_with_image_features(
         final_embedding (torch.Tensor): 合并后的嵌入，形状为 (batch_size, max_embed_dim, embed_dim)
         position_ids (torch.Tensor): 位置 ID, 形状为 (batch_size, max_embed_dim)
     """
+    # 1, 基础 shape 信息提取
     num_images, num_image_patches, embed_dim = image_features.shape # torch.Size([1, 576, 4096])
     batch_size, sequence_length = input_ids.shape # torch.Size([1, 22])
 
-    # 计算 attention_mask 从 input_ids
+    # 2, 掩码与填充处理
     attention_mask = (input_ids != pad_token_id).long()
-
-    # 检查每个样本的最后一个 token 是否为填充 token
-    left_padding = not torch.sum(input_ids[:, -1] == pad_token_id).bool().any() # True
-
-    # 创建图像占位符 token 的掩码，获取特殊图像 token 的位置
-    """
-    tensor([[False, False, False, False,  True, False, False, False, False, False,
-         False, False, False, False, False, False, False, False, False, False,
-         False, False]], device='cuda:0')
-    """
+    left_padding = not torch.sum(input_ids[:, -1] == pad_token_id).bool().any()
     special_image_token_mask = input_ids == image_token_index
-    # 统计每个样本中图像 token 的数量, 形状为 [batch_size, *]
-    num_special_image_tokens = torch.sum(special_image_token_mask, dim=-1) # 1
-
-    # 计算文本和图像特征合并后的新序列的最大长度。
-    # 每个图像占位符 token 的位置会被替换为 (num_image_patches - 1) 个图像 patches embedding token。
-    max_embed_dim = (num_special_image_tokens.max() * (num_image_patches - 1)) + sequence_length # tensor(597, device='cuda:0')
-
-    # 获取非图像占位符 token 的位置索引
-    """
-    torch.where() 的输出
-	    - batch_indices 包含满足条件元素所在的行号
-        - non_image_indices 包含对应元素在行中的列索引
-    """
+    
+    # 3, 计算新序列长度
+    num_special_image_tokens = torch.sum(special_image_token_mask, dim=-1)
+    max_embed_dim = (num_special_image_tokens.max() * (num_image_patches - 1)) + sequence_length
     batch_indices, non_image_indices = torch.where(input_ids != image_token_index) 
 
-    # 计算文本 token 在新序列中的位置
-    """
-    对于每个 token：
-	    - 如果该 token 不是特殊图像 token（mask 为 0）：意味着该 token 占用 1 个位置。
-        - 如果该 token 是特殊图像 token（mask 为 1）：意味着该 token将扩展成 num_image_patches 个位置，
-        其中后面 num\_image\_patches - 1 位置用于放置图像 patch 嵌入，而原位置仍保留（但后续会用图像特征覆盖）。
-    使用 torch.cumsum(..., dim=-1) 对上一步结果做累积和，得到每个 token 在新序列中的“终止位置”，再减 1 得到 token 实际开始的索引。
-    这一步给出了新序列中，每个原始 token 对应的新位置索引。
-    """
+    # 4, 位置映射计算
+    # 得到每个原始 token 在新序列中占据的开始位置索引。
     new_token_positions = torch.cumsum((special_image_token_mask * (num_image_patches - 1) + 1), -1) - 1 
-    # new_token_positions = torch.cumsum((special_image_token_mask * (num_image_patches - 1) + 1).float(), dim=-1).long() - 1 # torch.Size([1, 22])
-    # nb_image_pad 表示新序列中需要额外填充的图像 token 数量，以使总长度达到 max_embed_dim
     nb_image_pad = max_embed_dim - 1 - new_token_positions[:, -1] 
-
-    # 如果存在左侧填充 (left_padding 为 True)，则将 new_token_positions 进行偏移调整。
-    """
-    tensor([[  0,   1,   2,   3, 579, 580, 581, 582, 583, 584, 585, 586, 587, 588,
-         589, 590, 591, 592, 593, 594, 595, 596]], device='cuda:0')
-    """
     if left_padding:
         new_token_positions += nb_image_pad[:, None]  # offset for left padding
-
-    # 确定文本 token 在新序列中的位置
     text_to_overwrite = new_token_positions[batch_indices, non_image_indices]
-
-    # 初始化最终的嵌入, torch.Size([1, 597, 4096])
+    
+    # 5，构建融合张量
     final_embedding = torch.zeros(
         batch_size, max_embed_dim, embed_dim, dtype=inputs_embeds.dtype, device=inputs_embeds.device
     )
-    
-    # 将 tensors 移动到目标设备
-    target_device = inputs_embeds.device
-    batch_indices = batch_indices.to(target_device)
-    non_image_indices = non_image_indices.to(target_device)
-    text_to_overwrite = text_to_overwrite.to(target_device)
-
-    # 填充文本嵌入
-    final_embedding[batch_indices, text_to_overwrite] = inputs_embeds[batch_indices, non_image_indices]
+    final_embedding[batch_indices, text_to_overwrite] = inputs_embeds[batch_indices, non_image_indices] # 填充文本嵌入
 
     # 确定图像特征插入位置，通过找到 final_embedding 中所有全 0 的位置
     image_to_overwrite = torch.all(final_embedding == 0, dim=-1)  # 找出 final_embedding 中所有维度为0的位置
     image_to_overwrite &= image_to_overwrite.cumsum(-1) - 1 >= nb_image_pad[:, None].to(target_device)
 
-    if image_to_overwrite.sum() != image_features.shape[0] * image_features.shape[1]:
-        raise ValueError(      
-            f"The input provided to the model are wrong. The number of image tokens is {torch.sum(special_image_token_mask)} while"
-            f" the number of image given to the model is {num_images}. This prevents correct indexing and breaks batch generation."
-        )
-
     # 将 image_features 重新排列为 (num_images * num_image_patches, embed_dim)，并填充到 final_embedding 的相应位置。
     final_embedding[image_to_overwrite] = image_features.contiguous().view(-1, embed_dim).to(target_device)
     
-    # 生成 position_ids
+    # 6，生成新的 position_ids
     position_ids = torch.arange(max_embed_dim, dtype=torch.long, device=inputs_embeds.device).unsqueeze(0).expand(batch_size, -1)
 
-    # 处理填充位置的嵌入, 将填充位置的嵌入设为0：
+    # 7，处理填充位置的嵌入, 将填充位置的嵌入设为0
     batch_indices_pad, pad_indices = torch.where(input_ids == pad_token_id)
     indices_to_mask = new_token_positions[batch_indices_pad, pad_indices]
 
@@ -443,8 +456,6 @@ def merge_input_ids_with_image_features(
 
     return final_embedding, position_ids
 ```
-
-#### forward 推理函数
 
 
 ## 参考资料
