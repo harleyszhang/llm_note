@@ -9,16 +9,16 @@ categories: Transformer
 - [1. 前言](#1-前言)
 - [二 LLaVA 系列模型](#二-llava-系列模型)
 - [2.1 LLaVA1](#21-llava1)
-		- [2.1.1 ViT-L/14 模型结构](#211-vit-l14-模型结构)
-	- [2.2. LLaVA1.5](#22-llava15)
-		- [2.2.1 LLaVA-1.5-HD](#221-llava-15-hd)
-	- [2.3. LLaVA1.6（LLaVA-NeXT）](#23-llava16llava-next)
+    - [2.1.1 ViT-L/14 模型结构](#211-vit-l14-模型结构)
+  - [2.2. LLaVA1.5](#22-llava15)
+    - [2.2.1 LLaVA-1.5-HD](#221-llava-15-hd)
+  - [2.3. LLaVA1.6（LLaVA-NeXT）](#23-llava16llava-next)
 - [三 查看 llava 模型结构](#三-查看-llava-模型结构)
 - [四. LLaVA 模型推理](#四-llava-模型推理)
-	- [4.1 模型初始化函数](#41-模型初始化函数)
-	- [4.2 定义视觉编码函数](#42-定义视觉编码函数)
-	- [4.3 文本和图像特征合并函数](#43-文本和图像特征合并函数)
-	- [4.4 forward 函数](#44-forward-函数)
+  - [4.1 模型初始化函数](#41-模型初始化函数)
+  - [4.2 定义视觉编码函数](#42-定义视觉编码函数)
+  - [4.3 文本和图像特征合并函数](#43-文本和图像特征合并函数)
+  - [4.4 forward 函数](#44-forward-函数)
 - [五 文本和图像特征合并函数](#五-文本和图像特征合并函数)
 - [参考资料](#参考资料)
 
@@ -355,7 +355,7 @@ def merge_input_ids_with_image_features(
 ):
 ```
 
-这里的函数参数不好理解，先看下它们各自的意义和作用：
+先看下函数参数的意义和作用：
 - `input_ids`: 输入的 `token IDs`, 形状为 (batch_size, sequence_length)。
 - `input_ids`: 输入的 `token IDs`, 形状为 (batch_size, sequence_length)。
 - `inputs_embeds`: 文本嵌入，形状为 (batch_size, sequence_length, embed_dim)。
