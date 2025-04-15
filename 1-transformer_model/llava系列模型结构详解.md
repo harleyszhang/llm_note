@@ -6,9 +6,9 @@ summary: 多模态大模型 MLLM 架构通常都是 LLM + 视觉编码器 + 映�
 categories: Transformer
 ---
 
-- [1. 前言](#1-前言)
+- [一 前言](#一-前言)
 - [二 LLaVA 系列模型](#二-llava-系列模型)
-- [2.1 LLaVA1](#21-llava1)
+  - [2.1 LLaVA1](#21-llava1)
     - [2.1.1 ViT-L/14 模型结构](#211-vit-l14-模型结构)
   - [2.2. LLaVA1.5](#22-llava15)
     - [2.2.1 LLaVA-1.5-HD](#221-llava-15-hd)
@@ -22,7 +22,7 @@ categories: Transformer
 - [五 文本和图像特征合并函数](#五-文本和图像特征合并函数)
 - [参考资料](#参考资料)
 
-## 1. 前言
+## 一 前言
 
 NVIDIA 和 MIT 的研究人员推出的视觉语言模型 `VILA`，其模型架构和训练流程如下图所示：
 
@@ -41,7 +41,7 @@ NVIDIA 和 MIT 的研究人员推出的视觉语言模型 `VILA`，其模型架�
 
 ## 二 LLaVA 系列模型
 
-## 2.1 LLaVA1
+### 2.1 LLaVA1
 
 Llava1 的模型结构很简洁，**CLIP 模型的视觉编码器 + 映射层 + LLM（Vicuna、LLama）** ，利用 `CLIP` 模型的 Vison Encoder 结构对输入图片提取视觉特征，即转换为形状为 `[N=1, grid_H x grid_W, hidden_dim]` 的 feature map，然后通过一个映射层（线性层）将图像特征对齐到文本特征维度，即得到形状为 `[N=1, grid_H x grid_W, embedding_dim]` 的 image tokens embedding 向量，再然后将图片 tokens 向量和输入文本 tokens 向量 `concat` 后作为 `LLM` 的输入，生成回答文本。
 
@@ -469,7 +469,6 @@ def merge_input_ids_with_image_features(
 
     return final_embedding, position_ids
 ```
-
 
 ## 参考资料
 
