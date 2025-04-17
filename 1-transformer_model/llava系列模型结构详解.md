@@ -45,7 +45,7 @@ NVIDIA 和 MIT 的研究人员推出的视觉语言模型 `VILA`，其模型架�
 
 Llava1 的模型结构很简洁，**CLIP 模型的视觉编码器 + 映射层 + LLM（Vicuna、LLama）** ，利用 `CLIP` 模型的 Vison Encoder 结构对输入图片提取视觉特征，即转换为形状为 `[N=1, grid_H x grid_W, hidden_dim]` 的 feature map，然后通过一个映射层（线性层）将图像特征对齐到文本特征维度，即得到形状为 `[N=1, grid_H x grid_W, embedding_dim]` 的 image tokens embedding 向量，再然后将图片 tokens 向量和输入文本 tokens 向量 `concat` 后作为 `LLM` 的输入，生成回答文本。
 
-LLaVA 模型架构如下图所示吧:
+LLaVA 模型架构如下图所示：
 
 ![llava_model](../images/llava_model/llava_model.png)
 
@@ -88,7 +88,7 @@ $$H_v = W\cdot X_v, with Z_v = g(X_v)$$
 
 ### 2.3. LLaVA1.6（LLaVA-NeXT）
 
-模型推理层面新的升级点在于，Vision Encoder 分辨率支持更大的分辨率，包括 672x672, 336x1344, 1344x336 几种分辨率的输入，并且支持通过图片裁切，编码，合并来实现，和前作一样的方法。毕竟，当提供高分辨率图像和保留细节的表征时，模型感知图像中复杂细节的能力会显著提高。它减少了面对低分辨率图像时的模型幻觉，即猜测想象的视觉内容。
+模型推理层面新的升级点在于，**Vision Encoder 支持更大的分辨率**，包括 672x672, 336x1344, 1344x336 几种分辨率的输入，并且支持通过图片裁切，编码，合并来实现，和前作一样的方法。毕竟，当提供高分辨率图像和保留细节的表征时，模型感知图像中复杂细节的能力会显著提高。它减少了面对低分辨率图像时的模型幻觉，即猜测想象的视觉内容。
 
 ## 三 查看 llava 模型结构
 
@@ -203,7 +203,7 @@ LlavaForConditionalGeneration(
 
 ## 四. LLaVA 模型推理
 
-LLaVA 多模态模型推理 pipline：
+`LLaVA` 多模态模型推理 `pipline`：
 1. prompts 预处理；
 2. 视觉特征预处理；
 3. 视觉特征模型 `clip` 推理；
