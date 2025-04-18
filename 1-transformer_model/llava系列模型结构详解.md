@@ -544,13 +544,13 @@ position_ids:
  tensor([[0, 1, 2, 3, 4, 5]])
 ```
 
-1. 提取 num_images=1, num_patches=2, embed_dim=3, batch_size=1, seq_len=5
-2. special_image_token_mask=[[False,True,False,False,False]]；left_padding=False
-3. max_embed_dim = 5 + (2−1)*1 = 6
-4. new_token_positions = [0,1,2,3,4] → 构建后续映射位置 [0→0, 2→3, …]
+1. 提取 num_images=1, num_patches=2, embed_dim=3, batch_size=1, seq_len=5;
+2. special_image_token_mask=`[[False,True,False,False,False]]`；`left_padding=False`(判断 batch 形式的输入张量的末尾元素是不是都是填充 `pad`: `0`);
+3. max_embed_dim = 5 + (2−1)*1 = 6;
+4. new_token_positions = [0,1,2,3,4] → 构建后续映射位置 [0→0, 2→3, …];
 5. 先将文本嵌入放到 [0,3]、[2]…补齐图像特征到位置1、2
-6. position_ids = [[0,1,2,3,4,5]]
-7. 原 pad token 的嵌入置为 0
+6. position_ids = [[0,1,2,3,4,5]];
+7. 原 pad token 的嵌入置为 0.
 
 ## 参考资料
 

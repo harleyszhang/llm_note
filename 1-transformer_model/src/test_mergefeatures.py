@@ -30,6 +30,7 @@ def merge_input_ids_with_image_features(
     # 2, 掩码与填充处理
     attention_mask = (input_ids != pad_token_id).long()
     left_padding = not torch.sum(input_ids[:, -1] == pad_token_id).bool().any()
+    
     special_image_token_mask = input_ids == image_token_index
     
     # 3, 计算新序列长度
