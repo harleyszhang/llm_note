@@ -461,16 +461,16 @@ def merge_input_ids_with_image_features(
     # 2, 掩码与填充处理
     attention_mask = (input_ids != pad_token_id).long()
     left_padding = not torch.sum(input_ids[:, -1] == pad_token_id).bool().any()
-    special_image_token_mask = input_ids == image_token_index
+    batch_image_token_mask  = input_ids == image_token_index
     
     # 3, 计算新序列长度
-    num_special_image_tokens = torch.sum(special_image_token_mask, dim=-1)
+    num_special_image_tokens = torch.sum(batch_image_token_mask , dim=-1) # 统计每个样本（batch 中每条序列）里出现了多少个“图像占位符” token。
     max_embed_dim = (num_special_image_tokens.max() * (num_image_patches - 1)) + sequence_length
     batch_indices, non_image_indices = torch.where(input_ids != image_token_index) 
 
     # 4, 位置映射计算
     # 得到每个原始 token 在新序列中占据的开始位置索引。
-    new_token_positions = torch.cumsum((special_image_token_mask * (num_image_patches - 1) + 1), -1) - 1 
+    new_token_positions = torch.cumsum((batch_image_token_mask  * (num_image_patches - 1) + 1), -1) - 1 
     nb_image_pad = max_embed_dim - 1 - new_token_positions[:, -1] 
     if left_padding:
         new_token_positions += nb_image_pad[:, None]  # offset for left padding
@@ -544,13 +544,50 @@ position_ids:
  tensor([[0, 1, 2, 3, 4, 5]])
 ```
 
-1. 提取 num_images=1, num_patches=2, embed_dim=3, batch_size=1, seq_len=5;
-2. special_image_token_mask=`[[False,True,False,False,False]]`；`left_padding=False`(判断 batch 形式的输入张量的末尾元素是不是都是填充 `pad`: `0`);
-3. max_embed_dim = 5 + (2−1)*1 = 6;
-4. new_token_positions = [0,1,2,3,4] → 构建后续映射位置 [0→0, 2→3, …];
-5. 先将文本嵌入放到 [0,3]、[2]…补齐图像特征到位置1、2
-6. position_ids = [[0,1,2,3,4,5]];
-7. 原 pad token 的嵌入置为 0.
+1，构建 `Mask` 与填充方向：
+
+```python
+attention_mask = (input_ids != pad_token_id)        # [[True,True,True,False,False]]
+left_padding   = not (input_ids[:, -1] == pad_token_id).any()  # False
+is_image_token = (input_ids == image_token_index)   # [[False,True,False,False,False]]
+```
+
+- `attention_mask`：区分真实 token 与 pad。
+- `left_padding`：检查 pad 是在序列尾部（常见）还是头部（Rare）。
+- `is_image_token`：定位将被替换成图像特征的**占位符**。
+
+2, 计算融合后序列的总长度
+
+```python
+# 统计每个样本（batch 中每条序列）里出现了多少个“图像占位符” token。
+num_images = is_image_token.sum(dim=-1)  # [1]
+max_len = Seq_len + num_images.max()*(num_patches-1)  
+# 5 + 1*(2-1) = 6
+```
+
+- 原理：每个 image token 会在最终序列中占 `num_patches` 个位置；每个文本 token 只占 1 个位置。
+- 结果：max_len=6
+
+3, 统计每个样本（batch 中每条序列）里出现了多少个“图像占位符” token。
+
+```python
+input_ids = tensor([
+    [10, 99, 20, 99,  0],   # 第一条序列里有两个“99”
+    [99,  0, 99, 30, 99]    # 第二条序列里有三个“99”
+])
+image_token_index = 99
+batch_image_token_mask  = (input_ids == image_token_index)
+# → tensor([
+#     [False, True, False, True, False],
+#     [True,  False, True,  False, True ]
+#   ])
+
+# 统计每个样本（batch 中每条序列）里出现了多少个“图像占位符” token。
+max_num_images = batch_image_token_mask.sum(dim=-1)
+print("num_images per batch sample:", max_num_images) 
+
+# num_images per batch sample: tensor([2, 3])
+```
 
 ## 参考资料
 
