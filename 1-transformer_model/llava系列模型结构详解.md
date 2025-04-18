@@ -20,6 +20,7 @@ categories: Transformer
   - [4.3 文本和图像特征合并](#43-文本和图像特征合并)
   - [4.4 前向推理 forward](#44-前向推理-forward)
 - [五 文本和图像特征合并](#五-文本和图像特征合并)
+  - [5.1 步骤拆解](#51-步骤拆解)
 - [参考资料](#参考资料)
 
 ## 一 前言
@@ -383,27 +384,51 @@ def merge_input_ids_with_image_features(
 - `image_token_index` 参数用于**标识输入文本中预留来插入图像特征的位置**。也就是说，当输入的 token 序列中出现值等于 `image_token_index` 的 token 时，说明这个位置不是真正的文本 token，而是一个**占位符**，后续将用图像特征来替换或扩展该位置的信息。示例：llava 系列模型，image_token_index = 32000。
 
 **merge_input_ids_with_image_features 主要步骤详解**：
-1. **基础信息提取**：获取图像特征尺寸如 (1, 576, 4096) 和输入文本序列尺寸 (1, 22)
-2. **掩码与填充处理**：
+1. **提取图像尺寸**：获取图像特征尺寸如 (1, 576, 4096) 和输入文本序列尺寸 (1, 22)
+2. **计算 mask 和 padding 方向**：
 	- 创建注意力掩码区分真实 token 和填充 token
 	- 检测填充方向（左填充或右填充）
 	- 创建图像标记掩码，找出所有特殊图像 token 的位置
-3. **计算新序列长度**：
+3. **计算新序列总长度 max_embed_dim**：
 	- 对于每个图像 token，需要将其扩展为 576 个位置（对应 576 个图像 patch）
 	- 总序列长度 = 原始文本长度 + (图像 patch 数量-1) × 图像 token 数量
 	- 例如：22 + (576-1) × 1 = 597
-4. **位置映射计算**：
-	- 使用累积和计算每个原始 token 在新序列中的位置
+4. **计算每个原始 token 在新序列中的位置 `new_token_positions`**：
+	- 使用累积和 `torch.cumsum` 计算每个原始 token 在新序列中的位置 new_token_positions
 	- 对于普通 `token`，在新序列中占一个位置
-	- 对于图像 token，在新序列中占用 576 个位置
+	- 对于图像 `token`，在新序列中占用 576 个位置
 	- 处理可能的填充偏移
-5. **构建融合嵌入**：
-	- 创建空的目标嵌入张量 (1, 597, 4096)
-	- 将文本嵌入复制到对应位置
-	- 识别需要填充图像特征的位置（即嵌入全为零的位置）
+5. **构建最终文本和图像特征融合后的 embedding 张量**：
+	- 创建空的目标嵌入张量 (1, 597, 4096)；
+	- 文本嵌入按 new_token_positions 填入；
+	- 找到剩余全零（即图像特征）位置，按顺序铺入 image_features；
 	- 将图像特征重塑并填充到这些位置
 6. **生成新的位置编码**：创建对应的位置 ID 张量，用于后续的 transformer 位置编码
 7. **处理填充位置**：将填充 token 对应的嵌入重置为零。
+
+`ASCII` 形式的函数流程图总结如下：
+
+```bash
+┌─────────────────────────────────────────────────┐
+│ merge_input_ids_with_image_features(...)       │
+└─────────────────────────────────────────────────┘
+              │
+    1. 提取 Shapes (shape extraction)
+              │
+    2. 计算 Mask 和 padding 方向 (mask & padding flag)
+              │
+    3. 计算新序列总长度 max_embed_dim
+              │
+    4. 计算每个原始 token 在新序列中的位置 new_token_positions
+              │
+    5. 构建融合后的嵌入 final_embedding
+              │
+    6. 生成位置 IDs position_ids
+              │
+    7. 将 pad token 对应位置嵌入置零（mask pads）
+              ↓
+  返回 final_embedding, position_ids
+```
 
 代码来源 [transformers 库](https://github.com/jianxx/transformers/blob/72d1a4cd53d90d5db384df948ccc293b3c1e3b9d/src/transformers/models/llava/modeling_llava.py)，代码详解如下所示：
 
@@ -426,7 +451,7 @@ def merge_input_ids_with_image_features(
         image_token_index (int): 图像 token 的 ID
     
     Returns:
-        final_embedding (torch.Tensor): 合并后的嵌入，形状为 (batch_size, max_embed_dim, embed_dim)
+        final_embedding (torch.Tensor): 合并后的嵌入张量，形状为 (batch_size, max_embed_dim, embed_dim)
         position_ids (torch.Tensor): 位置 ID, 形状为 (batch_size, max_embed_dim)
     """
     # 1, 基础 shape 信息提取
@@ -475,6 +500,57 @@ def merge_input_ids_with_image_features(
 
     return final_embedding, position_ids
 ```
+
+### 5.1 步骤拆解
+
+通过示例来理解函数效果和每个步骤作用
+
+```python
+# === 输入示例 ===
+# batch_size=1, seq_len=5, embed_dim=3; num_images=1, num_patches=2
+input_ids       = torch.tensor([[11, 99, 22, 0, 0]])       # 99 代表 image_token_index，0 是 pad_token_id
+inputs_embeds   = torch.arange(1, 1+1*5*3).reshape(1,5,3).float()
+image_features  = torch.tensor([[[9,9,9],[8,8,8]]]).float()  # shape (1,2,3)
+pad_token_id    = 0
+image_token_index = 99
+
+fe, pids = merge_input_ids_with_image_features(
+    input_ids,
+    inputs_embeds,
+    image_features,
+    pad_token_id,
+    image_token_index
+)
+
+print("final_embedding shape:", fe.shape)
+print("position_ids      shape:", pids.shape)
+print("final_embedding:\n", fe)
+print("position_ids:\n", pids)
+```
+
+上述代码运行后输出结果如下所示：
+
+```bash
+final_embedding shape: torch.Size([1, 6, 3])
+position_ids      shape: torch.Size([1, 6])
+final_embedding:
+ tensor([[[1., 2., 3.],
+         [9., 9., 9.],
+         [8., 8., 8.],
+         [7., 8., 9.],
+         [0., 0., 0.],
+         [0., 0., 0.]]])
+position_ids:
+ tensor([[0, 1, 2, 3, 4, 5]])
+```
+
+1. 提取 num_images=1, num_patches=2, embed_dim=3, batch_size=1, seq_len=5
+2. special_image_token_mask=[[False,True,False,False,False]]；left_padding=False
+3. max_embed_dim = 5 + (2−1)*1 = 6
+4. new_token_positions = [0,1,2,3,4] → 构建后续映射位置 [0→0, 2→3, …]
+5. 先将文本嵌入放到 [0,3]、[2]…补齐图像特征到位置1、2
+6. position_ids = [[0,1,2,3,4,5]]
+7. 原 pad token 的嵌入置为 0
 
 ## 参考资料
 
