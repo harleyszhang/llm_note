@@ -55,7 +55,7 @@ LLaMA **优势**在于其**只使用公开可用的数据**，这可以保证论
 <img src="../images/llama/llama_architecture4.png" width="80%" alt="完整的llama模型结构">
 </center>
 
-> [processon 在线浏览](https://www.processon.com/view/link/67163481a8011b320f2af67f?cid=67161b027f25232473eba8d3)
+> [processon 在线浏览](https://www.processon.com/view/link/67163481a8011b320f2af67f?cid=67161b027f25232473eba8d3)。
 
 llama 模型系列的超参数详细信息在表 2 中给出。
 
@@ -227,7 +227,7 @@ $\text{FPN}_{\text{SwiGLU}}$ 层结构如下图所示:
 <img src="../images/llama/ffn_structrue.png" width="50%" alt="ffn_structrue">
 </center>
 
-原始的的 $\text{FPN}$ 层只有两个权重矩阵，但变体 $\text{FPN}_{\text{SwiGLU}}$ **有三个线性层权重矩阵**：$W_1$、$W_3$、$W_2$。为了保持参数数量和计算量的恒定，需要将隐藏单元的数量 `d_ff`（权重矩阵 $W_1$ 和 $W_3$ 的第二个维度以及 $W_2$ 的第一个维度）缩小 `2/3`。
+原始的的 $\text{FFN}$ 层只有两个线性层权重矩阵，但变体 $\text{FFN}_{\text{SwiGLU}}$ **有三个线性层权重矩阵**：$W_1$、$W_3$、$W_2$。为了保持参数量和计算量的恒定，需要将中间隐藏层维度的 hidden_dim（权重矩阵 $W_1$ 和 $W_3$ 的第二个维度以及 $W_2$ 的第一个维度）缩小到 `2/3`。
 
 `Pytorch` 实现代码如下所示:
 
@@ -243,11 +243,17 @@ class FFNSwiGLU(nn.Module):
     def __init__(self, input_dim: int, hidden_dim: int):
         super().__init__()
         hidden_dim = int(2 * hidden_dim / 3)
-        self.fc1 = nn.Linear(input_dim, hidden_dim, bias=False)
-        self.fc2 = nn.Linear(hidden_dim, input_dim, bias=False)
-        self.fc3 = nn.Linear(input_dim, hidden_dim, bias=False) 
+        self.fc1 = nn.Linear(input_dim, hidden_dim, bias=False) # UPLinear
+        self.fc2 = nn.Linear(hidden_dim, input_dim, bias=False) # DownLinear
+        self.fc3 = nn.Linear(input_dim, hidden_dim, bias=False) # GateLinear
         
     def forward(self, x):
+        """
+        前向计算流程：
+        1. 通过 fc1 得到一组激活前的隐藏表示 h1
+        2. 通过 SiLU(h1) 与 fc3(x) 相乘，得到 SwiGLU 激活结果
+        3. 通过 fc2 将激活结果映射回原始维度
+        """
         # LLaMA 官方提供的代码是使用 F.silu() 激活函数
         return self.fc2(F.silu(self.fc1(x)) * self.fc3(x)))
     

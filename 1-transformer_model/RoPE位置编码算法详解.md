@@ -6,14 +6,14 @@ summary: 旋转位置编码（Rotary Position Embedding，RoPE）是论文 Rofor
 categories: Transformer
 ---
 
-- [相关 torch 知识](#相关-torch-知识)
-- [RoPE 算法推导](#rope-算法推导)
-  - [PE 和 Self-Attention 概述](#pe-和-self-attention-概述)
-  - [2D 的 RoPE 算法](#2d-的-rope-算法)
-  - [多维的 RoPE 算法](#多维的-rope-算法)
-- [RoPE 实现](#rope-实现)
-  - [RoPE 实现流程](#rope-实现流程)
-  - [RoPE 代码](#rope-代码)
+- [一 torch 背景知识](#一-torch-背景知识)
+- [二 RoPE 算法推导](#二-rope-算法推导)
+  - [2.1 PE 和 Self-Attention 概述](#21-pe-和-self-attention-概述)
+  - [2.2 2D 的 RoPE 算法](#22-2d-的-rope-算法)
+  - [2.3 多维的 RoPE 算法](#23-多维的-rope-算法)
+- [三 RoPE 实现](#三-rope-实现)
+  - [3.1 RoPE 实现流程](#31-rope-实现流程)
+  - [3.2 RoPE 实现代码](#32-rope-实现代码)
 - [参考资料](#参考资料)
 
 旋转位置编码（Rotary Position Embedding，`RoPE`）是论文 Roformer: Enhanced Transformer With Rotray Position Embedding 提出的一种能够**将相对位置信息依赖集成到 self-attention 中**并提升 transformer 架构性能的位置编码方式。
@@ -30,11 +30,11 @@ RoPE 的核心思想是将位置编码与词向量通过旋转矩阵相乘，使
 
 > 三角函数、旋转矩阵、欧拉公式、复数等数学背景知识可以参考这篇[文章](./位置编码算法背景知识.md)学习。
 
-## 相关 torch 知识
+## 一 torch 背景知识
 
 1，`torch.outer` 
 
-函数作用：`torch.outer(a, b)` 计算两个 1D 向量 `a` 和 `b` 的外积，生成一个二维矩阵，其中每个元素的计算方式为：
+函数作用：torch.outer(a, b) 计算两个 1D 向量 a 和 b 的外积，生成一个二维矩阵，其中每个元素的计算方式为：
 
 $$\text{result}[i, j] = a[i] \times b[j]$$
 
@@ -77,10 +77,8 @@ tensor([[ 8,  4,  6],
 # 第一个参数是绝对值（模），第二个参数是角度
 torch.polar(abs, angle, *, out=None) → Tensor
 ```
-**构造一个复数张量**，其元素是极坐标对应的笛卡尔坐标，绝对值为 abs，角度为 angle。
-
+构造一个复数张量，其元素是极坐标对应的笛卡尔坐标，绝对值为 abs，角度为 angle。
 $$\text{out=abs⋅cos(angle)+abs⋅sin(angle)⋅j}$$
-
 ```python
 # 假设 freqs = [x, y], 则 torch.polar(torch.ones_like(freqs), freqs) 
 # = [cos(x) + sin(x)j, cos(y) + sin(y)j]
@@ -101,7 +99,6 @@ tensor([6.1232e-17], dtype=torch.float64)
 # dim: 沿着该维度重复元素。如果未指定维度，默认会将输入数组展平成一维，并返回一个平坦的输出数组。
 torch.repeat_interleave(input, repeats, dim=None, *, output_size=None) → Tensor
 ```
-
 返回一个具有与输入相同维度的重复张量
 
 ```bash
@@ -121,9 +118,9 @@ tensor([1, 1, 1, 3, 3, 3, 4, 4, 4, 5, 5, 5])
 
 **注意重复后元素的顺序**，以简单的一维为例 `x = [a,b,c,d]`，`torch.repeat_interleave(x, 3)` 后，结果是 `[a,a,a,b,b,b,c,c,c,d,d,d]`。
 
-## RoPE 算法推导
+## 二 RoPE 算法推导
 
-### PE 和 Self-Attention 概述
+### 2.1 PE 和 Self-Attention 概述
 
 设 $q_m$ 表示第 $m$ 个 `token` 对应的词向量 $x_m$ 集成**位置信息** $m$ 之后的 $query$ 向量；$k_n$ 和 $v_n$ 则表示词向量 $x_n$ 集成其位置信息 $n$（第 $n$ 个 `token`）之后的 `key` 和 `value` 向量，$q_m、k_n、v_n$ 的表达用如下公式:
 
@@ -142,6 +139,7 @@ o_m = \sum_{n=1}^{N} a_{m,n} v_n \quad (2)$$
 
 方程 (1) 的一种常见选择是：
 
+
 $$f_t:t∈\{q,k,v\}(x_i, i) := W_{t}(x_i + p_i)，\quad (3)$$
 
 其中，$p_i \in \mathbb{R}^d$  是与 `token` $x_i$  的位置相关的 $d$ 维向量。Devlin 等人 [2019]、Lan 等人 [2020]、Clark 等人 [2020]、Radford 等人 [2019]、Radford 和 Narasimhan [2018] 使用了一组可训练向量  $p_i \in \{p_t\}_{t=1}^L$ ，其中 $L$ 表示最大序列长度。Vaswani 等人 [2017] 则提出了通过正弦函数来生成 $p_i$ 的方法:
@@ -151,7 +149,7 @@ p_{i,2t+1} = \cos\left(\frac{k}{10000^{2t/d}}\right)\quad (4)$$
 
 其中， $p_{i,2t}$ 是 $p_i$ 的第 $2t$ 个维度。下一节会描述 RoPE 与这种基于正弦函数的直觉之间的关系。但是，**RoPE 并不是直接将位置信息 $p_i$ 和嵌入向量元素 $x_i$ 相加，而是通过与正弦函数相乘的方式引入相对位置信息**。
 
-### 2D 的 RoPE 算法
+### 2.2 2D 的 RoPE 算法
 
 [RoPE 论文](https://arxiv.org/pdf/2104.09864)提出为了能**利用 token 之间的相对位置信息（$m-n$）**，假定 query 向量 $q_m$ 和 key 向量 $k_n$ 之间的内积操作可以被一个函数 $g$ 表示，该函数 $g$ 的输入是词嵌入向量 $x_m$、$x_n$ 以及它们之间的相对位置 $m - n$，公式表达如下所示：
 
@@ -225,7 +223,7 @@ $$\begin{aligned}
 
 上述推导过程分别应用了：展开内积、矩阵乘法的结合律、旋转矩阵性质1、旋转矩阵性质2。
 
-### 多维的 RoPE 算法
+### 2.3 多维的 RoPE 算法
 
 前面的公式推导，是假设的词嵌入维度是 2 维向量，将二维推广到任意维度，$f_{\{q,k\}}$ 可以表示如下：
 
@@ -263,13 +261,13 @@ Rotary Position Embedding(RoPE) 实现的可视化如下图所示:
 
 最后总结**结合 RoPE 的 self-attention 操作的流程**如下：
 1. 首先，对于 `token` 序列中的每个词嵌入向量，都计算其对应的 query 和 key 向量;
-2. 然后在得到 query 和 key 向量的基础上，应用公式（7）和（8）对每个 `token` 位置都计算对应的旋转位置编码；
+2. 然后在得到 query 和 key 向量的基础上，应用前面 $f_q(x_m, m)$ 和 $f_k(x_n, n)$ 的计算公式（7）和（8）对每个 `token` 位置都计算对应的旋转位置编码；
 3. 接着对每个 `token` 位置的 query 和 key 向量的元素按照**两两一组**应用旋转变换；
 4. 最后再计算 `query` 和 `key` 之间的内积得到 self-attention 的计算结果。
 
-## RoPE 实现
+## 三 RoPE 实现
 
-### RoPE 实现流程
+### 3.1 RoPE 实现流程
 
 先看旋转矩阵用于旋转一个二维向量过程示例：
 
@@ -292,7 +290,7 @@ $$
 
 在实现 RoPE 算法之前，需要注意：为了方便代码实现，在进行旋转之前，需要将旋转矩阵转换为极坐标形式，嵌入向量（$q$、$k$）需要转换为复数形式。完成旋转后，旋转后的嵌入需要转换回实数形式，以便进行注意力计算。此外，RoPE 仅应用于查询（Query）和键（Key）的嵌入，不适用于值（Value）的嵌入。
 
-### RoPE 代码
+### 3.2 RoPE 实现代码
 
 通过仔细阅读和一步步分析了 `llama` 官方代码后，会发现作者直接转化为**复数相乘**形式来计算 $f_q(x_m, m) = (W_q x_m) e^{im\theta}$，旋转矩阵定义和各种变换完全没用上（有种前面推导了个寂寞的感觉），但是没办法，虽然直接使用旋转矩阵，更符合线性代数的常规思路，但是这需要手动处理每个维度的旋转矩阵，代码稍微繁琐而且计算效率不如复数乘法高效。
 
@@ -368,7 +366,7 @@ def apply_rotary_emb(xq: torch.Tensor, xk: torch.Tensor, freqs_cis: torch.Tensor
     return xq_out.type_as(xq), xk_out.type_as(xk)
 ```
 
-结合 `rope` 位置编码的 attention 结构的完整代码在[这里](https://github.com/harleyszhang/llm_note/blob/main/1-transformer_model/src/rope.py)，运行后，单元测试结果如下所示：
+结合 rope 位置编码的 attention 结构的完整代码在[这里](https://github.com/harleyszhang/llm_note/blob/main/1-transformer_model/src/rope.py)，运行后，单元测试结果如下所示：
 
 ```bash
 test_compute_theta passed.
