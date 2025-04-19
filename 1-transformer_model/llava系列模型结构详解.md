@@ -568,7 +568,7 @@ max_len = Seq_len + num_images.max()*(num_patches-1)
 - 原理：每个 image token 会在最终序列中占 `num_patches` 个位置；每个文本 token 只占 1 个位置。
 - 结果：max_len=6
 
-3, 统计每个样本（batch 中每条序列）里出现了多少个“图像占位符” token。
+3, 统计每个样本（batch 中每条序列）里出现了多少个“图像占位符” `token`。
 
 ```python
 input_ids = tensor([
