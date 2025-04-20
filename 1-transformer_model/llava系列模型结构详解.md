@@ -6,7 +6,7 @@ summary: 多模态大模型 MLLM 架构通常都是 LLM + 视觉编码器 + 映�
 categories: Transformer
 ---
 
-- [一 前言](#一-前言)
+- [一 背景知识](#一-背景知识)
 - [二 LLaVA 系列模型](#二-llava-系列模型)
   - [2.1 LLaVA1](#21-llava1)
     - [2.1.1 ViT-L/14 模型结构](#211-vit-l14-模型结构)
@@ -23,15 +23,22 @@ categories: Transformer
   - [5.1 步骤拆解](#51-步骤拆解)
 - [参考资料](#参考资料)
 
-## 一 前言
+## 一 背景知识
 
-NVIDIA 和 MIT 的研究人员推出的视觉语言模型 `VILA`，其模型架构和训练流程如下图所示：
+VILA 是 NVIDIA 和 MIT 的研究人员推出的**视觉语言模型**(`VLM`, 也叫多模态模型)，模型架构如下图图左所示：
 
 <div align="center">
 <img src="../images/llava_model/VILA_infer_train.jpg" width="80%" alt="VILA_infer_train">
 </div>
 
-上图可以看出 VILA 模型架构是由视觉 encoder（ViT）、映射层（线性层）和 LLM 组成。
+上图可以看出 VILA 模型架构是由视觉特征 encoder（ViT）、映射层（线性层）和 LLM 组成。
+
+`Qwen2.5-VL` 的整体模型架构也由三个部分组成：
+1. **大语言模型**（Large Language Model）：Qwen2.5-VL 系列, 以 Qwen2.5 LLM 的预训练权重作为初始化。为了更好地支持多模态任务，对原始使用的一维旋转位置编码（`1D RoPE`）进行了升级，设计了对齐绝对时间的多模态位置编码（`Multimodal RoPE`），让语言模型具备更强的时序感知能力，特别适用于视频等带有时间信息的多模态输入。
+2. **视觉编码器**（Vision Encoder）：Qwen2.5-VL 的视觉编码器采用了重新设计的 Vision Transformer（`ViT`）架构。在结构上，引入了**二维旋转位置编码（2D-RoPE）和窗口注意力机制**（window attention），以支持原生输入分辨率的同时加速视觉编码器整体计算。为了适配模型的 patch 切分机制，所有图像会在输入前将宽高对齐为 `28` 的整数倍，并以 `stride=14` 切分为 `patch`，最终生成结构化的图像特征序列（image features）。
+3. **基于 MLP 的视觉语言融合模块**（MLP-based Vision-Language Merger）：针对图像特征序列较长带来的效率问题，采用了一种简单但高效的方法，**对特征序列进行压缩后再输入大语言模型（LLM）**, 即并不直接使用原始的 patch 序列，而是进行特征压缩处理。
+
+![qwen2.5-vl](../images/llava_model/qwen2.5-vl.jpg)
 
 目前常见的视觉语言模型（也叫多模态模型）的类别有如下所示，它们的模型架构都很相似，都是: **视觉编码器 + 映射层 + LLM 的组合**。
 - VILA-1.5 (B/8B/13B/40B)
@@ -39,6 +46,10 @@ NVIDIA 和 MIT 的研究人员推出的视觉语言模型 `VILA`，其模型架�
 - InternLM-XComposer2 (7B, 4khd-7B)
 - QWen-VL (7B)
 - DeepSeek-VL (7B)
+
+下表 1 详细列出了 Qwen2.5-VL 系列模型的架构和配置。
+
+![qwen2.5-vl-config](../images/llava_model/qwen2.5-vl-config.jpg)
 
 ## 二 LLaVA 系列模型
 
