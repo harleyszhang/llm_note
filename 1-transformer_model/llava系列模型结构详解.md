@@ -332,10 +332,10 @@ def get_multi_modal_input_embeddings(
 > 基于自回归生成的特性，`prefill` 阶段: 会输入完整提示词，后续生成 `decode` 阶段时每次只输入一个 `token`。
 
 `forward` 函数的参数作用解释如下:
-- input_ids: 输入的 prompts token 序列。
-- position_ids: prompts 对应的位置编码。
-- atten_info: token_attention 优化定义的相关信息结构体（包含 kv_buffer b_start_loc、b_req_tokens_table、b_req_idx 等信息）。
-- image_tensor: 输入图像经过预处理后的张量，维度通常为 [B, 3, H, W]。
+- `input_ids`: 输入的 prompts token 序列。
+- `position_ids`: prompts 对应的位置编码。
+- `atten_info`: token_attention 优化定义的相关信息结构体（包含 kv_buffer b_start_loc、b_req_tokens_table、b_req_idx 等信息）。
+- `image_tensor`: 输入图像经过预处理后的张量，维度通常为 [B, 3, H, W]。
 
 `forward` 函数是 `LLaVA` 模型的推理流程实现，主要分为以下几个步骤：
 
@@ -579,7 +579,7 @@ max_len = Seq_len + num_images.max()*(num_patches-1)
 - 原理：每个 image token 会在最终序列中占 `num_patches` 个位置；每个文本 token 只占 1 个位置。
 - 结果：max_len=6
 
-3, 统计每个样本（batch 中每条序列）里出现了多少个“图像占位符” `token`。
+统计每个样本（batch 中每条序列）里出现了多少个“图像占位符” `token`。
 
 ```python
 input_ids = tensor([
