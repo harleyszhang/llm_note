@@ -302,8 +302,8 @@ def vision_encode(self, image_tensor):
 
 `get_multi_modal_input_embeddings` 函数作用是，实现文本和视觉嵌入特征的合并，函数输入有两个参数，其实现流程可以总结如下:
 
-1. **获取文本的嵌入向量**：使用语言模型的嵌入层（`nn.Embedding`）将 `input_ids` 映射到固定尺寸的连续稠密向量（`embedding vectors`）。
-2. **合并文本 `embedding` 向量和视觉 `embedding` 向量**：这个过程很复杂，通过抽象出一个专门的函数 `merge_input_ids_with_image_features` 将文本嵌入和图像特征合并。
+1. **获取文本的嵌入向量**：使用语言模型的嵌入层（`nn.Embedding`）将离散的 `input_ids` 映射到连续稠密向量（`embedding vectors`）。
+2. **合并文本 `embedding` 向量和视觉 `embedding` 向量**：通过抽象出一个专门的函数 `merge_input_ids_with_image_features` 将文本嵌入和图像特征合并（下章讲函数细节）。
 
 ```python
 def get_multi_modal_input_embeddings(
