@@ -78,7 +78,7 @@
 
 ### 3.1 DeepseekV2MLP 实现
 
-专家其实就是参数量更少的 FFN/MLP 结构，和 llama 中结构一样，只是参数量和计算量更少了，DeepseekV2MLP 代码如下所示。
+专家其实就是参数量更少的 `FFN/MLP` 结构，和 `llama` 中结构一样，只是参数量和计算量更少了，DeepseekV2MLP 代码如下所示。
 
 ```python
 class DeepseekV2MLP(nn.Module):
