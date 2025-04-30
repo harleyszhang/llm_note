@@ -25,7 +25,7 @@ categories: Transformer
 
 ## 一 背景知识
 
-VILA 是 NVIDIA 和 MIT 的研究人员推出的**视觉语言模型**(`VLM`, 也叫多模态模型)，模型架构如下图图左所示：
+`VILA` 是 `NVIDIA` 和 `MIT` 的研究人员推出的**视觉语言模型**(`VLM`, 也叫多模态模型)，模型架构如下图图左所示：
 
 <div align="center">
 <img src="../images/llava_model/VILA_infer_train.jpg" width="80%" alt="VILA_infer_train">
