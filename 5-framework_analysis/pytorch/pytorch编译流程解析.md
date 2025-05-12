@@ -6,8 +6,8 @@
 在 `setup.py` 中，最主要的是调用 `setuptools.setup()` 函数，它是 Python 中 setuptools 模块的核心，**用于定义 Python 包的元数据、依赖关系和构建流程**。pytorch/setup.py 在 `main()` 函数中调用了 `setup()` 函数。
 
 `setup` 的函数参数有很多个，主要分为以下类型：
-1. **基础参数**：定义包元数据：包名称 name、版本号 version、简要描述 description、作者 author、项目主页 url、子包 packages、依赖的第三方库 install_requires、长描述 long_description 等。
-2. **扩展模块参数** `ext_modules`：编译 C++/CUDA 代码。
+1. **基础参数**：定义包元数据：包名称 `name`、版本号 `version`、简要描述 description、作者 author、项目主页 url、子包 packages、依赖的第三方库 install_requires、长描述 long_description 等。
+2. **扩展模块参数** `ext_modules`：编译 `C++/CUDA` 代码。
 3. **自定义构建流程** `cmdclass`：覆盖默认命令。
 
 这里对其进行了注释如下所示：
@@ -313,7 +313,7 @@ if __name__ == "__main__":
 
 ## 2. configure_extension_build 函数流程
 
-configure_extension_build 函数用于配置并生成构建和安装 PyTorch C/C++ 扩展模块所需要的关键参数：
+`configure_extension_build` 函数用于配置并生成构建和安装 PyTorch C/C++ 扩展模块所需要的关键参数：
 - `ext_modules`：列表，用于定义 C/C++ 扩展模块，以便在安装时通过 setuptools 构建和编译这些模块。
 - `cmdclass`: 字典，自定义命令，用于在安装过程中执行一些额外的操作（例如：编译其他资源、运行脚本等）。
 - `packages`: 列表，用于指定要包含在安装包中的 Python 包,每个元素是一个包的名称或包路径。
