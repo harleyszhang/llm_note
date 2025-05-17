@@ -48,7 +48,7 @@ def block_matrix_multiply(A, B, block_size_m, block_size_n, block_size_k):
 
 if __name__ == "__main__":
     # 示例矩阵
-    M, K, N = 9, 12, 16  # A 是 MxK 矩阵，B 是 KxN 矩阵
+    M, K, N = 9, 12, 15  # A 是 MxK 矩阵，B 是 KxN 矩阵
     A = np.random.rand(M, K).astype(np.float32)  # 生成随机矩阵 A
     B = np.random.rand(K, N).astype(np.float32)  # 生成随机矩阵 B
     
