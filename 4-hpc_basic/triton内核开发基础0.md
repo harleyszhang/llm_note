@@ -260,7 +260,7 @@ for m in range(0, M, BLOCK_SIZE_M):
 ```python
 # 1，行块和列块 id，即第几个块
 pid_m = tl.program_id(axis=0) # 这里的 pid_m 就是上面的 m 变量
-pid_n = tl.program_id(axis=0)
+pid_n = tl.program_id(axis=1)
 # 2，行和列索引范围
 # pid_m * BLOCK_SIZE_M 是块在行方向的起始行索引，加上 tl.arange(0, BLOCK_SIZE_M)[:, None] 生成的行偏移量。
 offsets_m = pid_m + tl.arange(0, BLOCK_SIZE_M)[:, None]
@@ -278,29 +278,29 @@ for k in range(0, K, BLOCK_SIZE_K):
 
     a_block = tl.load(a_idx, mask=(offsets_m < M) & (offsets_ak < K), other=0.0)
     b_block = tl.load(b_idx, mask=(offsets_bk < K) & (offsets_n < N), other=0.0)
-    acc = tl.dot(a, b, acc=acc)
+    acc = tl.dot(a_block, b_lock, acc=acc)
 
 # offs_m * N：跳过前 offs_m 行，每行有 N 个元素。offsets_n：当前块负责的列偏移量。
 c_idx = C_ptr + offsets_m * N + offsets_n
 tl.store(c_ptr + c_idx, acc, mask = (offsets_m < M) & (offsets < N), other=0.0)
 ```
 
-`META['BLOCK_SIZE']` 表示每个块（`block`）的大小，这个值很重要，因为它直接影响到内核的并行性和性能。Pytorch 中行步幅通常等于列数。
+`META['BLOCK_SIZE']` 表示每个块（`block`）的大小，这个值很重要，因为它直接影响到内核的并行性和性能。
 
 ### 网格、块和内核
 
 **不同的 grid 则可以执行不同的程序（即 kernel）**。`grid` 定义了内核（kernel）执行的网格大小，即有多少个块（`blocks`）将被启动来执行一个内核，同时每个块包含 'BLOCK_SIZE' 个线程（`threads`），一个 block 中的 thread 能存取同一块共享的内存。
 
-与 cuda 编程把 thread 当作并行执行的基本单位不同，在 Triton 中，**块 block 才是内核并行执行的基本单位**，每个块负责处理任务的一个子集，通过合理划分块大小，可以充分利用 GPU 的并行计算能力。可以**8通过配置 `grid size` 来决定块的数量**，而块内的每个线程是隐式定义的，不需要像 CUDA 那样手动配置线程布局。在 triton 中 grid 定义 blocks 数量本质上是定义**内核的并行执行范围**。
+与 cuda 编程把 thread 当作并行执行的基本单位不同，在 Triton 中，**块 block 才是内核并行执行的基本单位**，每个块负责处理任务的一个子集，通过合理划分块大小，可以充分利用 GPU 的并行计算能力。可以**通过配置 `grid size` 来决定块的数量**，而块内的每个线程是隐式定义的，不需要像 CUDA 那样手动配置线程布局。在 triton 中 grid 定义 blocks 数量本质上是定义**内核的并行执行范围**。
 
 `triton` 中共享内存的使用方法：
-- 共享内存通过 tl.zeros 和 tl.atomic_add 等操作配合实现。
+- 共享内存通过 `tl.zeros` 和 `tl.atomic_add` 等操作配合实现。
 - 每个 Block 独立分配共享内存，互不干扰。共享内存只在当前块内的所有线程可见，块之间无法共享。
 - 不同 SM 上的共享内存是完全独立的。
 
 ### cuda 执行模型
 
-在执行 CUDA 程序的时候，每个 SP（stream processor） 对应一个 thread，每个 SM（stream multiprocessor）对应一个 Block。
+在执行 `CUDA` 程序的时候，每个 `SP`（stream processor） 对应一个 `thread`，每个 `SM`（stream multiprocessor）对应一个 `Block`。
 
 ### num_warps 概念作用
 
@@ -372,10 +372,10 @@ RESERVED_KWS = ["num_warps", "num_stages", "num_ctas", "enable_fp_fusion", "grid
 
 1. `num_warps`: 用于设置 kernel 中线程束（`warp`）的数量。如果 kernel 的 num_warps = 8，那么 kernel 将会使用 256 个线程并行运行。
 2. `num_stages`：决定编译器为软件流水线循环（software-pipelining loops）分配的阶段数。主要用于在 SM80+ GPU（Ampere 架构）上执行矩阵乘法。（所谓流水线化，指的是允许多个循环的迭代同时进行，即后续迭代在前一个迭代尚未完成时就开始，每个迭代可以部分重叠执行以提高计算性能）
-3. `num_ctas`: 每个 SM（流多处理器）上并发执行的线程块（CTA）数量。
-4. `grid`: 控制 Triton 内核的 Grid 结构，代表 block 数目和维度。
+3. `num_ctas`: 每个 `SM`（流多处理器）上并发执行的线程块（`CTA`）数量。
+4. `grid`: 控制 `Triton` 内核的 `Grid` 结构，代表 `block` 数目和维度。
 5. `enable_fp_fusion`：启用浮点运算融合，将多个浮点操作融合在同一流水线中执行，进一步提升性能，减少多次执行的开销；
-6. `maxnreg`：用于控制每个线程块（Block）所能使用的最大寄存器数量
+6. `maxnreg`：用于控制每个线程块（`Block`）所能使用的最大寄存器数量
 
 ### Pytorch 与 Triton 中的地址计算对比
 
