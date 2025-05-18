@@ -131,7 +131,7 @@ $$
 
 > 注意，这里的 $f_q$ 其实是把 $\text{embedding}\_\text{vector} \times W_q$ 的矩阵乘法过程包含进去了，至于为什么要这样构造，下文会讲。
 
-其中函数 $f_q、f_k、f_v$ 正是我们需要构造的位置编码函数。基于 $q_m$、$k_n$ 和 $v_n$ 计算注意力权重（$softmax(qk^T)$），输出则是对 $v_n$ 的加权求和。
+其中函数 $f_q、f_k、f_v$ 正是我们需要构造的位置编码函数。有了 `query`、`key` 和 `value` 向量表达式，接着就可以利用查询和键的值来计算注意力权重（$softmax(qk^T)$），输出则是对 $v_n$ 的加权求和, 完整的 `self-attention` 公式如下所示:
 
 $$
 a_{m,n} = \frac{\exp\left(\frac{q_m^T k_n}{\sqrt{d}}\right)}{\sum_{j=1}^{N} \exp\left(\frac{q_m^T k_j}{\sqrt{d}}\right)} \\
