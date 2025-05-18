@@ -6,12 +6,14 @@ summary: 旋转位置编码（Rotary Position Embedding，RoPE）是论文 Rofor
 categories: Transformer
 ---
 
-- [一 torch 背景知识](#一-torch-背景知识)
-- [二 RoPE 算法推导](#二-rope-算法推导)
-  - [2.1 位置编码和 Self-Attention 概述](#21-位置编码和-self-attention-概述)
-  - [2.2 2D 的 RoPE 算法](#22-2d-的-rope-算法)
+- [一 背景知识](#一-背景知识)
+  - [1.1 torch 相关函数](#11-torch-相关函数)
+  - [1.2 正弦位置编码 和 Self-Attention](#12-正弦位置编码-和-self-attention)
+- [二 旋转位置编码 RoPE](#二-旋转位置编码-rope)
+  - [2.1 RoPE 算法原理](#21-rope-算法原理)
+  - [2.2 二维位置编码](#22-二维位置编码)
   - [2.3 多维的 RoPE 算法](#23-多维的-rope-算法)
-- [三 RoPE 实现](#三-rope-实现)
+- [三 RoPE 的 pytorch 实现](#三-rope-的-pytorch-实现)
   - [3.1 RoPE 实现流程](#31-rope-实现流程)
   - [3.2 RoPE 实现代码](#32-rope-实现代码)
 - [参考资料](#参考资料)
@@ -30,7 +32,9 @@ RoPE 的核心思想是将**位置编码**与**词向量**通过**旋转矩阵**
 
 > 三角函数、旋转矩阵、欧拉公式、复数等数学背景知识可以参考这篇[文章](./位置编码算法背景知识.md)学习。
 
-## 一 torch 背景知识
+## 一 背景知识
+
+### 1.1 torch 相关函数
 
 1，`torch.outer` 
 
@@ -118,45 +122,50 @@ tensor([1, 1, 1, 3, 3, 3, 4, 4, 4, 5, 5, 5])
 
 **注意重复后元素的顺序**，以简单的一维为例 `x = [a,b,c,d]`，`torch.repeat_interleave(x, 3)` 后，结果是 `[a,a,a,b,b,b,c,c,c,d,d,d]`。
 
-## 二 RoPE 算法推导
+### 1.2 正弦位置编码 和 Self-Attention
 
-### 2.1 位置编码和 Self-Attention 概述
+设 $q$ 表示第 $m$ 个 `token` 对应的词向量, 定义位置编码函数 $f$，输入参数为词向量 $q$ 和绝对位置信息 $m$，则得到 $q_m$:
 
-设 $x_m$ 表示第 $m$ 个 `token` 对应的词向量, $q_m$ 为集成**位置信息** $m$ 之后的 $query$ 向量；$k_n$ 和 $v_n$ 则表示词向量 $x_n$ 集成其位置信息 $n$（第 $n$ 个 `token`）之后的 `key` 和 `value` 向量，$q_m、k_n、v_n$ 的表达用如下公式:
+$$q_m = f(q, m) \tag{1}$$   
 
-$$q_m = f_q(x_m, m)  \tag{1} \\
-k_n = f_k(x_n, n) \\
-v_n = f_v(x_n, n) 
+同理得到 $k$、$v_n$ 公式:
+
+$$k_n = f(k, n) \\
+v_n = f(v, n) 
 $$
 
-> 注意，这里的 $f_q$ 其实是把 $\text{embedding}\_\text{vector} \times W_q$ 的矩阵乘法过程包含进去了，至于为什么要这样构造，下文会讲。
+> 注意，这里的 $f$ 其实是把 $\text{embedding}\_\text{vector} \times W_q$ 的矩阵乘法过程包含进去了。
 
-其中函数 $f_q、f_k、f_v$ 正是我们需要构造的位置编码函数。有了 `query`、`key` 和 `value` 向量表达式，接着就可以利用查询和键的值来计算注意力权重（$softmax(qk^T)$），输出则是对 $v_n$ 的加权求和, 完整的 `self-attention` 公式如下所示:
+其中函数 $f$ 正是我们需要构造的位置编码函数。有了 `query`、`key` 和 `value` 向量表达式，接着就可以利用查询和键的值来计算注意力权重（$softmax(qk^T)$），输出则是对 $v_n$ 的加权求和, 完整的 `self-attention` 公式如下所示:
 
 $$
-a_{m,n} = \frac{\exp\left(\frac{q_m^T k_n}{\sqrt{d}}\right)}{\sum_{j=1}^{N} \exp\left(\frac{q_m^T k_j}{\sqrt{d}}\right)} \\
-o_m = \sum_{n=1}^{N} a_{m,n} v_n \quad (2)$$
+a_{m,n} = \frac{\exp\left(\frac{q_m^T k}{\sqrt{d}}\right)}{\sum_{j=1}^{N} \exp\left(\frac{q_m^T k_j}{\sqrt{d}}\right)} \\
+o_m = \sum_{n=1}^{N} a_{m,n} v_n \tag{2}$$
 
-方程 (1) 的一种常见选择（transformer 论文用的余弦位置编码）是：
+方程 (1) 的一种常见（transformer 论文用的余弦位置编码）公式是：
 
-$$f_t:t∈\{q,k,v\}(x_i, i) := W_{t}(x_i + p_i)，\quad (3)$$
+$$f_t:t∈\{q,k,v\}(x_i, i) := W_{t}(x_i + p_i)，\tag{3}$$
 
 其中，$p_i \in \mathbb{R}^d$  是与 `token` $x_i$ 的位置相关的 $d$ 维向量，Vaswani 等人 [2017] 则提出了通过正弦函数来生成 $p_i$ 的方法，即 Sinusoidal 位置编码：
 
 $$p_{i,2t} = \sin\left(\frac{k}{10000^{2t/d}}\right) \\
-p_{i,2t+1} = \cos\left(\frac{k}{10000^{2t/d}}\right)\quad (4)$$
+p_{i,2t+1} = \cos\left(\frac{k}{10000^{2t/d}}\right) \tag{4}$$
 
-其中， $p_{i,2t}$ 是 $p_i$ 的第 $2t$ 个维度。下一节会描述 `RoPE` 与这种基于正弦函数的直觉之间的关系。但是，**RoPE 并不是直接将位置信息 $p_i$ 和嵌入向量元素 $x_i$ 相加，而是通过与正弦函数相乘的方式引入相对位置信息**。
+其中， $p_{i,2t}$ 是 $p_i$ 的第 $2t$ 个维度。
 
-### 2.2 2D 的 RoPE 算法
+## 二 旋转位置编码 RoPE
 
-[RoPE 论文](https://arxiv.org/pdf/2104.09864)提出为了能**利用 token 之间的相对位置信息（$m-n$）**，假定 query 向量 $q_m$ 和 key 向量 $k_n$ 之间的内积操作可以被一个函数 $g$ 表示，该函数 $g$ 的输入是词嵌入向量 $x_m$、$x_n$ 以及它们之间的相对位置 $m - n$，公式表达如下所示：
+### 2.1 RoPE 算法原理
 
-$$\langle f_q(x_m, m), f_k(x_n, n) \rangle = g(x_m, x_n, m - n) \quad (5)$$
+虽然 Sinusoidal 位置编码缓解了无法准确感知两个词向量相对位置的问题，但是还不够吗，于是 [RoPE 论文](https://arxiv.org/pdf/2104.09864)提出为了能**利用 token 之间的相对位置信息（$m-n$）**，希望 $q_m$ 和 $k$ 之间的内积，即 $f(q, m) \cdot f(k, n)$ 中能够带有相对位置信息 $m-n$。那么问题来了， $f(q, m) \cdot f(k, n)$ 的计算如何才算带有相对位置信息，论文提出只需将其能够表示成一个关于 $q$、$k$ 以及它们之间的相对位置 $m - n$ 的函数 g(q, k, m - n) 即可，公式表达如下所示：
+ 
+$$\langle f_q(q, m), f_k(k, n) \rangle = g(q, k, m - n) \quad (5)$$
 
-> 注意，这里只有 $f_q(x_m, m)$, $f_k(x_n, n)$ 是需要求解的函数，$\langle  \rangle$ 表示内积操作，而对于 $g$，我们要求是表达式中有 $x_m, x_n, (m-n)$，也可以说是 **$q_m, k_n$ 的内积会受相对位置 $m-n$ 影响**。
+> 注意，这里只有 $f_q(q, m)$, $f_k(k, n)$ 是需要求解的函数，$\langle  \rangle$ 表示内积操作，而对于 $g$，我们要求是表达式中有 $q, k, (m-n)$，也可以说是 **$q_m, k$ 的内积会受相对位置 $m-n$ 影响**。
 
 接下来的目标就是**找到一个等价的位置编码方式 $f$，从而使得上述关系成立**，函数 $f_q$ 包含了位置编码和 $W_q \times q$（嵌入向量转换为 $q$ 向量）过程。
+
+### 2.2 二维位置编码
 
 假设现在词嵌入向量的维度是两维 $d=2$，这样就可以利用上 $2$ 维度平面上的向量的几何性质，然后论文中提出了一个满足上述关系的 $f$ 和 $g$ 的形式如下:
 
@@ -164,13 +173,13 @@ $$
 f_q(x_m, m) = (W_q x_m) e^{im\theta} \\
 f_k(x_n, n) = (W_k x_n) e^{in\theta} \\
 g(x_m, x_n, m - n) = Re \left[ (W_q x_m)(W_k x_n)^* e^{i(m-n)\theta} \right] \quad (6)$$
-> 其中 \( Re \) 表示复数的实部，\( (W_k x_n)^* \) 表示 \( (W_k x_n) \) 的共轭复数。
+> 其中 \( Re \) 表示复数的实部，\( (W_k k)^* \) 表示 \( (W_k k) \) 的共轭复数, $x_m$ 表示第 $m$ 个 token 向量。
 
 $f_q、f_k$ 的推导需要基于三角函数定理、欧拉公式等，推导过程参考[这里](https://zhuanlan.zhihu.com/p/642884818)，本文直接给出结论：
 
-1，**$f_q(x_m, m)$ 其实等于 `query` 向量乘以了一个旋转矩阵**，即:
+1，**$f_q(q, m)$ 其实等于 `query` 向量乘以了一个旋转矩阵**，即:
 
-$$f_q(x_m, m) = \begin{pmatrix} 
+$$f_q(q, m) = \begin{pmatrix} 
 \cos(m\theta) & -\sin(m\theta) \\
 \sin(m\theta) & \cos(m\theta)
 \end{pmatrix}
@@ -179,23 +188,23 @@ q_m^{(1)} \\
 q_m^{(2)} 
 \end{pmatrix} \quad (7)$$
 
-2，**$f_k(x_n, n)$ 其实等于 `key` 向量乘以了一个旋转矩阵**，即:
+2，**$f_k(k, n)$ 其实等于 `key` 向量乘以了一个旋转矩阵**，即:
 
-$$f_k(x_n, n) = \begin{pmatrix} 
+$$f_k(k, n) = \begin{pmatrix} 
 \cos(n\theta) & -\sin(n\theta) \\
 \sin(n\theta) & \cos(n\theta)
 \end{pmatrix}
 \begin{pmatrix} 
-k_n^{(1)} \\
-k_n^{(2)} 
+k^{(1)} \\
+k^{(2)} 
 \end{pmatrix} \quad (8)$$
 
-3，同样可得 $g(x_m, x_n, m - n)$ 等于 $q_m^T$ 乘以旋转矩阵再乘以 $k_n$，即:
+3，同样可得 $g(q, k, m - n)$ 等于 $q_m^T$ 乘以旋转矩阵再乘以 $k$，即:
 
-$$\langle f_q(x_m, m), f_k(x_n, n) \rangle  = \mathbf{q}_m^T R(m - n) \mathbf{k}_n \quad (9)$$
+$$\langle f_q(q, m), f_k(k, n) \rangle  = \mathbf{q}_m^T R(m - n) \mathbf{k}_n \quad (9)$$
 
 $$\begin{aligned}
-g(x_m, x_n, m - n) &= (q_m^{(1)} k_n^{(1)} + q_m^{(2)} k_n^{(2)}) \cos((m - n)\theta) - (q_m^{(2)} k_n^{(1)} - q_m^{(1)} k_n^{(2)}) \sin((m - n)\theta) \\
+g(q, k, m - n) &= (q_m^{(1)} k^{(1)} + q_m^{(2)} k^{(2)}) \cos((m - n)\theta) - (q_m^{(2)} k^{(1)} - q_m^{(1)} k^{(2)}) \sin((m - n)\theta) \\
 &= \begin{pmatrix}
 q_m^{(1)} & q_m^{(2)}
 \end{pmatrix}
@@ -204,13 +213,13 @@ q_m^{(1)} & q_m^{(2)}
 \sin((m - n)\theta) & \cos((m - n)\theta)
 \end{pmatrix}
 \begin{pmatrix}
-k_n^{(1)} \\
-k_n^{(2)}
+k^{(1)} \\
+k^{(2)}
 \end{pmatrix} \\
  &= \mathbf{q}_m^T R(m - n) \mathbf{k}_n
 \end{aligned} \quad(10)$$
 
-公式（9）的证明可通过旋转矩阵性质得到，先将公式 (9) 抽象成 $\langle R_a X, R_b Y \rangle = \langle X, R_{b-a} Y \rangle$（$R$ 表示旋转矩阵，$X、Y$ 表示向量）, 该等式的证明过程如下：
+公式（9）的证明也可通过旋转矩阵性质得到，先将公式 (9) 抽象成 $\langle R_a X, R_b Y \rangle = \langle X, R_{b-a} Y \rangle$（$R$ 表示旋转矩阵，$X、Y$ 表示向量）, 该等式的证明过程如下：
 
 
 $$\begin{aligned}
@@ -222,11 +231,13 @@ $$\begin{aligned}
 
 上述推导过程分别应用了：展开内积、矩阵乘法的结合律、旋转矩阵性质1、旋转矩阵性质2。
 
+总结：和正弦位置编码不同，**RoPE 并不是直接将位置信息 $p_i$ 和嵌入向量元素 $x_i$ 相加，而是通过与正弦函数相乘的方式引入相对位置信息**。
+
 ### 2.3 多维的 RoPE 算法
 
 前面的公式推导，是假设的词嵌入维度是 2 维向量，将二维推广到任意维度，$f_{\{q,k\}}$ 可以表示如下：
 
-$$f_{\{q,k\}}(x_m, m) = R_{\Theta, m}^d W_{\{q,k\}} x_m \tag{12}$$
+$$f_{\{q,k\}}(q, m) = R_{\Theta, m}^d W_{\{q,k\}} q \tag{12}$$
 
 其中，$R_{\Theta, m}^d$ 为 $d$ 维度的旋转矩阵，表示为：
 
@@ -241,7 +252,7 @@ $$R_{\Theta, m}^d =
 0 & 0 & 0 & 0 & \cdots & \sin m\theta_{d/2-1} & \cos m\theta_{d/2-1}
 \end{pmatrix} \tag{13}$$
 
-$R_{\Theta, m}^d$ 的形状是 `[sqe_len, dim//2]`。$可以看出，对于 $d >= 2$ 的通用情况，则是将词嵌入向量元素按照两两一组分组，每组应用同样的旋转操作且每组的旋转角度计算方式如下：
+$R_{\Theta, m}^d$ 的形状是 `[sqe_len, dim//2]`。可以看出，对于 $d >= 2$ 的通用情况，则是将词嵌入向量元素按照两两一组分组，每组应用同样的旋转操作且每组的旋转角度计算方式如下：
 
 $$
 \Theta = \left\{ \theta_i = 10000^{-2(i-1)/d}, i \in [1, 2, \dots, d/2] \right\}
@@ -249,7 +260,7 @@ $$
 
 将 RoPE 应用到前面公式（2）的 Self-Attention 计算，可以得到包含相对位置信息的Self-Attetion：
 
-$$q_m^T k_n = \left( R_{\Theta, m}^d W_q x_m \right)^T \left( R_{\Theta, n}^d W_k x_n \right) = x_m^T W_q R_{\Theta, n-m}^d W_k x_n \tag{14}$$
+$$q_m^T k = \left( R_{\Theta, m}^d W_q q \right)^T \left( R_{\Theta, n}^d W_k k \right) = q^T W_q R_{\Theta, n-m}^d W_k k \tag{14}$$
 
 其中，
 $$R_{\Theta, n-m}^d = \left( R_{\Theta, m}^d \right)^T R_{\Theta, n}^d$$
@@ -260,11 +271,11 @@ Rotary Position Embedding(RoPE) 实现的可视化如下图所示:
 
 最后总结**结合 RoPE 的 self-attention 操作的流程**如下：
 1. 首先，对于 `token` 序列中的每个词嵌入向量，都计算其对应的 query 和 key 向量;
-2. 然后在得到 query 和 key 向量的基础上，应用前面 $f_q(x_m, m)$ 和 $f_k(x_n, n)$ 的计算公式（7）和（8）对每个 `token` 位置都计算对应的旋转位置编码；
+2. 然后在得到 query 和 key 向量的基础上，应用前面 $f_q(q, m)$ 和 $f_k(k, n)$ 的计算公式（7）和（8）对每个 `token` 位置都计算对应的旋转位置编码；
 3. 接着对每个 `token` 位置的 query 和 key 向量的元素按照**两两一组**应用旋转变换；
 4. 最后再计算 `query` 和 `key` 之间的内积得到 self-attention 的计算结果。
 
-## 三 RoPE 实现
+## 三 RoPE 的 pytorch 实现
 
 ### 3.1 RoPE 实现流程
 
@@ -274,7 +285,7 @@ Rotary Position Embedding(RoPE) 实现的可视化如下图所示:
 <img src="../images/rope/rotation_matrix.png" width="60%" alt="2d_rotation_matrix_derivtion">
 </div>
 
-但是 Llama 模型的嵌入维度高达 4096，比二维复杂得多，如何在更高维度的嵌入上应用旋转操作呢？通过 RoPE 算法原理我们知道，**嵌入向量的旋转实际是将每个嵌入向量元素位置 $m$的值与**每一对**嵌入维度对应的 $\theta$ 相乘**，过程如下图所示：
+但是 Llama 模型的嵌入维度高达 4096，比二维复杂得多，如何在更高维度的嵌入上应用旋转操作呢？通过 RoPE 算法原理我们知道，**嵌入向量的旋转实际是将每个嵌入向量元素位置 $m$ 的值与每一对嵌入维度对应的 $\theta$ 相乘**，过程如下图所示：
 > RoPE 通过实现旋转矩阵，**是既捕获绝对位置信息，又结合相对位置信息的方式**（论文公式有更详细体现）。
 
 <div align="center">
@@ -291,9 +302,9 @@ $$
 
 ### 3.2 RoPE 实现代码
 
-通过仔细阅读和一步步分析了 `llama` 官方代码后，会发现作者直接转化为**复数相乘**形式来计算 $f_q(x_m, m) = (W_q x_m) e^{im\theta}$，旋转矩阵定义和各种变换完全没用上（有种前面推导了个寂寞的感觉），但是没办法，虽然直接使用旋转矩阵，更符合线性代数的常规思路，但是这需要手动处理每个维度的旋转矩阵，代码稍微繁琐而且计算效率不如复数乘法高效。
+通过仔细阅读和一步步分析了 `llama` 官方代码后，会发现作者直接转化为**复数相乘**形式来计算 $f_q(q, m) = (W_q q) e^{im\theta}$，旋转矩阵定义和各种变换完全没用上（有种前面推导了个寂寞的感觉），但是没办法，虽然直接使用旋转矩阵，更符合线性代数的常规思路，但是这需要手动处理每个维度的旋转矩阵，代码稍微繁琐而且计算效率不如复数乘法高效。
 
-所以，作者在 `RoPE` 算法实现中，没有使用矩阵相乘的形式，而是把旋转角度张量和 $W_qx_mk$ 转为复数形式再相乘，即直接实现公式（6）中的 $f_q(W_q x_m) e^{im\theta}$，因此 **`RoPE` 算法实现的流程和代码理解的难点**如下：
+所以，作者在 `RoPE` 算法实现中，没有使用矩阵相乘的形式，而是把旋转角度张量和 $W_qqk$ 转为复数形式再相乘，即直接实现公式（6）中的 $f_q(W_q q) e^{im\theta}$，因此 **`RoPE` 算法实现的流程和代码理解的难点**如下：
 
 1. 如何生成旋转角度 $\theta$ 向量, $\Theta = \{ \theta_i = 10000^{-2(i-1)/d}, i \in \left [1, 2, \dots, d/2 \right ] \}$;
 2. 如何将旋转角度和 `token` 位置索引相乘，并构造一个矩阵，该矩阵包含了每个位置和每个维度对应的旋转角度。
@@ -380,3 +391,4 @@ test_attention passed.
 - [RoFormer: Enhanced Transformer with Rotary Position Embedding](https://arxiv.org/abs/2104.09864)
 - [十分钟读懂旋转编码（RoPE）](https://zhuanlan.zhihu.com/p/647109286)
 - [一文看懂 LLaMA 中的旋转式位置编码（Rotary Position Embedding）](https://zhuanlan.zhihu.com/p/642884818)
+- [图解RoPE旋转位置编码及其特性](https://mp.weixin.qq.com/s/-1xVXjoM0imXMC7DKqo-Gw)
