@@ -8,7 +8,7 @@ categories: Transformer
 
 - [一 torch 背景知识](#一-torch-背景知识)
 - [二 RoPE 算法推导](#二-rope-算法推导)
-  - [2.1 PE 和 Self-Attention 概述](#21-pe-和-self-attention-概述)
+  - [2.1 位置编码和 Self-Attention 概述](#21-位置编码和-self-attention-概述)
   - [2.2 2D 的 RoPE 算法](#22-2d-的-rope-算法)
   - [2.3 多维的 RoPE 算法](#23-多维的-rope-算法)
 - [三 RoPE 实现](#三-rope-实现)
@@ -120,7 +120,7 @@ tensor([1, 1, 1, 3, 3, 3, 4, 4, 4, 5, 5, 5])
 
 ## 二 RoPE 算法推导
 
-### 2.1 PE 和 Self-Attention 概述
+### 2.1 位置编码和 Self-Attention 概述
 
 设 $x_m$ 表示第 $m$ 个 `token` 对应的词向量, $q_m$ 为集成**位置信息** $m$ 之后的 $query$ 向量；$k_n$ 和 $v_n$ 则表示词向量 $x_n$ 集成其位置信息 $n$（第 $n$ 个 `token`）之后的 `key` 和 `value` 向量，$q_m、k_n、v_n$ 的表达用如下公式:
 
@@ -131,23 +131,22 @@ $$
 
 > 注意，这里的 $f_q$ 其实是把 $\text{embedding}\_\text{vector} \times W_q$ 的矩阵乘法过程包含进去了，至于为什么要这样构造，下文会讲。
 
-其中函数 $f_q、f_k、f_v$ 正是我们需要构造的位置编码函数。有了 query、key 和 value 向量表达式，接着就可以利用查询和键的值来计算注意力权重（$softmax(qk^T)$），输出则是对 $v_n$ 的加权求和。
+其中函数 $f_q、f_k、f_v$ 正是我们需要构造的位置编码函数。基于 $q_m$、$k_n$ 和 $v_n$ 计算注意力权重（$softmax(qk^T)$），输出则是对 $v_n$ 的加权求和。
 
 $$
 a_{m,n} = \frac{\exp\left(\frac{q_m^T k_n}{\sqrt{d}}\right)}{\sum_{j=1}^{N} \exp\left(\frac{q_m^T k_j}{\sqrt{d}}\right)} \\
 o_m = \sum_{n=1}^{N} a_{m,n} v_n \quad (2)$$
 
-方程 (1) 的一种常见选择是：
-
+方程 (1) 的一种常见选择（transformer 论文用的余弦位置编码）是：
 
 $$f_t:t∈\{q,k,v\}(x_i, i) := W_{t}(x_i + p_i)，\quad (3)$$
 
-其中，$p_i \in \mathbb{R}^d$  是与 `token` $x_i$  的位置相关的 $d$ 维向量。Devlin 等人 [2019]、Lan 等人 [2020]、Clark 等人 [2020]、Radford 等人 [2019]、Radford 和 Narasimhan [2018] 使用了一组可训练向量  $p_i \in \{p_t\}_{t=1}^L$ ，其中 $L$ 表示最大序列长度。Vaswani 等人 [2017] 则提出了通过正弦函数来生成 $p_i$ 的方法:
+其中，$p_i \in \mathbb{R}^d$  是与 `token` $x_i$ 的位置相关的 $d$ 维向量，Vaswani 等人 [2017] 则提出了通过正弦函数来生成 $p_i$ 的方法，即 Sinusoidal 位置编码：
 
 $$p_{i,2t} = \sin\left(\frac{k}{10000^{2t/d}}\right) \\
 p_{i,2t+1} = \cos\left(\frac{k}{10000^{2t/d}}\right)\quad (4)$$
 
-其中， $p_{i,2t}$ 是 $p_i$ 的第 $2t$ 个维度。下一节会描述 RoPE 与这种基于正弦函数的直觉之间的关系。但是，**RoPE 并不是直接将位置信息 $p_i$ 和嵌入向量元素 $x_i$ 相加，而是通过与正弦函数相乘的方式引入相对位置信息**。
+其中， $p_{i,2t}$ 是 $p_i$ 的第 $2t$ 个维度。下一节会描述 `RoPE` 与这种基于正弦函数的直觉之间的关系。但是，**RoPE 并不是直接将位置信息 $p_i$ 和嵌入向量元素 $x_i$ 相加，而是通过与正弦函数相乘的方式引入相对位置信息**。
 
 ### 2.2 2D 的 RoPE 算法
 
