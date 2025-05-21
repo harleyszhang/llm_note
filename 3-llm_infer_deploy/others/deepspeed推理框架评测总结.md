@@ -20,7 +20,7 @@ DS 是 deepspeed 框架的缩写，本文分别评测了 DeepSpeed、transformer
 1. **实验设计**：固定输出 tokens 数和 tp 数，基于张量并行加速下，设置不同输入 tokens 数和 batch_size，分析 Latency 变化。
 2. **实验结论**：输入长度在 batch_size 较小时基本不会影响 latency，超过某个阈值时，输入长度就会显著影响 latency。且随着 GPU 数目的增加，输入长度对 Latency 产生影响的 batch_size 阈值也随着增加。
 3. **13b 模型实验图表**：
-    - 固定 num_gpus=1, output_ids_len=20。当 batch_size<8 时，输入长度几乎不影响 latency；当 batch_size>=8 后继续增加，输入长度对 latency 的影响越来越显著
+    - 固定 `num_gpus=1`, `output_ids_len=20`。当 batch_size<8 时，输入长度几乎不影响 latency；当 batch_size>=8 后继续增加，输入长度对 latency 的影响越来越显著
 
 <div align="center">
 <img src="../../images/llm_infer_summary/ds_experiment1.png" width="60%" alt="ds_experiment1">
