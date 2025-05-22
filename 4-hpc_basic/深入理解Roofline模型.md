@@ -19,7 +19,7 @@ categories: Transformer
 ## 一 Roofline 性能分析模型
 ### 1.1 Roofline 模型原理
 
-为了做性能分析，Roofline 模型论文引入了“操作强度”（operational intensity）这个概念，表示每字节 `DRAM/HBM` 数据传输（traffic）所对应的操作次数（每字节 flops），这里的字节数是指那些经过缓存层过滤后进入主内存 `DRAM/HBM` 的字节，即我们关注的是缓存与内存之间的数据传输，而不是处理器与缓存之间的数据传输（traffic）。因此，操作强度反映了在特定计算机上某个计算核所需的 DRAM 带宽。公式定义如下：
+为了做性能分析，`Roofline` 模型论文引入了“操作强度”（operational intensity）这个概念，表示每字节 `DRAM/HBM` 数据传输（traffic）所对应的操作次数（每字节 flops），这里的字节数是指那些经过缓存层过滤后进入主内存 `DRAM/HBM` 的字节，即我们关注的是缓存与内存之间的数据传输，而不是处理器与缓存之间的数据传输（traffic）。因此，操作强度反映了在特定计算机上某个计算核所需的 DRAM 带宽。公式定义如下：
 
 $$\text{OI} = \frac{\text{总浮点操作数（FLOPs）}}{\text{总内存访问量（Bytes）}}$$
 
@@ -73,7 +73,7 @@ $P_{max}$: 浮点操作性能上限 [操作数/秒]
 | A100-SXM | 40 GB / 80 GB | 6912        | 312 TFLOPS                    | 19.5 TFLOPS       | 2039 GB/s    | 153 TOPS (FP16)       |
 | H100-SXM | 80 GB         | 8192        | 989 TFLOPS(不开启稀疏计算)    | 60 TFLOPS         | 3350 GB/s    | 295 TOPS (FP16)       |
 
-在 A100 GPU 中，ops:byte ratio 是 208，这意味着：
+在 `A100 GPU` 中，`ops:byte ratio` 是 `208`，这意味着：
 - **每访问 1 字节内存时，GPU 可以完成 208 次浮点运算**。
 - 如果我们计算的 OI（FLOPs/byte）低于 208，程序性能会受到内存带宽的限制。
 
