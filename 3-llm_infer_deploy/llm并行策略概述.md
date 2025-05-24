@@ -36,8 +36,8 @@
 
 其应用场景有：
 
-- ReduceScatter即可应用于数据并行也可应用于模型并行；
-- 数据并行 allReduce 里的 ReduceScatter+ Allgather 组合里的 ReduceScatter 操作；
+- `ReduceScatter` 即可应用于数据并行也可应用于模型并行；
+- 数据并行 `all-Reduce` 里的 `ReduceScatter + Allgather` 组合里的 `ReduceScatter` 操作；
 - 模型并行里在前向 allgather 后的反向计算里的 ReduceScatter；
 
 9，**AllReduce** 属于多对多的通信原语，具有多个数据发送者，多个数据接收者，其在集群内的所有节点上都执行相同的 Reduce 操作，可以将集群内所有节点的数据**规约运算**得到的结果发送到所有的节点上。AllReduce 操作可通过在主节点上执行 Reduce + Broadcast 或 ReduceScatter + AllGather 实现。
