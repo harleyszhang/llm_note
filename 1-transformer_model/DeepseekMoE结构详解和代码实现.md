@@ -11,7 +11,7 @@
 
 `Mixtral 8x7B` (announcement, model card) 是高质量的混合专家模型 (Mixed Expert Models，简称 `MoEs`) 的 Transformer 模型，或者说是一种稀疏的 mixture-of-experts 模型，采用纯解码器结构，并使用 `MOE` 结构，替换原始的 `FFN` 结构。在每一层，对每个 `token`，存在一个 `router network` 会挑选两组 “experts”(即参数量更小的 FFN）来分别处理该 token，并通过**加法方式**融合两组 “experts” 的输出。
 
-基础版的（稀疏）MOE 结构图如下图所示:
+基础版的（稀疏）`MOE` 结构图如下图所示:
 
 ![basic_moe](../images/moe/basic_moe.png)
 
@@ -23,10 +23,10 @@
 
 和基础 `MOE` 结构的区别是：
 1. **更精细地划分专家网络**，提升每个专家的专业性，提高知识表达的准确度。
-2. **引入部分共享专家**，减少不同专家间的知识冗余，提升计算效率；所有 tokens 都会经过的共享专家，每个 token 会用计算的 Router 权重，来选择 topK 个专家，然后和共享的专家的输出一起加权求和。
+2. **引入部分共享专家**，减少不同专家间的知识冗余，提升计算效率；所有 `tokens` 都会经过的共享专家，每个 `token` 会用计算的 Router 权重，来选择 topK 个专家，然后和共享的专家的输出一起加权求和。
 
 `DeepseekMOE` 其实是有两类专家的：
-- 共享专家（Shared Expert）：1 个共享专家，用于捕捉**通用**、全局的特征信息。
+- 共享专家（Shared Expert）：$1$ 个共享专家，用于捕捉**通用**、全局的特征信息。
 - 路由专家（Routed Experts）：每个 MoE 层都包含 256 个路由专家，负责精细化处理输入 tokens 的专业特征。
 
 ### 2.1 Gate 网络与 DeepseekMOE 计算流程
