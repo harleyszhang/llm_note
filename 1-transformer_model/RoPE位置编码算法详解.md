@@ -45,7 +45,7 @@ $$\text{result}[i, j] = a[i] \times b[j]$$
 
 即，矩阵的第 $i$ 行、第 $j$ 列的元素等于向量 a 的第 $i$ 个元素与向量 b 的第 $j$ 个元素的乘积。
 
-外积（outer product）是指两个向量  a  和  b  通过外积操作生成的矩阵：
+外积（outer product）是指两个向量 $a$ 和 $b$ 通过外积操作生成的矩阵：
 
 $$\mathbf{A} = a \otimes b$$
 
