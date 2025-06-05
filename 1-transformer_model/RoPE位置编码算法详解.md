@@ -20,7 +20,7 @@ categories: Transformer
 
 旋转位置编码（Rotary Position Embedding，`RoPE`）是论文 Roformer: Enhanced Transformer With Rotray Position Embedding 提出的一种能够**将相对位置信息集成到 self-attention 中**，用以提升 transformer 架构性能的位置编码方式。
 
-和 Sinusoidal 位置编码相比，RoPE 具有更好的外推性，目前是大模型相对位置编码中应用最广的方式之一。这里的外推性实质是一个**训练和预测的文本长度不一致的问题**。具体来说，不一致的地方有两点：
+和 `Sinusoidal` 位置编码相比，`RoPE` 具有更好的外推性，目前是大模型相对位置编码中应用最广的方式之一。这里的外推性实质是一个**训练和预测的文本长度不一致的问题**。具体来说，不一致的地方有两点：
 1. 预测的时候用到了没训练过的位置编码（不管绝对还是相对）；
 2. 预测的时候注意力机制所处理的 token 数量远超训练时的数量。
 
