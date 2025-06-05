@@ -21,7 +21,7 @@
 
 ### 1.1，TGI 框架特点
 
-Text-Generation-Inferenc（简称 TGI）框架特点：
+Text-Generation-Inferenc（简称 `TGI`）框架特点：
 
 - 由 huggingface (大模型时代的 github)官方出品；
 - 服务调度层由 rust 编写(高性能)，模型推理层由 python 编写(调用 transformers 库，兼容性强)；
