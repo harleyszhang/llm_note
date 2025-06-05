@@ -17,7 +17,7 @@ def _context_forward(self, input_ids, infer_state: InferStateInfo):
         return predict_logics
 ```
 
-Lightllm 框架定义的模型结构，主要分为三种 layer，每种 layer 都会定义加载权重函数 `load_hf_weights`。
+`Lightllm` 框架定义的模型结构，主要分为三种 `layer`，每种 `layer` 都会定义加载权重函数 `load_hf_weights`。
 
 - LlamaPostLayerInfer，继承 PostLayerInferTpl。
 - LlamaPreLayerInfer，继承 PreLayerInferTpl。
