@@ -23,22 +23,22 @@ DS 是 deepspeed 框架的缩写，本文分别评测了 DeepSpeed、transformer
     - 固定 `num_gpus=1`, `output_ids_len=20`。当 batch_size<8 时，输入长度几乎不影响 latency；当 batch_size>=8 后继续增加，输入长度对 latency 的影响越来越显著
 
 <div align="center">
-<img src="../../images/llm_infer_summary/ds_experiment1.png" width="60%" alt="ds_experiment1">
+<img src="../images/llm_infer_summary/ds_experiment1.png" width="60%" alt="ds_experiment1">
 </div>
 <div align="center">
-<img src="../../images/llm_infer_summary/ds_experiment2.png" width="60%" alt="ds_experiment2">
+<img src="../images/llm_infer_summary/ds_experiment2.png" width="60%" alt="ds_experiment2">
 </div>
 <div align="center">
-<img src="../../images/llm_infer_summary/ds_experiment3.png" width="60%" alt="ds_experiment3">
+<img src="../images/llm_infer_summary/ds_experiment3.png" width="60%" alt="ds_experiment3">
 </div>
 <div align="center">
-<img src="../../images/llm_infer_summary/ds_experiment4.png" width="60%" alt="ds_experiment4">
+<img src="../images/llm_infer_summary/ds_experiment4.png" width="60%" alt="ds_experiment4">
 </div>
 
 4. **65b 模型实验图表**：实验图表分析后可知 llama-65b 模型实验结果和13b 模型一致。
 
 <div align="center">
-<img src="../../images/llm_infer_summary/ds_llama65b_experiment1.png" width="60%" alt="ds_llama65b_experiment1">
+<img src="../images/llm_infer_summary/ds_llama65b_experiment1.png" width="60%" alt="ds_llama65b_experiment1">
 </div>
 
 ### 2.2、实验 2
@@ -48,13 +48,13 @@ DS 是 deepspeed 框架的缩写，本文分别评测了 DeepSpeed、transformer
 3. **13b 模型实验图表**：
 
 <div align="center">
-<img src="../../images/llm_infer_summary/ds_llama13b_experiment2.png" width="60%" alt="ds_llama13b_experiment2">
+<img src="../images/llm_infer_summary/ds_llama13b_experiment2.png" width="60%" alt="ds_llama13b_experiment2">
 </div>
 
 4. **65b 模型实验图表**：实验图表分析后可知 llama-65b 模型实验结果和 13b 模型一致。
 
 <div align="center">
-<img src="../../images/llm_infer_summary/ds_llama65b_experiment2.png" width="60%" alt="ds_llama65b_experiment2">
+<img src="../images/llm_infer_summary/ds_llama65b_experiment2.png" width="60%" alt="ds_llama65b_experiment2">
 </div>
 
 ### 2.3、实验 3
@@ -69,19 +69,19 @@ DS 是 deepspeed 框架的缩写，本文分别评测了 DeepSpeed、transformer
     - 固定 input_ids_len=20, output_ids_len=100。
   
 <div align="center">
-<img src="../../images/llm_infer_summary/ds_llama13b_experiment3_latency.png" width="60%" alt="ds_llama13b_experiment3_latency">
+<img src="../images/llm_infer_summary/ds_llama13b_experiment3_latency.png" width="60%" alt="ds_llama13b_experiment3_latency">
 </div>
 <div align="center">
-<img src="../../images/llm_infer_summary/ds_llama13b_experiment3_tps.png" width="60%" alt="ds_llama13b_experiment3_tps">
+<img src="../images/llm_infer_summary/ds_llama13b_experiment3_tps.png" width="60%" alt="ds_llama13b_experiment3_tps">
 </div>
 
 4. **llama-65b 模型实验图表**：实验图表分析后可知 llama-65b 模型实验结果有和13b 模型的结论 b 一样。
 
 <div align="center">
-<img src="../../images/llm_infer_summary/ds_llama65b_experiment3_latency.png" width="60%" alt="ds_llama65b_experiment3_latency.png">
+<img src="../images/llm_infer_summary/ds_llama65b_experiment3_latency.png" width="60%" alt="ds_llama65b_experiment3_latency.png">
 </div>
 <div align="center">
-<img src="../../images/llm_infer_summary/ds_llama65b_experiment3_tps.png" width="60%" alt="ds_llama65b_experiment3_tps.png">
+<img src="../images/llm_infer_summary/ds_llama65b_experiment3_tps.png" width="60%" alt="ds_llama65b_experiment3_tps.png">
 </div>
 
 ### 2.4，实验 4 - cpu内存/gpu显存峰值分析
@@ -92,7 +92,7 @@ DS 是 deepspeed 框架的缩写，本文分别评测了 DeepSpeed、transformer
    - gpu 数量翻倍时，显存占用并不是严格减半，而是会稍大于原来显存占用峰值的一半。
 
 <div align="center">
-<img src="../../images/llm_infer_summary/ds_llama13b_experiment4.png" width="60%" alt="ds_llama13b_experiment4">
+<img src="../images/llm_infer_summary/ds_llama13b_experiment4.png" width="60%" alt="ds_llama13b_experiment4">
 </div>
 
 ## 三、理论分析
@@ -104,7 +104,7 @@ DS 是 deepspeed 框架的缩写，本文分别评测了 DeepSpeed、transformer
 **在 batch_size < 32 时，t4/V100 的硬件性能带宽均满足系统所需要求**，故在这个范围内其 Latency 值几乎一致。
 
 <div align="center">
-<img src="../../images/llm_infer_summary/ds_llama13b_experiment5.png" width="60%" alt="ds_llama13b_experiment5">
+<img src="../images/llm_infer_summary/ds_llama13b_experiment5.png" width="60%" alt="ds_llama13b_experiment5">
 </div>
 
 ## 四、transformers 实验结论、分析
@@ -114,7 +114,7 @@ DS 是 deepspeed 框架的缩写，本文分别评测了 DeepSpeed、transformer
 **实验结论**：输入长度在 batch_size 较小时基本不会影响 latency，超过某个阈值时，输入长度就会显著影响 latency。且随着 GPU 数目的增加，输入长度对 Latency 产生影响的 batch_size 阈值也随着增加。
 
 <div align="center">
-<img src="../../images/llm_infer_summary/transformers_llama13b_experiment1.png" width="60%" alt="transformers_llama13b_experiment1.png">
+<img src="../images/llm_infer_summary/transformers_llama13b_experiment1.png" width="60%" alt="transformers_llama13b_experiment1.png">
 </div>
 
 ### 4.2、实验 2
@@ -124,7 +124,7 @@ DS 是 deepspeed 框架的缩写，本文分别评测了 DeepSpeed、transformer
 3. **13b 模型实验图表**：
 
 <div align="center">
-<img src="../../images/llm_infer_summary/transformers_llama13b_experiment2.png" width="60%" alt="transformers_llama13b_experiment2.png">
+<img src="../images/llm_infer_summary/transformers_llama13b_experiment2.png" width="60%" alt="transformers_llama13b_experiment2.png">
 </div>
 
 ### 4.3、实验 3
@@ -132,10 +132,10 @@ DS 是 deepspeed 框架的缩写，本文分别评测了 DeepSpeed、transformer
 **实验结论**：PP(gpu 数目) 的增加会减少 throughput 且增加 latency，其发挥的作用只是能支持更大的 batch_size！
 
 <div align="center">
-<img src="../../images/llm_infer_summary/transformers_llama13b_experiment3_latency.png" width="60%" alt="transformers_llama13b_experiment3_latency">
+<img src="../images/llm_infer_summary/transformers_llama13b_experiment3_latency.png" width="60%" alt="transformers_llama13b_experiment3_latency">
 </div>
 <div align="center">
-<img src="../../images/llm_infer_summary/transformers_llama13b_experiment3_tps.png" width="60%" alt="transformers_llama13b_experiment3_tps.png">
+<img src="../images/llm_infer_summary/transformers_llama13b_experiment3_tps.png" width="60%" alt="transformers_llama13b_experiment3_tps.png">
 </div>
 
 ### 4.4、实验 5-cpu 内存/gpu 显存峰值分析
@@ -145,10 +145,10 @@ DS 是 deepspeed 框架的缩写，本文分别评测了 DeepSpeed、transformer
     - batch_size、input_ids_len、output_ids_len 增加，对应所需 gpu 显存也随之增加，batch_size 影响更大（等待更新）。
 
 <div align="center">
-<img src="../../images/llm_infer_summary/transformers_llama13b_experiment4_gpu_memory1.png" width="60%" alt="transformers_llama13b_experiment4_gpu_memory1">
+<img src="../images/llm_infer_summary/transformers_llama13b_experiment4_gpu_memory1.png" width="60%" alt="transformers_llama13b_experiment4_gpu_memory1">
 </div>
 <div align="center">
-<img src="../../images/llm_infer_summary/transformers_llama13b_experiment4_gpu_memory2.png" width="60%" alt="transformers_llama13b_experiment4_gpu_memory2">
+<img src="../images/llm_infer_summary/transformers_llama13b_experiment4_gpu_memory2.png" width="60%" alt="transformers_llama13b_experiment4_gpu_memory2">
 </div>
 
 ## 五、transformers/ds 框架对比
@@ -159,13 +159,13 @@ DS 是 deepspeed 框架的缩写，本文分别评测了 DeepSpeed、transformer
 2. **实验结论**：gpu_num =1 情况下，transformers 框架比 ds 框架 Latency 慢一点，其他情况 ds 框架的 Latency 都远小于 transformers，尤其是 gpu_num > 1 的情况。
 
 <div align="center">
-<img src="../../images/llm_infer_summary/ds_compare_with_transformers_llama13b1.png" width="60%" alt="ds_compare_with_transformers_llama13b1">
+<img src="../images/llm_infer_summary/ds_compare_with_transformers_llama13b1.png" width="60%" alt="ds_compare_with_transformers_llama13b1">
 </div>
 <div align="center">
-<img src="../../images/llm_infer_summary/ds_compare_with_transformers_llama13b2.png" width="60%" alt="ds_compare_with_transformers_llama13b2">
+<img src="../images/llm_infer_summary/ds_compare_with_transformers_llama13b2.png" width="60%" alt="ds_compare_with_transformers_llama13b2">
 </div>
 <div align="center">
-<img src="../../images/llm_infer_summary/ds_compare_with_transformers_llama13b3.png" width="60%" alt="ds_compare_with_transformers_llama13b3">
+<img src="../images/llm_infer_summary/ds_compare_with_transformers_llama13b3.png" width="60%" alt="ds_compare_with_transformers_llama13b3">
 </div>
 
 ### 5.2、llama-65b 模型
@@ -173,5 +173,5 @@ DS 是 deepspeed 框架的缩写，本文分别评测了 DeepSpeed、transformer
 llama-65b 模型结论和 13b 模型一致。
 
 <div align="center">
-<img src="../../images/llm_infer_summary/ds_compare_with_transformers_llama65b.png" width="60%" alt="ds_compare_with_transformers_llama65b">
+<img src="../images/llm_infer_summary/ds_compare_with_transformers_llama65b.png" width="60%" alt="ds_compare_with_transformers_llama65b">
 </div>

@@ -54,7 +54,7 @@ LLM 的高效推理是实现 LLM工程应用的关键技术。和 LLM 训练环�
 3. **流水并行技术**（`Pipeline Parallelism`）:  在多个 worker 之间划分模型的各个层，即不同层分配到不同 gpu 设备上分别完成计算，即 **inter-layer 并行**。但这种朴素的模型并行，会存在 GPU 利用度不足，中间结果消耗内存大的问题。而 Gpipe 提出的流水线并行，就是用来解决这两个主要问题的。流水线并行分阶段(stage)运行模型，不同阶段之间可以流水化执行。流水线并行的核心思想是：**在朴素模型并行的基础上，进一步引入数据并行的办法，即把原先的数据再划分成若干个 batch，送入 GPU 进行训练**。未划分前的数据，叫 `mini-batch`。在 mini-batch 上再划分的数据，叫 `micro-batch`。
 
 <div align="center">
-<img src="../../images/ds_inference_optimized/4d_parallelism.png" width="60%" alt="4d_parallelism">
+<img src="../images/ds_inference_optimized/4d_parallelism.png" width="60%" alt="4d_parallelism">
 </div>
 
 > 从另一个角度来看，张量并行可以被看作是层内并行，流水线并行可以被看作是层间并行(inter-layer parallelism)。
@@ -75,7 +75,7 @@ LLM 的高效推理是实现 LLM工程应用的关键技术。和 LLM 训练环�
 ## 二，DeepSpeed 框架的推理优化概述
 
 <div align="center">
-<img src="../../images/ds_inference_optimized/1400x788_deepspeed_no_logo_still-1-scaled.jpeg" width="60%" alt="multi-gpu ds inference">
+<img src="../images/ds_inference_optimized/1400x788_deepspeed_no_logo_still-1-scaled.jpeg" width="60%" alt="multi-gpu ds inference">
 </div>
 
 我们都知道大语言模型（LLM）的计算成本极高，且在许多实际场景中都会有响应速度太慢的问题，总结起来就是 LLM 的推理的有两个主要挑战：延迟（lateny）和成本（cost）。为了适应更大的模型，并实现更快、更便宜的推理，deepspeed 框架添加了 DeepSpeed Inference-具有高性能多 GPU 推理功能。
@@ -150,7 +150,7 @@ DeepSpeed Inference 模块为 Transformer 模块提**供推理内核**（推理�
 **针对推理定制的 GEMM**（Inference-customized GeMM）：小批量导致**瘦 GeMM 操作**，其中激活是瘦矩阵，而参数是比激活大得多的矩阵，并且每个参数的总计算量受批量大小的限制。**这会导致 GeMM 的性能主要取决于从主内存读取参数所花费的时间，而不是 GPU 计算时间本身**。因此，为了达到最佳性能，对 DeepSpeed 推理内核进行了微调，以最大限度地利用内存带宽来加载参数。这项优化使得 DeepSpeed 推理内核在批量大小为 1-10 的推理工作负载上，实现比 NVIDIA cuBLAS 库高出 20% 的性能。
 
 <div align="center">
-<img src="../../images/ds_inference_optimized/Fig1_DeepSpeed5_Blog.jpeg" width="60%" alt="专用 Transformer 内核中的深度融合">
+<img src="../images/ds_inference_optimized/Fig1_DeepSpeed5_Blog.jpeg" width="60%" alt="专用 Transformer 内核中的深度融合">
 </div>
 
 > 图 1：专用 Transformer 内核中的深度融合。该图说明了我们的内核融合方案，融合在一起的操作以红色虚线显示。与默认的非融合版本相比，加速数字显示了我们为 Transformer 层的每个部分获得的改进。
@@ -188,7 +188,7 @@ DeepSpeed Compression 的原理及理解，可阅读官方[博客](https://www.m
 DeepSpeed 提供了一个无缝的流程（pipeline）来利用这些优化，准备经过训练的模型并部署模型以实现快速且经济高效的推理，如图2所示。
 
 <div align="center">
-<img src="../../images/ds_inference_optimized/DeepSpeed_fig2_5blog.jpeg" width="60%" alt="deepspeed 高效的推理">
+<img src="../images/ds_inference_optimized/DeepSpeed_fig2_5blog.jpeg" width="60%" alt="deepspeed 高效的推理">
 </div>
 
 ```python
@@ -229,7 +229,7 @@ DeepSpeed Inference 可加速各种开源模型：如 BERT、GPT-2 和 GPT-Neo�
 由于这些模型的检查点（checkpoints）是公开可用的，DeepSpeed 用户可以通过遵循官方[教程](https://github.com/microsoft/DeepSpeed/blob/master/docs/_tutorials/inference-tutorial.md)直接轻松地利用这些模型的推理优势。
 
 <div align="center">
-<img src="../../images/ds_inference_optimized/DeepSpeed5_fig3_blog_final.jpeg" width="60%" alt="开源模型的推理延迟加速效果对比实验">
+<img src="../images/ds_inference_optimized/DeepSpeed5_fig3_blog_final.jpeg" width="60%" alt="开源模型的推理延迟加速效果对比实验">
 </div>
 
 图 3：具有从 Hugging Face Model Zoo 中选择的公开可用检查点的开源模型的推理延迟。 我们展示了通用和专用 Transformer 内核的延迟。 我们使用 FP16 在除 GPT-Neo (2.7B) 之外的所有模型上运行推理，它需要更高的精度 (FP32)。
@@ -239,7 +239,7 @@ DeepSpeed Inference 可加速各种开源模型：如 BERT、GPT-2 和 GPT-Neo�
 **总体而言，通过将定制推理内核的影响与模型并行推理执行的结合，我们最后实现了 2.3 倍的加速**。
 
 <div align="center">
-<img src="../../images/ds_inference_optimized/DeepSpeed5_fig4_blog_final.jpeg" width="60%" alt="不同数量的 GPU 上运行的 GPT-Neo 推理延迟">
+<img src="../images/ds_inference_optimized/DeepSpeed5_fig4_blog_final.jpeg" width="60%" alt="不同数量的 GPU 上运行的 GPT-Neo 推理延迟">
 </div>
 
 图 4：在具有不同模型并行度的不同数量的 GPU 上运行的 GPT-Neo 推理延迟。我们展示了使用通用和专用内核的单 GPU 和多 GPU 性能。随着更多 GPU 可用，我们可以通过增加模型并行度来进一步提高性能。
@@ -255,7 +255,7 @@ DeepSpeed Inference 可加速各种开源模型：如 BERT、GPT-2 和 GPT-Neo�
 此外，我们在优化延迟的同时实现了这些吞吐量和成本改进。以 Turing-NLG 17B 模型为例，下图 7 显示 DeepSpeed Inference 还减少了延迟——与使用四个 GPU 的基线相比，即使用一个或两个 GPU，它也会产生更低的延迟。
 
 <div align="center">
-<img src="../../images/ds_inference_optimized/DeepSpeed5_fig5_final.jpeg" width="60%" alt="不同模型大小的推理吞吐量">
+<img src="../images/ds_inference_optimized/DeepSpeed5_fig5_final.jpeg" width="60%" alt="不同模型大小的推理吞吐量">
 </div>
 
 图 5：不同模型大小的推理吞吐量。DeepSpeed Inference（专用）的吞吐量比基线高 3.4 到 6.2 倍。
@@ -263,7 +263,7 @@ DeepSpeed Inference 可加速各种开源模型：如 BERT、GPT-2 和 GPT-Neo�
 如图 6 所示，还可以通过减少用于托管大型模型的 GPU 数量来降低推理成本。优化的 GPU 资源来自于使用推理自适应并行性，它允许用户从经过训练的模型检查点调整模型和流水线并行度，并通过 INT8 量化将模型内存占用减少一半。如图 6 所示，DeepSpeed Inference 通过调整并行度使用 2 倍少的 GPU 来运行 17B 模型大小的推理。连同 INT8 量化，DeepSpeed 使用 4 倍和 2 倍的 GPU 分别用于 17B 和 175B 模型大小。
 
 <div align="center">
-<img src="../../images/ds_inference_optimized/DeepSpeed5_fig6_final.jpeg" width="60%" alt="用于对图 5 所示的不同模型大小运行推理的 GPU 数量">
+<img src="../images/ds_inference_optimized/DeepSpeed5_fig6_final.jpeg" width="60%" alt="用于对图 5 所示的不同模型大小运行推理的 GPU 数量">
 </div>
 
 图 6：用于对图 5 所示的不同模型大小运行推理的 GPU 数量。
@@ -275,7 +275,7 @@ DeepSpeed Inference 可加速各种开源模型：如 BERT、GPT-2 和 GPT-Neo�
 下面的图 7 显示了 Turing NLG 的延迟，这是一个 170 亿参数的模型。与 PyTorch 相比，DeepSpeed 使用相同数量的 GPU 可实现快 2.3 倍的推理速度。DeepSpeed 将用于此模型的 GPU 数量减少到 FP16 中的 2 个，延迟速度提高了 1.9 倍。借助最小起订量和推理适应并行性，DeepSpeed 能够在 INT8 中的单个 GPU 上为该模型提供服务，延迟减少 1.7 倍，成本节省 `6.2` 倍。
 
 <div align="center">
-<img src="../../images/ds_inference_optimized/DeepSpeed5_fig7_final.jpeg" width="60%" alt="Turing-NLG 的推理延迟">
+<img src="../images/ds_inference_optimized/DeepSpeed5_fig7_final.jpeg" width="60%" alt="Turing-NLG 的推理延迟">
 </div>
 
 图 7：Turing-NLG 的推理延迟，将基线（4 个 GPU）与在不同数量的 GPU 上运行的 DeepSpeed-Inference（专用）进行比较。
@@ -287,7 +287,7 @@ DeepSpeed Inference 可加速各种开源模型：如 BERT、GPT-2 和 GPT-Neo�
 通过使用基本量化感知训练，8 位量化的准确性通常不如基线，并且平均准确性（AVG）下降了 0.93 个点（77.75 对比 76.82）。相比之下，MoQ 使得 8 位量化能够获得与基线相当甚至更高的准确性，证明了 MoQ 的有效性。
 
 <div align="center">
-<img src="../../images/ds_inference_optimized/DeepSpeedUpdatedTableFinalHighResv1.jpeg" width="60%" alt="量化方法对比实验结果">
+<img src="../images/ds_inference_optimized/DeepSpeedUpdatedTableFinalHighResv1.jpeg" width="60%" alt="量化方法对比实验结果">
 </div>
 
 表 1：使用 FP16 基线训练（无 QAT）、基本量化 (QAT) 和 MoQ 对不同下游任务进行微调的结果。对于 SQuAD，我们使用 DeepSpeed 检查点来获取基线，而我们使用 Hugging Face 来获取其余部分。
