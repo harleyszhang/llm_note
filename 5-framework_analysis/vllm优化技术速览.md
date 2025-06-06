@@ -53,7 +53,7 @@ class Attention(nn.Module):
 具体来说，PagedAttention 将每个序列从逻辑上划分为一定数量的 `blocks`（块），每个 block 包含每个 seq 一定数量 tokens 的 key 和 value，并把这些逻辑 blocks 通过 block table 映射到固定大小的 物理 blocks 上，物理 blocks 可能不连续，即 kv 可能不连续分布。一句话总结就是构建 blocks 表， 并将 seq 的 kv tokens 划分成逻辑 blocks 并映射到物理 blocks 上。使用 PagedAttention 的请求的生成过程如下图所示：
 
 <div align="center">
-<img src="../../images/vllm_technology/pagedattention_workflow.gif" width="60%" alt="pagedattention_workflow">
+<img src="../images/vllm_technology/pagedattention_workflow.gif" width="60%" alt="pagedattention_workflow">
 </div>
 
 这种方式带来的内存浪费仅出现在序列的最后一个块中，实际中带来了近乎最优的内存使用，浪费不到 4%。这种内存效率的提升大大提高了系统能够同时处理的序列数量，增加了 GPU 的利用率，并显著提升了处理吞吐量。
@@ -65,7 +65,7 @@ PagedAttention 这种结构类似于操作系统中的虚拟内存，其中将�
 PagedAttention 还具备高效的内存共享能力。例如，在**并行采样**中，多个输出序列可以从同一个 prompt 生成。在这种情况下，prompt 的计算和内存可以在输出序列之间共享。PagedAttention 通过其块表自然地实现了内存共享，类似于进程共享物理页的方式。不同的序列可以通过将它们的逻辑块映射到相同的物理块来实现共享。为了确保共享的安全，PagedAttention 通过引用计数跟踪物理块，并实现了“写时复制”（Copy-on-Write）机制。
 
 <div align="center">
-<img src="../../images/vllm_technology/parallel_sampling.gif" width="60%" alt="并行采样示例">
+<img src="../images/vllm_technology/parallel_sampling.gif" width="60%" alt="并行采样示例">
 </div>
 
 PagedAttention 的内存共享显著降低了复杂采样算法（如并行采样和束搜索）的内存开销，可将其内存使用降低最多 55%，吞吐量提升最高可达 2.2 倍。这使得这些采样方法在 LLM 服务中变得更加实用。
@@ -73,7 +73,7 @@ PagedAttention 的内存共享显著降低了复杂采样算法（如并行采�
 PagedAttention 借助块表实现了灵活的内存共享机制。类似于进程间共享物理页面的方式，PagedAttention 中的不同序列可以通过将各自的逻辑块映射到相同的物理块来共享内存资源。为了确保共享的安全性，PagedAttention 跟踪物理块的引用次数，并采用写时复制策略以防止数据冲突。
 
 <div align="center">
-<img src="../../images/vllm_technology/multiple_outputs.gif" width="60%" alt="Example generation process for a request that samples multiple outputs.">
+<img src="../images/vllm_technology/multiple_outputs.gif" width="60%" alt="Example generation process for a request that samples multiple outputs.">
 </div>
 
 ### 1.3 和 TokenAttention 的区别
@@ -93,7 +93,7 @@ PagedAttention 借助块表实现了灵活的内存共享机制。类似于进�
 理解静态批处理之前，先来回顾下 LLM 的推理过程：LLM 推理分为两个阶段：prefill 和 decode 阶段，严格来讲 decode 阶段才是循环迭代过程，每次循环都只生成一个 token。LLM 推理过程如下图所示：
 
 <div align="center">
-<img src="../../images/vllm_technology/llm_infer.png" width="50%" alt="llm infer">
+<img src="../images/vllm_technology/llm_infer.png" width="50%" alt="llm infer">
 </div>
 
 
@@ -105,7 +105,7 @@ llm 推理迭代过程有一些特点:
 上图是一个序列的 llm 推理过程，下面再来看下传统的一个批次的 llm 推理过程，也叫静态批处理，表现出来就是，只有当前批次完全推理完，下一个批次的序列才能进行推理。但是这有个问题是，我们之前一个批次中，序列长度不一，输出 tokens 数也不一样，即迭代结束时间不一样，那这自然会造成 gpu 利用率不高。LLM 静态批处理示意图如下所示：
 
 <div align="center">
-<img src="../../images/vllm_technology/static_batch.png" width="70%" alt="static_batch infer">
+<img src="../images/vllm_technology/static_batch.png" width="70%" alt="static_batch infer">
 </div>
 
 上图显示了一个 batch_size = 4 的静态批处理过程。在第一次迭代（左侧），每个序列从提示 tokens（黄色）生成一个 token（蓝色）。经过几次迭代后（右侧），完成的各序列长度不同，因为每个序列在不同迭代中发出各自的终止 token（红色）。尽管序列 3 在两次迭代后就完成了，但静态批处理意味着之前分配的 GPU 线程资源将一直未被充分利用，直到批次中的最后一个序列完成生成（在此示例中，为六次迭代后完成的序列 2）。
@@ -119,7 +119,7 @@ llm 推理迭代过程有一些特点:
 连续批出理技术的原理是动态调整迭代过程中的批次大小，不再等待批次中的所有序列都完成生成才推理下一个批次，而是根据每次迭代序列的完成情况和当前剩余显存资源来确定当前批次大小，批次中的部分序列完成后，新的序列可以立即插入其位置，这样有效避免了 GPU 空转。
 
 <div align="center">
-<img src="../../images/vllm_technology/continuous_batching.png" width="70%" alt="static_batch infer">
+<img src="../images/vllm_technology/continuous_batching.png" width="70%" alt="static_batch infer">
 </div>
 
 上图显示了通过连续批处理技术连续完成 7 个序列的推理情况。左图显示了第一次迭代后的批次，右图显示了几次迭代后的批次。每当一个序列发出终止 token 时，我们会将一个新的序列插入其位置（例如序列 S5、S6 和 S7），这样 GPU 无需等待所有序列完成即可开始处理新的序列，从而实现更高的 GPU 利用率。
@@ -291,7 +291,7 @@ class GPUModelRunnerBase():
 - 图执行：在推理过程中，执行已实例化的 `CUDA` 图，提高执行效率。
 
 <div align="center">
-<img src="../../images/cuda_graph/CUDAGraphRunner_class.png" width="60%" alt="CUDAGraphRunner class">
+<img src="../images/cuda_graph/CUDAGraphRunner_class.png" width="60%" alt="CUDAGraphRunner class">
 </div>
 
 其中关键的 `capture` 函数看起来代码很多，但核心逻辑就是执行捕获 `graph` 和定义输入输出 `placeholder` 的操作，具体的精简版代码如下所示：
@@ -473,7 +473,7 @@ Batch scheduling multiple steps ahead（早期称 `Multi-step Scheduling`），�
 由此，作者提出**多步解码调度**优化，即在调用 `vLLM` 调度器并处理采样的 `tokens` 之前，**执行多次解码**，从而将这些开销均摊到每 $n$ 步解码中。
 
 <div align="center">
-<img src="../../images/vllm_technology/illustration-multi-step.png" width="70%" alt="illustration-multi-step">
+<img src="../images/vllm_technology/illustration-multi-step.png" width="70%" alt="illustration-multi-step">
 </div>
 
 下方两个图是官方提供的对比图，这两个时长大约为 200ms。第一行是 CUDA 核心操作，底部是 Python 跟踪。每个红框大约代表 4ms 的 GPU 空闲时间，两张图均如此。
@@ -481,19 +481,19 @@ Batch scheduling multiple steps ahead（早期称 `Multi-step Scheduling`），�
 首先是 baseline，每个 decode 步骤都会导致 4 ms的 GPU 空泡（使用 Pytorch profiler 打印）：
 
 <div align="center">
-<img src="../../images/vllm_technology/torch_profiles.png" width="70%" alt="torch_profiles">
+<img src="../images/vllm_technology/torch_profiles.png" width="70%" alt="torch_profiles">
 </div>
 
 使用 Multi-Step-8 之后，4ms 的开销仅在每 `8` 次解码中出现一次：
 
 <div align="center">
-<img src="../../images/vllm_technology/multi-step-torch-profiles.png" width="70%" alt="Multi-Step-8 8B on 1xH100">
+<img src="../images/vllm_technology/multi-step-torch-profiles.png" width="70%" alt="Multi-Step-8 8B on 1xH100">
 </div>
 
 具体的吞吐量提升效果如下表所示：
 
 <div align="center">
-<img src="../../images/vllm_technology/illustration-multi-step-effect.png" width="50%" alt="illustration-multi-step-effect">
+<img src="../images/vllm_technology/illustration-multi-step-effect.png" width="50%" alt="illustration-multi-step-effect">
 </div>
 
 ## 性能基准测试
@@ -533,7 +533,7 @@ vllm-v0.6.0 版本的详细性能测试结果。
 - **从吞吐量来看**，TensorRT-LLM 在所有引擎中具有最高的吞吐量，而 vLLM 在 ShareGPT 和解码密集型数据集上的吞吐量位列第二。
 
 <div align="center">
-<img src="../../images/vllm_benchmark/A100_8B.png" width="65%" alt="A100_8B">
+<img src="../images/vllm_benchmark/A100_8B.png" width="65%" alt="A100_8B">
 </div>
 
 #### Llama 3 70B on 4xA100
@@ -543,7 +543,7 @@ vllm-v0.6.0 版本的详细性能测试结果。
 - 从吞吐量来看，vLLM 在 ShareGPT 数据集上实现了最高吞吐量，并且在其他数据集上的吞吐量与其他引擎相当。
 
 <div align="center">
-<img src="../../images/vllm_benchmark/A100_70B.png" width="65%" alt="A100_70B">
+<img src="../images/vllm_benchmark/A100_70B.png" width="65%" alt="A100_70B">
 </div>
 
 #### Llama 3 8B on 1xH100
@@ -551,7 +551,7 @@ vllm-v0.6.0 版本的详细性能测试结果。
 vLLM 在 ShareGPT 和解码密集型数据集上实现了 SOTA（当前最佳）的吞吐量表现，尽管在填充密集型数据集上的吞吐量稍低。
 
 <div align="center">
-<img src="../../images/vllm_benchmark/H100_8B.png" width="65%" alt="H100_8B">
+<img src="../images/vllm_benchmark/H100_8B.png" width="65%" alt="H100_8B">
 </div>
 
 #### Llama 3 70B on 4xH100
@@ -559,15 +559,15 @@ vLLM 在 ShareGPT 和解码密集型数据集上实现了 SOTA（当前最佳）
 vLLM 在 ShareGPT 和解码密集型数据集上具有最高吞吐量（尽管仅略高于 TensorRT-LLM），但在填充密集型数据集上的吞吐量较低。
 
 <div align="center">
-<img src="../../images/vllm_benchmark/H100_70B.png" width="65%" alt="H100_70B">
+<img src="../images/vllm_benchmark/H100_70B.png" width="65%" alt="H100_70B">
 </div>
 
 ## 参考资料
 
 - [How continuous batching enables 23x throughput in LLM inference while reducing p50 latency](https://www.anyscale.com/blog/continuous-batching-llm-inference)
-- [vLLM: Easy, Fast, and Cheap LLM Serving with PagedAttention](https://blog.vllm.ai/2023/06/20/vllm.html)
+- [vLLM: Easy, Fast, and Cheap LLM Serving with PagedAttention](https://blog.vllm.ai/20../20/vllm.html)
 - [Prompt Cache: Modular Attention Reuse for Low-Latency Inference](https://arxiv.org/abs/2311.04934)
 - [浅谈cuda graph在llm推理中的应用](https://zhuanlan.zhihu.com/p/715863693)
 - [Speed, Python: Pick Two. How CUDA Graphs Enable Fast Python Code for Deep Learning](https://fireworks.ai/blog/speed-python-pick-two-how-cuda-graphs-enable-fast-python-code-for-deep-learning)
-- [vLLM v0.6.0: 2.7x Throughput Improvement and 5x Latency Reduction](https://blog.vllm.ai/2024/09/05/perf-update.html)
+- [vLLM v0.6.0: 2.7x Throughput Improvement and 5x Latency Reduction](https://blog.vllm.ai/20../05/perf-update.html)
 - [vLLM这一年的新特性以及后续规划](https://mp.weixin.qq.com/s/ISltFRwFSNlgsnrzUnBTiw)

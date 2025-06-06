@@ -10,7 +10,7 @@ categories: LLM_Infer
 
 先看下 vLLM 代码整体架构：
 
-![vllm_architecture](../../images/vllm_infer/vllm_architecture.png)
+![vllm_architecture](../images/vllm_infer/vllm_architecture.png)
 ￼
 vllm 模型执行流程调用关系可以通过以下代码打印：
 
@@ -177,7 +177,7 @@ self.model_runner: GPUModelRunnerBase = ModelRunnerClass(
 
 Worker 类：vllm/worker/worker.py
 
-![worker](../../images/vllm_infer/worker.png)
+![worker](../images/vllm_infer/worker.png)
 
 默认的 GPU 工作器类，继承自 `LocalOrDistributedWorkerBase`。在 GPU 上执行模型（分区）的 worker 类。**每个 worker 都与单个 GPU 相关联**。worker 负责维护 KV 缓存并在 GPU 上执行模型。在分布式推理的情况下，每个 worker 都会被分配一个模型分区。其核心函数作用总结如下：
 

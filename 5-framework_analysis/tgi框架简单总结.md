@@ -69,7 +69,7 @@ Text-Generation-Inferenc（简称 `TGI`）框架特点：
 TGI 框架架构图如下所示:
 
 <div align="center">
-<img src="../../images/tgi/tgi_framework.png" width="60%" alt="tgi_framework">
+<img src="../images/tgi/tgi_framework.png" width="60%" alt="tgi_framework">
 </div>
 
 `TGI` 框架主要由三部分组成：
@@ -132,7 +132,7 @@ let min_size = if waiting_tokens >= max_waiting_tokens {
 - 性能瓶颈分析实验中，发现 prefill 过程中的实际 batch_size 偏小，不利于发挥出算力。
 
 <div align="center">
-<img src="../../images/tgi/tgi_router_pipeline.png" width="60%" alt="tgi_router_pipeline">
+<img src="../images/tgi/tgi_router_pipeline.png" width="60%" alt="tgi_router_pipeline">
 </div>
 
 #### 1.4.1，不同性能参数对实际推理过程 prefill/decode 过程的 batch_size 大小影响
@@ -149,7 +149,7 @@ let min_size = if waiting_tokens >= max_waiting_tokens {
 随着后期并发数目的增加，推理 decode 过程的 batch_size 越来越大（偶尔减小），prefill 过程的 batch_size 越来越小，后期趋向于稳定在 1 。
 
 <div align="center">
-<img src="../../../../Library/Application%20Support/typora-user-images/image-20240112122341879.png" width="60%" alt="image-20240112122341879">
+<img src="../../Library/Application%20Support/typora-user-images/image-20240112122341879.png" width="60%" alt="image-20240112122341879">
 </div>
 
 ```bash
@@ -162,11 +162,11 @@ let min_size = if waiting_tokens >= max_waiting_tokens {
 ```
 
 <div align="center">
-<img src="../../../../Library/Application%20Support/typora-user-images/image-20240112122440747.png" width="60%" alt="image-20240112122440747">
+<img src="../../Library/Application%20Support/typora-user-images/image-20240112122440747.png" width="60%" alt="image-20240112122440747">
 </div>
 
 <div align="center">
-<img src="../../../../Library/Application%20Support/typora-user-images/image-20240112171022876.png" width="60%" alt="image-20240112171022876">
+<img src="../../Library/Application%20Support/typora-user-images/image-20240112171022876.png" width="60%" alt="image-20240112171022876">
 </div>
 
 ### 1.5，grpc 接口及数据结构类图
@@ -583,7 +583,7 @@ launcher 启动器，就是负责启动程序，主要做以下工作(实现在 
 **右边图对应的是 `queue.rs` 文件的 `next_batch` 函数，左边图对应的是 `infer.rs` 的 `batching_task` 函数**。
 
 <div align="center">
-<img src="../../images/tgi/tgi_router_pipeline.png" width="60%" alt="tgi_router_pipeline">
+<img src="../images/tgi/tgi_router_pipeline.png" width="60%" alt="tgi_router_pipeline">
 </div>
 
 组 `batch` 任务中有个关键参数 `waiting_served_ratio`，其意义是等待的请求与正在运行批处理请求的比率，默认值是 1.2，**意味着当有 12 个请求在等待，而当当前批次中只剩下 10 个请求时，我们会检查是否可以将这 12 个等待查询纳入到批处理策略中**（看剩余 `tokens` 预算），如果可以，批处理就会发生，通过 `prefill` 运行延迟了这 10 个正在运行的查询。此设置仅在批次中有空间，如 `max_batch_total_tokens` 定义的那样时才会应用。
@@ -623,7 +623,7 @@ launcher 启动器，就是负责启动程序，主要做以下工作(实现在 
 `TGI ` 框架定义的 `api` 接口如下所示:
 
 <div align="center">
-<img src="../../images/tgi/inference_api.png" width="60%" alt="inference api">
+<img src="../images/tgi/inference_api.png" width="60%" alt="inference api">
 </div>
 
 `api` 接口提供了在线的 [swagger-ui 页面](https://huggingface.github.io/text-generation-inference/#/)（utoipa 库），`server.rs` 文件定义了 `text-generation-inference` REST `API`。
@@ -1018,7 +1018,7 @@ LightLLM 的自定义 kernel 可以分为公用和不同模型架构专用两部
 - 公用的 kernel 放在 lightllm/common/basemodel/triton_kernel 路径下
 - 不同模型架构专用的 kernel 放在 lightllm/models 各自的 triton_kernel 路径下
 
-<img src="../../images/tgi/lightllm_tree.png" alt="lightllm模型结构文件" style="zoom:60%;" />
+<img src="../images/tgi/lightllm_tree.png" alt="lightllm模型结构文件" style="zoom:60%;" />
 
 ### 4.3，utils 子模块
 
