@@ -19,7 +19,7 @@ categories: Transformer
 ## 一 Roofline 性能分析模型
 ### 1.1 Roofline 模型原理
 
-为了做性能分析，`Roofline` 模型论文引入了“操作强度”（operational intensity）这个概念，表示每字节 `DRAM/HBM` 数据传输（traffic）所对应的操作次数（每字节 flops），这里的字节数是指那些经过缓存层过滤后进入主内存 `DRAM/HBM` 的字节，即我们关注的是缓存与内存之间的数据传输，而不是处理器与缓存之间的数据传输（traffic）。因此，操作强度反映了在特定计算机上某个计算核所需的 DRAM 带宽。公式定义如下：
+为了做性能分析，`Roofline` 模型论文引入了“操作强度”（operational intensity）这个概念，表示每字节 `DRAM/HBM` 数据传输（traffic）所对应的操作次数（每字节 `flops`），这里的字节数是指那些经过缓存层过滤后进入主内存 `DRAM/HBM` 的字节，即我们关注的是缓存与内存之间的数据传输，而不是处理器与缓存之间的数据传输（traffic）。因此，操作强度反映了在特定计算机上某个计算核所需的 DRAM 带宽。公式定义如下：
 
 $$\text{OI} = \frac{\text{总浮点操作数（FLOPs）}}{\text{总内存访问量（Bytes）}}$$
 
