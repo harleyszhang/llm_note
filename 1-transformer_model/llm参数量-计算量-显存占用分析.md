@@ -24,7 +24,7 @@ categories: Transformer
 	- [3.2 推理过程中显存占用量计算](#32-推理过程中显存占用量计算)
 	- [3.3 显存占用计算的定性分析和定量结论](#33-显存占用计算的定性分析和定量结论)
 	- [3.4 LLM 并发支持估算](#34-llm-并发支持估算)
-	- [支持并发数理论估算](#支持并发数理论估算)
+	- [3.5 支持并发数理论估算公式](#35-支持并发数理论估算公式)
 - [四 结论](#四-结论)
 - [参考资料](#参考资料)
 
@@ -36,7 +36,9 @@ categories: Transformer
 目前的 llm 都是基于 transformer 模型，得益于 `GPT` 模型的成功，主流的模型架构是采用 `decoder-only` 架构的，同时模型的输出是自回归的形式，所以 gpt 这类模型也叫做 `Causal LM`。
 > 因果建模模型、自回归模型、生成式 generative 模型所代表的意义几乎一致。
 
-**本文分析的是采用 `decoder-only` 框架的 `llm`（类 `gpt` 的大语言模型）的参数量 `params`、计算量 `FLOPs`、理论所需 `CPU` 内存和 `GPU` 显存**。
+**本文分析的是采用 `decoder-only` 框架的 `llm`（类 `gpt` 的大语言模型, llama 和 qwen2.5 系列模型）的参数量 `params`、计算量 `FLOPs`、理论所需 `CPU` 内存和 `GPU` 显存**。
+
+对于 **qwen3 dense >= 32B 的模型，因为 q/o 线性层输入输出通道数不一样，所以公式会不直接适用**。
 
 这里简单介绍下 `decoder-only` 架构的 llm 结构，其只采用 `Transformer` 模型中的解码器（Decoder）部分，同时 `decoder` 结构去掉了 Encoder-Decoder attention（Decoder 中的第二个 attention），**只保留了 `Masked Self-Attention`**。这里以 `gpt1` 模型为例，其模型结构如下所示:
 
@@ -67,12 +69,13 @@ categories: Transformer
 - $V$：词表大小 `vocab_size`。也是每个 token 在做 embedding 前的 one-hot 向量维度。
 - $n$：模型中 `decoder layers` 层数，对应 `hf` 模型配置文件中的 num_hidden_layers。
 
-这些变量值都可以在模型配置文件中找到，以 `llama-13b` 模型配置文件为例，主要字段解释如下：
+这些变量值都可以在模型配置文件中找到，以 `llama-13b` 模型配置文件为例，配置如下图所示。
 
 <center>
 <img src="../images/transformer_params_flops/llama-13b-config.png" width="50%" alt="llama-13b-config">
 </center>
 
+主要字段解释如下：
 - `vocab_size`：词汇表中标记的数量，也是嵌入矩阵的第一个维度。
 - `hidden_​​size`：模型的隐藏层大小，其实就是 $d_\text{model}$。
 - `num_attention_heads`：模型的多头注意力层中使用的**注意力头数量**。
@@ -96,7 +99,7 @@ categories: Transformer
 模型由 $N$ 个相同的 `decoder block` 串联而成，每个 `decoder block` 又由 `1` 个带掩码（`mask`）多头注意力（MHA）层、`1` 个前馈神经网络（MLP）层和 `2` 个层归一化层组成。
 > 这里不单独计算每个 self-attention 层的参数量了，毕竟实际代码中，其都是在一个矩阵中。另外 `llama` 模型的 `MLP` 块虽然有 3 个线性层，但其参数量和计算量和 `gpt1` 是一样的。
 
-1，`MHA` 块有 $4$ 个线性层（全连接层/映射层），对应的是 $Q$、$K$、$V$ 和输出映射层的权重矩阵 $W_Q,W_K,W_V,W_o \in \mathbb{R}^{h\times h}$ 及其偏置。$4$ 个线性层权重参数形状都为 $[h,h]$，偏置形状为 $[h]$。**`MHA` 块的参数量 = $4h^2 + 4h$**
+1，`MHA` 块有 $4$ 个线性层（全连接层/映射层），对应的是 $Q$、$K$、$V$ 和输出映射层的权重矩阵 $W_Q,W_K,W_V,W_o \in \mathbb{R}^{h\times h}$ 及其偏置。$4$ 个线性层权重参数形状都为 $[h,h]$，偏置形状为 $[h]$。**`MHA` 块的参数量 = $4h^2 + 4h$**。
 
 2，`MLP/FFN` 块由 $2$ 个线性层组成，一般第一个线性层完成 $h$ 到 $4h$ 的升维，第二个将 $4h$ 降维到 $h$。对应权重矩阵为 $W_1\in \mathbb{R}^{h\times 4h}$, $W_2 \in \mathbb{R}^{4h\times h}$，偏置形状分别为 $4h$ 和 $h$。**`MLP` 块的参数量 = $8h^2 + 5h$**。
 
@@ -145,7 +148,7 @@ $$\frac{8nh^2}{12nh^2} = 2/3\cong 66\% \\
 
 `FLOPs`：floating point operations 指的是浮点运算次数，一般特指乘加运算次数，**理解为计算量**，可以用来衡量算法/模型时间的复杂度。
 
-对于矩阵 $A\in\mathbb{R}^{1\times n}$ 和 $B \in \mathbb{R}^{n\times 1}$ 的矩阵乘法的 FLOPs 为 $2n$；**对于矩阵 $A \in \mathbb{R}^{m\times n}$ 和 $B\in\mathbb{R}^{n\times p}$ 的矩阵乘法的 `FLOPs` 为 $2mnp$**。
+对于矩阵 $A\in\mathbb{R}^{1\times n}$ 和 $B \in \mathbb{R}^{n\times 1}$ 的矩阵乘法的 FLOPs 为 $2n$；对于矩阵 $A \in \mathbb{R}^{m\times n}$ 和 $B\in\mathbb{R}^{n\times p}$ 的矩阵乘法的 `FLOPs` 为 $2mnp$。
 
 `Pytorch` 实现线性层的函数为 `nn.Linear(in_features, out_features, bias=True)`，其中线性层权重的的维度大小是 $[下一层的维数/out_{features}，前一层的维数/in_{features}]$，对应的计算公式为:
 
@@ -166,18 +169,18 @@ $$y = xW^T + \text{bias}$$
 
 先分析 `MHA` 块的计算量：
 
-1, **计算 Q、K、V**：对输入矩阵做线性变换，输入 `tokens` 序列的 **`embedding` 向量**的形状为 $[s, h]$，做线性变换的权重矩阵 $W_Q$、$W_K$、$W_V$ $\in \mathbb{R}^{h\times h}$，矩阵乘法的输入输出形状为: $[s,h] \times [h,h]\to [s,h]$，`FLOPs`: $3* 2sh^2 = 6sh^2$。
+1，**计算 Q、K、V**：对输入矩阵做线性变换，输入 `tokens` 序列的 **`embedding` 向量**的形状为 $[s, h]$，做线性变换的权重矩阵 $W_Q$、$W_K$、$W_V$ $\in \mathbb{R}^{h\times h}$，矩阵乘法的输入输出形状为: $[s,h] \times [h,h]\to [s,h]$，`FLOPs`: $3* 2sh^2 = 6sh^2$。
 
-2, **Self-Attention 层**，`MHA` 包含 `heads` 数目的 `Self-Attention` 层，这里直接分析所有 `Self-Attention` 层的 `FLOPs`:
+2，**Self-Attention 层**，`MHA` 包含 `heads` 数目的 `Self-Attention` 层，这里直接分析所有 `Self-Attention` 层的 `FLOPs`:
 - **$QK^T$ 打分计算**：每个头需要计算 Query 和 Key 的点积，所有头的 $QK^T$ 矩阵乘法的输入和输出形状为: $[s,h] \times [h,s]\to [s,s]$，`FLOPs`: $2s^2h$。
 - **softmax 函数**：softmax 函数不会改变输入矩阵的维度，即 $[s,s] \to [s,s]$，native softmax 涉及 `FLOPs` $(4/5)sh$。
 - **应用注意力权重**：计算在 $V$ 上的加权 $score\cdot V$，矩阵乘法的输入输出形状: $[s,s] \times [s,h]\to [s,h]$，`FLOPs`: $2s^2h$。
 
 `attention_scale`（$/\sqrt(k)$）是逐元素操作、`attn_softmax` ($\text{softmax}$) 的计算量较小，因此都忽略不计。故`Scale Dot Product Attention` 层内部只估算两个矩阵乘法的计算量为 $4s^2h$。
 
-3, **多头拼接和线性映射**：所有注意力头输出拼接后通过线性映射，`concat` 不涉及数学运算，只涉及内存操作。矩阵乘法的输入和输出形状为: $[s,h] \times [h,h]\to [s,h]$，**attention 后的线性映射的 `FLOPs`: $2sh^2$**。
+3，**多头拼接和线性映射**：所有注意力头输出拼接后通过线性映射，`concat` 不涉及数学运算，只涉及内存操作。矩阵乘法的输入和输出形状为: $[s,h] \times [h,h]\to [s,h]$，**attention 后的线性映射的 `FLOPs`: $2sh^2$**。
 
-**综上，prefill 阶段 `MHA` 块的 `FLOPs`: $6sh^2 + 4s^2h + 2sh^2 = 8sh^2 + 4s^2h$**
+**综上，prefill 阶段 `MHA` 块的 `FLOPs`**: $6sh^2 + 4s^2h + 2sh^2 = 8sh^2 + 4s^2h$。
 
 #### 2.1.2 decode 阶段
 
@@ -202,7 +205,7 @@ $$\text{节省比率} = \frac{O(s^3 h) - O(s^2 h)}{O(s^3 h)} = 1 - \frac{1}{s}$$
 
 当 $s$ 较大时，$\frac{1}{s}$ 接近于 0，节省比率接近于 100%！
 
-换种说法，计算复杂度从 $O(s^3 h)$  降低到 $O(s^2 h)$，**即使用 kv cache 可节省约 $s$ 倍的计算量，输出 tokens 数越多，计算量节省越可观**。
+换种说法，计算复杂度从 $O(s^3 h)$  降低到 $O(s^2 h)$，即使用 kv cache 可节省约 $s$ 倍的计算量，**输出 tokens 数越多，计算量节省越可观**。
 
 ### 2.2 MLP 层计算量
 
@@ -213,7 +216,7 @@ $$\text{节省比率} = \frac{O(s^3 h) - O(s^2 h)}{O(s^3 h)} = 1 - \frac{1}{s}$$
 1. 第一个线性层，线性层对应矩阵乘法的输入和输出形状为 $[s,h] \times [h,4h]\to[s,4h]$，`FLOPs` 为 $8sh^2$
 2. 第二个线性层，矩阵乘法的输入和输出形状为 矩阵乘法的输入和输出形状为 $[s,4h] \times [4h, h]\to [s,h]$，`FLOPs` 为 $8sh^2$
 
-**因此，`prefill` 阶段 `MLP` 层的 `FLOPs`: $2*8sh^2 = 16sh^2$**。
+**因此，`prefill` 阶段 `MLP` 层的 `FLOPs`**: $2*8sh^2 = 16sh^2$。
 
 #### decode 阶段
 
@@ -248,7 +251,7 @@ $$b\times (8nh^2 + 4nh(s+o) + 16nh^2) + 2bhV = 2 4nh^2*b + 4nhb(s+o) + 2bshV$$
 因为，输入的 `tokens` 总数为 $bs$（即上下文总长度），即对于一个 `token` 存在等式: $\frac{24nh^2}{12nh^2} = 2$。所以，我们可以近似认为：**在一次前向传播中，对于每个 `token` 和 每个模型参数，需要进行 $2$ 次浮点数运算，即一次乘法法运算和一次加法运算**。
 > 实际会有不到 `2%` 的误差，主要是因为我们忽略了一些小算子的计算量。
 
-一次迭代训练包含了前向传递和后向传递，后向传递的计算量是前向传递的 `2` 倍。因此，前向传递 + 后向传递的系数 $=1 + 2 = 3$ 。**即一次迭代训练中，对于每个 token 和 每个模型参数，需要进行 $6$ 次浮点数运算**。
+一次迭代训练包含了前向传递和后向传递，后向传递的计算量是前向传递的 `2` 倍。因此，前向传递 + 后向传递的系数 $=1 + 2 = 3$ 。**即一次迭代训练中，对于每个 token 和 每个模型参数**，需要进行 $6$ 次浮点数运算。
 
 有了上述训练和推理过程中计算量与参数量关系的结论。接下来，我们就可以估计一次迭代训练 `GPT3-13B` 所需要的计算量。对于 GPT3，每个 token，每个参数进行了 $6$ 次浮点数运算，再乘以参数量和总 `tokens`数就得到了总的计算量。GPT3 的模型参数量为 12850M，训练数据量 300B tokens。
 
@@ -288,7 +291,7 @@ $$训练总内存 = 模型内存 + 优化器内存 + 中间激活内存 + 梯度
 
 假设 `memory_modal` 是指存储模型所有参数所需的内存、`memory_optimizer` 是优化器状态变量所需内存。综上，模型训练过程中，显存占用量的理论计算公式为：
 
-```bash
+```text
 total_memory = memory_modal + 2 * memory_activations + memory_optimizer
 ```
 
@@ -309,12 +312,13 @@ $$\text{memory\_model} = \text{params} * 2 = [n(12h^2 + 13h) + Vh] * 2$$
 和模型训练需要存储前向传播过程中的中间变量结果不同，**模型推理过程中并不需要存储中间变量**，因此推理过程中涉及到的**中间结果**内存会很小（中间结果用完就会释放掉），一般指**相邻两层的中间结果**或者算子内部的中间结果，这里我们只考虑主要算子中最大的中间结果部分即可。
 
 这里我们假设其占用的显存为 `memory_intermediate`，`heads` 数量用符号 $n_\text{head}$ 表示，假设输入数据的形状为 $[b,s]$。
+
 - 每个 self-attention 头需要计算 Query 和 Key 的点积，每个头的 $QK^T$ 矩阵乘法的输入输出形状为 $[b, n\_head, s, h//n\_head] \times [b, n\_head, h//n\_head, s] \rightarrow [b, n\_head, s, s]$，所以占用显存大小为 $2bs^2n_{head}$；
 - `mlp` 块中，第一个线性层的输出结果形状为 $[b, s, 4h]$，所以占用显存大小为 $8bsh$。
 
 计算 `MHA`和 `MLP` 的 `memory_intermediate` 的伪代码如下:
 
-```bash
+```text
 memory_intermediate of attention(qk^t output) = 2 * batch_size * n_head * square_of(sequence_length)
 memory_intermediate of mlp(fc1 layer1 output) = 2 * batch_size * s * 4h
 ```
@@ -375,25 +379,24 @@ $$\begin{aligned}\text{inference\_memory} &\simeq [n(12h^2 + 13h) + Vh]*2 + 8bsh
 
 另外，如果输入能量化为 int8 数据类型，理论上支持的 batch 数量会翻倍。
 
-### 支持并发数理论估算
+### 3.5 支持并发数理论估算公式
 
 这里的**并发估算的请求长度是按照模型支持的最大上下文长度来估算的，且没有 latency 要求**。
 
 $$最大并发数 = \frac{单卡显存 \times 卡数 - 模型参数显存占用(量化前/后)} {单个请求最大显存占用} \\
-单个请求最大显存占用 = \text{每个 token 的 kv cache 占用显存} \times \text{max\_sequence\_length} \\
-$$
+单个请求最大显存占用 = \text{每个 token 的 kv cache 占用显存} \times \text{max\_sequence\_length}$$
 
 ## 四 结论
 
 对于典型自回归 `llm`，假设 decoder layers 层数为 $n$，隐藏层大小（Embedding 向量维度）为 $h$，输入输入数据形状为 $[b,s]$。当隐藏维度 $h$ 比较大，且远大于序列长度 $s$ 时，则参数量和计算量的估算都可以忽略一次项，则有以下关于参数量、计算量和显存占用计算分析结论。
 
-**一些定性结论：**
+**一些定性结论**：
 1. 参数量和输入序列长度无关。$\text{Parmas} = 12nh^2$。
 2. 每个 `token` 对应的 $\text{Flops} = 24nh^2$，计算量随序列长度呈线性增长。其中 $\text{Prefill flops} = 24nh^2\cdot bs$；每轮 decode 的计算量 $\text{Decode flops} = 24nh^2\cdot b$。
 3. 每个 `token` 的 kv cache 占用显存大小是 $4nh$，`kv cache` 显存占用量随（输入 + 输出序列长度）以及批量大小 `batch_size` 呈线性增长。kv cache 显存占用量 $= b(s+o)h\cdot n \cdot 2\cdot 2 = 4nh\cdot b(s+o)$，单位为字节 `byte`。
 4. `self-attention` 的内存和计算复杂度随序列长度 $s$ 呈二次方增长。注意力输出矩阵 $O = \text{softmax}(QK^T)V$ 要求 $O(N^2d)$ 的 FLOPs，并且除了输入和输出内存之外，需要额外的 $O(N^2)$ 内存。
 
-**定量结论（近似估算）：**
+**定量结论（近似估算）**：
 1. 一次迭代训练中，对于每个 token 和 每个模型参数，需要进行 6 次浮点数运算。
 2. 随着模型变大，`MLP` 和 `Attention` 层参数量占比越来越大，最后分别接近 `66%` 和 `33%`。
 3. 有[文档](https://github.com/ray-project/llm-numbers#1-mb-gpu-memory-required-for-1-token-of-output-with-a-13b-parameter-model)指出，`13B` 的 `LLM` 推理时，每个 `token` 大约消耗 `1MB` 的显存。 
