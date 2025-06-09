@@ -22,7 +22,7 @@ categories: Transformer
 
 ## 1. 介绍
 
-DeepSeek-V2 是一种高效的开源混合专家（MoE）语言模型，基于创新的 Transformer 架构，实现了经济的训练和高效的推理。DeepSeek-V2 具有 2360 亿个参数(`236B`)，每个 token 激活 21 亿个参数，支持 `128K` tokens 的上下文长度。
+`DeepSeek-V2` 是一种高效的开源混合专家（MoE）语言模型，基于创新的 Transformer 架构，实现了经济的训练和高效的推理。DeepSeek-V2 具有 2360 亿个参数(`236B`)，每个 token 激活 21 亿个参数，支持 `128K` tokens 的上下文长度。
 
 和 DeepSeekV1 模型结构沿用 llama 结构不同，DeepSeekV2 提出了多头潜在注意力（`MLA`）和 `DeepSeekMoE`，旨在优化 Transformer 框架中的注意力模块和前馈网络（FFNs）。
 1. `MLA`: Multi-head Latent Attention 结构，通过**低秩键值联合压缩**，**减少了推理时的 KV 缓存**，从而提高了推理效率。
@@ -30,7 +30,7 @@ DeepSeek-V2 是一种高效的开源混合专家（MoE）语言模型，基于�
 - **细粒度专家划分(Routed Expert)**：相比标准 MOE，DeepSeekMoE 在保持参数量不变的前提下，通过减小每个 Expert 的 `FFN` 维度，来增加 Expert 数量，进行更细粒度专家划分。
 - **共享专家隔离(Shared Expert)**: 用于表示 Routed Expert 中的共用知识信息，减少 Routed Expert 的知识冗余问题。
 
-DeepSeek-V2 架构图如下所示：
+`DeepSeek-V2` 架构图如下所示：
 
 ![architecture_of_DeepSeekv2](../images/deepseekv2/architecture_of_DeepSeek-V2.png)
 
