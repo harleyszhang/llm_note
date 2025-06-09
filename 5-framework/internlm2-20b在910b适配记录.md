@@ -1,4 +1,5 @@
 一句话总结：两种方法，更改模型加载模块代码和 attention 模块推理代码，使得模型能够适配 InternLM2-20b 模型。或者间接方法是，使用官方提供的模型转换工具，转换模型权重文件，使得适配原来的 llama 架构。
+> 参考华为框架/工具在 2024 年版本。
 
 ## 一、直接适配 InternLM2-20b 模型
 
@@ -27,7 +28,7 @@
 
 ### 1.2、模型结构区别的适配
 
-和 1 相比，模型结构有所区别，总参数量增加 4b 左右，默认权重类型为 pytorch 类型的 bin 后缀。且从介绍来看，新模型并没有添加新的算子。
+和 `internlm1-20b` 相比，模型结构有所区别，总参数量增加 `4b` 左右，默认权重类型为 pytorch 类型的 bin 后缀。且从介绍来看，新模型并没有添加新的算子。
 
 修改下述代码(tgi-for-ascend/server/text_generation_server/models/__init__.py)，支持模型配置：
 
@@ -37,7 +38,7 @@
 
 ### 1.3、使用了 GQA 技术的适配
 
-InternLM2-20b 模型使用了 `GQA` 技术，kv cache 对应的 head  数目为 8，kv cache 所需存储的 tokens 相比之前，减少了 48/8 = 6 倍。
+`InternLM2-20b` 模型使用了 `GQA` 技术，`kv cache` 对应的 `head` 数目为 $8$，kv cache 存储所需的空间相比之前，减少了 $48/8 = 6$ 倍。
 > GQA 将查询头分成 N 组，每个组共享一个Key 和 Value 矩阵
 
 <div align="center">
@@ -50,7 +51,7 @@ flash_llama.py 会自动读取模型结构的 num_key_value_heads 值。
 <img src="../images/internlm2_20b/kv_cache_heads.png" width="60%" alt="kv_cache_heads">
 </div>
 
-默认权重类型为 pytorch 类型的 bin 后缀 ，但是获取权重的 weight_files 函数会自动 bin 后缀转换为 .safetensors 后缀。
+默认权重类型为 `pytorch` 类型的 `bin` 后缀，但是获取权重的 `weight_files` 函数会自动将 `bin` 后缀文件转换为 `.safetensors` 后缀。
 
 <div align="center">
 <img src="../images/internlm2_20b/model_suffix.png" width="60%" alt="model_suffix">
@@ -92,7 +93,7 @@ internlm2 模型没有 model.embed.tokens.weight 权重，其名字变成了 mod
 <img src="../images/internlm2_20b/weights_match.png" width="60%" alt="权重个数不匹配">
 </div>
 
-### 适配过程总结
+### 1.5、适配过程总结
 
 文件修改序列：
 
