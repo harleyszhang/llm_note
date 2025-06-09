@@ -1,15 +1,17 @@
-- [1. 标准 MOE 结构](#1-标准-moe-结构)
-- [2. DeepseekMOE 结构](#2-deepseekmoe-结构)
+- [一 标准 MOE 结构](#一-标准-moe-结构)
+- [二 DeepseekMOE 结构](#二-deepseekmoe-结构)
   - [2.1 Gate 网络与 DeepseekMOE 计算流程](#21-gate-网络与-deepseekmoe-计算流程)
-- [3. DeepseekMOE 结构代码实现](#3-deepseekmoe-结构代码实现)
+- [三 DeepseekMOE 结构代码实现](#三-deepseekmoe-结构代码实现)
   - [3.1 DeepseekV2MLP 实现](#31-deepseekv2mlp-实现)
   - [3.2 门控/路由网络实现](#32-门控路由网络实现)
   - [3.3 DeepseekMOE 实现](#33-deepseekmoe-实现)
 - [参考资料](#参考资料)
 
-## 1. 标准 MOE 结构
+## 一 标准 MOE 结构
 
-`Mixtral 8x7B` (announcement, model card) 是高质量的混合专家模型 (Mixed Expert Models，简称 `MoEs`) 的 Transformer 模型，或者说是一种稀疏的 mixture-of-experts 模型，采用纯解码器结构，并使用 `MOE` 结构，替换原始的 `FFN` 结构。在每一层，对每个 `token`，存在一个 `router network` 会挑选两组 “experts”(即参数量更小的 FFN）来分别处理该 token，并通过**加法方式**融合两组 “experts” 的输出。
+Mixtral 8x7B (announcement, model card) 是高质量的混合专家 Transformer 模型 (Mixed Expert Models，简称 `MoEs`) ，或者说是一种稀疏的 mixture-of-experts 模型，其采用纯解码器结构，并创新性的使用 `MOE` 结构替换原始的 `FFN` 结构。
+
+在每一层 `decoder layer`，对每个 token，都存在一个 router network 来挑选两组 “experts”(即参数量更小的 FFN）来分别处理该 token，并通过 Add 加法融合两组 “experts” 的输出。
 
 基础版的（稀疏）`MOE` 结构图如下图所示:
 
@@ -17,9 +19,9 @@
 
 `MOE` 模块通常由两部分组成：
 - **门控或 Router 网络**：模块负责根据输入 `token` 的特征动态选择激活哪些专家，路由器是由带学习的参数组成的网络。
-- **“experts” 网络（小型 FFN）**：每层 MOE 都包含若干个（稀疏）专家网络，其通常是小型的 FFN，**在实际推理中只有部分专家(通常 8 个)会被激活参与计算**。
+- **“experts” 网络（小型 FFN）**：每层 `MOE` 都包含若干个（稀疏）专家网络，其通常是小型的 `FFN`，**在实际推理中只有部分专家(通常 8 个)会被激活参与计算**。
 
-## 2. DeepseekMOE 结构
+## 二 DeepseekMOE 结构
 
 和基础 `MOE` 结构的区别是：
 1. **更精细地划分专家网络**，提升每个专家的专业性，提高知识表达的准确度。
@@ -27,11 +29,11 @@
 
 `DeepseekMOE` 其实是有两类专家的：
 - 共享专家（Shared Expert）：$1$ 个共享专家，用于捕捉**通用**、全局的特征信息。
-- 路由专家（Routed Experts）：每个 MoE 层都包含 256 个路由专家，负责精细化处理输入 tokens 的专业特征。
+- 路由专家（Routed Experts）：每个 `MoE` 层都包含 256 个路由专家，负责精细化处理输入 tokens 的专业特征。
 
 ### 2.1 Gate 网络与 DeepseekMOE 计算流程
 
-当一个 token 的向量传入 MoE 层时，先经过一个专门的 `Gate` 网络，该网络负责计算 token 与各个路由专家之间的匹配得分。具体流程如下：
+当一个 token 的向量传入 `DeepseekMOE` 层时，先经过一个专门的 `Gate` 网络，该网络负责计算 token 与各个路由专家之间的匹配得分。具体流程如下：
 
 1. **计算 tokens 和专家的匹配得分**
    - Gate 网络通过**线性变换**计算每个 token 与所有路由专家的兼容性得分。得分可以反映 token 和各专家“契合”的程度。
@@ -66,19 +68,19 @@
 }
 ```
 
-混合专家（`MoE`）参数说明：
+DeepseekMOE 配置参数说明：
 
 <div align="center">
 <img src="../images/moe/moe_params.png" width="60%" alt="moe_params">
 </div>
 
-## 3. DeepseekMOE 结构代码实现
+## 三 DeepseekMOE 结构代码实现
 
 这里只考虑推理模式下的 `DeepseekMOE` 结构实现，且分步实现。
 
 ### 3.1 DeepseekV2MLP 实现
 
-专家其实就是参数量更少的 `FFN/MLP` 结构，和 `llama` 中结构一样，只是参数量和计算量更少了，DeepseekV2MLP 代码如下所示。
+专家其实就是参数量更少的 `FFN/MLP` 结构，和 `llama` 中结构一样，只是参数量和计算量更少了，DeepseekV2MLP 代码如下所示:
 
 ```python
 class DeepseekV2MLP(nn.Module):
@@ -230,10 +232,10 @@ topk_weight shape torch.Size([2048, 6])
 ### 3.3 DeepseekMOE 实现
 
 1. **门控计算**
-   - 调用门控网络（`self.gate`），对输入 `hidden_states` 计算得到 top‑k 专家索引（topk_idx）、对应权重（topk_weight）以及辅助损失（aux_loss，推理时不参与梯度计算）。
+   - 调用门控网络（`self.gate`），对输入 `hidden_states` 计算得到 `top‑k` 专家索引（topk_idx）、对应权重（topk_weight）以及辅助损失（aux_loss，推理时不参与梯度计算）。
 2. **数据重排**
-    - 将输入 `hidden_states` 展平为二维张量（形状 $[B \times T, d]$），并将 topk_idx 也展平。
-	- 在推理模式下，通常不需要像训练时那样对每个 token 进行 repeat_interleave，因为每个 token 只会由对应专家处理一次。
+    - 将输入 `hidden_states` 展平为二维张量（形状 $[B \times T, d]$），并将 `topk_idx` 也展平。
+	- 在推理模式下，通常不需要像训练时那样对每个 `token` 进行 repeat_interleave，因为每个 token 只会由对应专家处理一次。
 3. **专家计算**
 	- 根据展平后的 `topk_idx`，依次对每个专家负责的 token 子集进行计算。
 	- 由于这里可能存在多个 `token` 被分配给不同专家，实际实现中需要将每个专家的输出按顺序记录下来。
@@ -241,7 +243,7 @@ topk_weight shape torch.Size([2048, 6])
 	- 将所有专家计算的输出进行合并。通过将输出重新整理（排序）回原始 token 顺序，并按照 topk_weight 对各个专家输出进行加权求和，从而获得最终输出。
 	- 整个过程保证最终输出形状与原始输入保持一致，即 $[B, T, d]$。
 
-代码实现如下所示：
+`DeepseekMOE` 结构代码实现如下所示：
 
 ```python
 # 为了单元测试，模拟不使用分布式（ep_size默认为1）
