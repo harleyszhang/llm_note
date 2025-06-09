@@ -72,13 +72,13 @@ from text_generation_server.models.custom_modeling.flash_llama_modeling_ascend i
 internlm2 模型没有 model.embed.tokens.weight 权重，其名字变成了 model.tok_embeddings.weight。
 
 <div align="center">
-<img src="../images/internlm2_20b/weights_name2.png" width="60%" alt="weights_name2">
+<img src="../images/internlm2_20b/weights_name2.png" width="80%" alt="weights_name2">
 </div>
 <div align="center">
-<img src="../images/internlm2_20b/weights_name1.png" width="60%" alt="weights_name1">
+<img src="../images/internlm2_20b/weights_name1.png" width="80%" alt="weights_name1">
 </div>
 <div align="center">
-<img src="../images/internlm2_20b/weights_name3.png" width="60%" alt="weights_name3">
+<img src="../images/internlm2_20b/weights_name3.png" width="80%" alt="weights_name3">
 </div>
 
 2，其他权重文件名适配不再举例。
