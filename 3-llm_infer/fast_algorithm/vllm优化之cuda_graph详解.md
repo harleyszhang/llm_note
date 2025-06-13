@@ -15,7 +15,7 @@ categories: LLM_Infer
 
 ## 一 vllm 中的 cuda graph
 
-vllm 是 pythonic 的 llm 推理框架，在 cpu 进行 cuda kernel launch（启动）的 eager mode 时，其存在可较大的 kernel launch 开销，尤其是对于 batch较小/模型较小的情况，kernel 启动开销过大！由此，作者基于 torch 使用 cuda graph 来直接减少 kernel launch 的开销。
+vllm 是 pythonic 的 llm 推理框架，在 cpu 进行 cuda kernel launch（启动）的 eager mode 时，其存在可较大的 `kernel launch` 开销，尤其是对于 batch较小/模型较小的情况，kernel 启动开销过大！由此，作者基于 torch 使用 `cuda graph` 来直接减少 kernel launch 的开销。
 
 > 这里解释下 **cuda kernel launch，其实际是 CPU 向 GPU 发送指令的过程，即算子下发过程**！
 
