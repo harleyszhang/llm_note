@@ -1,18 +1,16 @@
 - [我的自制大模型推理框架课程介绍](#我的自制大模型推理框架课程介绍)
 - [一 transformer 模型](#一-transformer-模型)
-  - [1.1 transformer 系列模型](#11-transformer-系列模型)
-  - [1.2 LLM 性能分析](#12-llm-性能分析)
-- [二 大语言模型压缩](#二-大语言模型压缩)
-- [三 大语言模型推理及部署（服务化）](#三-大语言模型推理及部署服务化)
+  - [1.1 transformer 模型基础](#11-transformer-模型基础)
+- [二 大语言模型压缩算法](#二-大语言模型压缩算法)
+- [三 llm 推理优化](#三-llm-推理优化)
   - [3.1 LLM 综合性能分析](#31-llm-综合性能分析)
   - [3.2 LLM 推理优化-算法层面](#32-llm-推理优化-算法层面)
-  - [3.3 LLM 推理服务框架解析](#33-llm-推理服务框架解析)
-  - [3.4 系统优化方法](#34-系统优化方法)
-  - [3.5 LLM 可视化](#35-llm-可视化)
+  - [3.3 LLM 并行加速](#33-llm-并行加速)
 - [四 高性能计算](#四-高性能计算)
   - [4.1 triton 笔记](#41-triton-笔记)
   - [4.2 cuda 笔记](#42-cuda-笔记)
   - [4.3 高性能编程学习资料推荐](#43-高性能编程学习资料推荐)
+- [五 框架解析](#五-框架解析)
 - [参考资料](#参考资料)
 
 LLM notes, including model inference, transformer model structure, and lightllm framework code analysis notes.
@@ -64,7 +62,7 @@ LLM notes, including model inference, transformer model structure, and lightllm 
 </div>
 
 ## 一 transformer 模型
-### 1.1 transformer 系列模型
+### 1.1 transformer 模型基础
 
 - [transformer 论文解读](./1-transformer_model/transformer论文解读.md)
 - [transformer 模型代码实现](./1-transformer_model/transformer模型结构详解及实现.md)
@@ -73,56 +71,36 @@ LLM notes, including model inference, transformer model structure, and lightllm 
 - [gpt1-3 论文解读](./1-transformer_model/gpt1-3论文解读.md)
 - [RoPE 位置编码算法详解](./1-transformer_model/RoPE位置编码算法详解.md)
 - [Sinusoida 位置编码算法详解](./1-transformer_model/Sinusoida位置编码详解.md)
+- [MLA结构代码实现及优化](./1-transformer_model/MLA结构代码实现及优化.md)
 
-### 1.2 LLM 性能分析
-
-- [llm 参数量-计算量-显存占用分析](./1-transformer_model/llm参数量-计算量-显存占用分析.md)
-- [llm 推理 latency 分析](1-transformer_model/llm推理latency分析.md)
-
-## 二 大语言模型压缩
+## 二 大语言模型压缩算法
 
 - [SmoothQuant 论文解读](./2-llm_compression/SmoothQuant论文解读.md)
 - [SmoothQuant 算法源码剖析](./2-llm_compression/SmoothQuant源码剖析.md)
 - [AWQ 论文解读](./2-llm_compression/SmoothQuant论文解读.md)
 - [AWQ 算法源码剖析](./2-llm_compression/AWQ代码解析.md)
 
-## 三 大语言模型推理及部署（服务化）
+## 三 llm 推理优化
 
 ### 3.1 LLM 综合性能分析
 
-- [Roofline 论文解读](./3-llm_infer_deploy/Roofline论文解读.md)
-- [llm 推理揭秘论文翻译](3-llm_infer_deploy/llm推理揭秘论文翻译.md)
-- [llm 综合分析论文翻译](3-llm_infer_deploy/llm综合分析论文翻译.md)
+- [llm 推理揭秘论文翻译](3-llm_infer/llm推理揭秘论文翻译.md)
+- [llm 综合分析论文翻译](3-llm_infer/llm综合分析论文翻译.md)
+- [llm推理服务框架总结](./llm_note/3-llm_infer/llm服务框架特性总结.md)
 
 ### 3.2 LLM 推理优化-算法层面
 
-- [online-softmax 论文解读](./3-llm_infer_deploy/fast_algorithm/online-softmax论文解读.md)
-- [flashattention-1 论文解读](./3-llm_infer_deploy/fast_algorithm/flashattention-1论文解读.md)
-- [flashattention-2 论文解读](./3-llm_infer_deploy/fast_algorithm/flashattention-2论文解读.md)
-- [flashattention-3 论文解读](./3-llm_infer_deploy/fast_algorithm/flashattention-3论文解读.md)
-- [flashattention1-2-3 系列总结](./3-llm_infer_deploy/fast_algorithm/flashattention1-2-3系列总结.md)
+- [online-softmax 论文解读](./3-llm_infer/fast_algorithm/online-softmax论文解读.md)
+- [flashattention-1 论文解读](./3-llm_infer/fast_algorithm/flashattention-1论文解读.md)
+- [flashattention-2 论文解读](./3-llm_infer/fast_algorithm/flashattention-2论文解读.md)
+- [flashattention-3 论文解读](./3-llm_infer/fast_algorithm/flashattention-3论文解读.md)
+- [flashattention1-2-3 系列总结](./3-llm_infer/fast_algorithm/flashattention1-2-3系列总结.md)
+- [prompt-cache论文速读](./3-llm_infer/fast_algorithm/prompt-cache论文速读.md)
+- [vllm优化之cuda_graph详解](./3-llm_infer/fast_algorithm/vllm优化之cuda_graph详解.md)
 
-### 3.3 LLM 推理服务框架解析
+### 3.3 LLM 并行加速
 
-`LLM` 推理服务框架技术总结和源码解析：
-
-- [tgi 框架初步解析](./3-llm_infer_deploy/deepspeed_note/tgi框架解析.md)
-- [vllm 优化技术速览](./3-llm_infer_deploy/lightllm_analysis/vllm优化技术速览.md)
-- [lightllm 框架速览](./3-llm_infer_deploy/lightllm_analysis/lightllm框架速览.md)
-- [lightllm 模型推理概述](./3-llm_infer_deploy/lightllm_analysis/lightllm模型推理概述.md)
-
-**DeepSpeed 框架学习笔记**：
-
-- [DeepSpeed:通过系统优化和压缩加速大规模模型推理和训练](./3-llm_infer_deploy/deepspeed_note/deepspeed-通过系统优化和压缩加速大规模模型推理和训练.md)
-- [DeepSpeed 推理:具有定制推理内核和量化支持的多 GPU 推理](./3-llm_infer_deploy/deepspeed_note/deepspeed推理-具有定制推理内核和量化支持的多GPU推理.md)
-
-### 3.4 系统优化方法
-
-图优化、算子融合、深度学习推理框架系统层面的优化。
-
-### 3.5 LLM 可视化
-
-- [http://llm-viz-cn.iiiai.com/llm](http://llm-viz-cn.iiiai.com/llm)
+- [张量并行技术详解](./3-llm_infer/llm_parallel/张量并行技术详解.md)
 
 ## 四 高性能计算
 
@@ -137,10 +115,16 @@ LLM notes, including model inference, transformer model structure, and lightllm 
 
 ### 4.2 cuda 笔记
 
+GPU 内核开发基础：
+
 - [英伟达 GPU 架构总结](./4-hpc_basic/英伟达GPU架构总结.md)
-- [英伟达 GPU 通信理解](./4-hpc_basic/英伟达GPU通信理解.md)
+- [英伟达GPU通信和多卡拓扑结构](./4-hpc_basic/英伟达GPU通信和多卡拓扑结构.md)
 - [英伟达 GPU 性能分析指导](./4-hpc_basic/英伟达GPU性能分析指导.md)
+- [Roofline 论文解读](./4-hpc_basic/Roofline论文解读.md)
 - [理解 Roofline 性能分析模型](./4-hpc_basic/深入理解Roofline模型.md)
+  
+CUDA 内核开发笔记：
+
 - [CUDA 背景知识](./4-hpc_basic/CUDA背景知识.md)
 - [CUDA 编程模型概述](./4-hpc_basic/CUDA编程模型概述.md)
 - [CUDA 编程模型进阶](./4-hpc_basic/CUDA编程模型进阶.md)
@@ -173,6 +157,15 @@ LLM notes, including model inference, transformer model structure, and lightllm 
 3, Star History Chart：
 
 [![Star History Chart](https://api.star-history.com/svg?repos=HarleysZhang/llm_note)](https://api.star-history.com/svg?repos=HarleysZhang/llm_note)
+
+## 五 框架解析
+
+`LLM` 推理服务框架技术总结和源码解析：
+
+- [tgi 框架初步解析](./5-framework/tgi框架简单总结.md)
+- [vllm推理流程剖析](./5-framework/vllm推理流程剖析.md)
+- [vllm优化技术速览](./llm_note/5-framework/vllm优化技术速览.md)
+- [lightllm 模型推理概述](./5-framework/lightllm模型推理概述.md)
 
 ## 参考资料
 
