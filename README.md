@@ -34,14 +34,11 @@ LLM notes, including model inference, transformer model structure, and lightllm 
     - 适配最新的 `llama/qwen2.5/llava1.5` 模型，相较 transformers 库，在 llama3 1B 和 3B 模型上，加速比最高可达 `4` 倍。
 5. **分类总结部分面试题**：
 
-<table style="width: 100%; table-layout: fixed;">
-  <tr>
-    <td align="center"><img src="./images/read_me/interview1.png" width="100%" alt="llava_output2"></td>
-    <td align="center"><img src="./images/read_me/interview2.png" width="100%" alt="llava_output"></td>
-  </tr>
-</table>
+<div align="center">
+<img src="./images/interview/problems_indexs.jpg" width="55%" alt="transformer_block_mp">
+</div>
 
-6. **项目运行效果**:
+1. **项目运行效果**:
 
 `llama3.2-1.5B-Instruct` 模型流式输出结果测试：
 
@@ -63,7 +60,7 @@ LLM notes, including model inference, transformer model structure, and lightllm 
 感兴趣的同学可以扫码联系课程购买，这个课程是我和[《自制深度学习推理框架》作者](https://space.bilibili.com/1822828582)一起合力打造的，内容也会持续更新优化。
 
 <div align="center">
-<img src="./images/read_me/fu_qcode.jpg" width="40%" alt="transformer_block_mp">
+<img src="./images/read_me/fu_qcode.jpg" width="20%" alt="transformer_block_mp">
 </div>
 
 ## 一 transformer 模型
