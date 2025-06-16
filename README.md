@@ -1,7 +1,7 @@
 - [我的自制大模型推理框架课程介绍](#我的自制大模型推理框架课程介绍)
 - [一 transformer 模型](#一-transformer-模型)
   - [1.1 transformer 模型基础](#11-transformer-模型基础)
-- [二 大语言模型压缩算法](#二-大语言模型压缩算法)
+- [二 LLM 量化推理](#二-llm-量化推理)
 - [三 llm 推理优化](#三-llm-推理优化)
   - [3.1 LLM 综合性能分析](#31-llm-综合性能分析)
   - [3.2 LLM 推理优化-算法层面](#32-llm-推理优化-算法层面)
@@ -73,7 +73,7 @@ LLM notes, including model inference, transformer model structure, and lightllm 
 - [Sinusoida 位置编码算法详解](./1-transformer_model/Sinusoida位置编码详解.md)
 - [MLA结构代码实现及优化](./1-transformer_model/MLA结构代码实现及优化.md)
 
-## 二 大语言模型压缩算法
+## 二 LLM 量化推理
 
 - [SmoothQuant 论文解读](./2-llm_compression/SmoothQuant论文解读.md)
 - [SmoothQuant 算法源码剖析](./2-llm_compression/SmoothQuant源码剖析.md)
@@ -154,10 +154,6 @@ CUDA 内核开发笔记：
 - [Liger-Kernel](https://github.com/linkedin/Liger-Kernel/tree/main): 用于训练的高效 triton 内核实现。
 - [Efficient-LLM-Inferencing-on-GPUs](https://github.com/yinuotxie/Efficient-LLM-Inferencing-on-GPUs/tree/main): README 图片不错，改天看看。
 
-3, Star History Chart：
-
-[![Star History Chart](https://api.star-history.com/svg?repos=HarleysZhang/llm_note)](https://api.star-history.com/svg?repos=HarleysZhang/llm_note)
-
 ## 五 框架解析
 
 `LLM` 推理服务框架技术总结和源码解析：
@@ -166,6 +162,10 @@ CUDA 内核开发笔记：
 - [vllm推理流程剖析](./5-framework/vllm推理流程剖析.md)
 - [vllm优化技术速览](./llm_note/5-framework/vllm优化技术速览.md)
 - [lightllm 模型推理概述](./5-framework/lightllm模型推理概述.md)
+
+Star History Chart：
+
+[![Star History Chart](https://api.star-history.com/svg?repos=HarleysZhang/llm_note)](https://api.star-history.com/svg?repos=HarleysZhang/llm_note)\
 
 ## 参考资料
 
