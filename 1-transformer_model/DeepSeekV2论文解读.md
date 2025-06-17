@@ -22,7 +22,7 @@ categories: Transformer
 
 ## 1. 介绍
 
-`DeepSeek-V2` 是一种高效的开源混合专家（MoE）语言模型，基于创新的 Transformer 架构，实现了经济的训练和高效的推理。DeepSeek-V2 具有 2360 亿个参数(`236B`)，每个 token 激活 21 亿个参数，支持 `128K` tokens 的上下文长度。
+DeepSeek-V2 是一种高效的开源混合专家（MoE）语言模型，基于创新的 Transformer 架构，实现了经济的训练和高效的推理。DeepSeek-V2 具有 2360 亿个参数(`236B`)，每个 token 激活 21 亿个参数，支持 `128K` tokens 的上下文长度。
 
 和 DeepSeekV1 模型结构沿用 llama 结构不同，DeepSeekV2 提出了多头潜在注意力（`MLA`）和 `DeepSeekMoE`，旨在优化 Transformer 框架中的注意力模块和前馈网络（FFNs）。
 1. `MLA`: Multi-head Latent Attention 结构，通过**低秩键值联合压缩**，**减少了推理时的 KV 缓存**，从而提高了推理效率。
@@ -30,7 +30,7 @@ categories: Transformer
 - **细粒度专家划分(Routed Expert)**：相比标准 MOE，DeepSeekMoE 在保持参数量不变的前提下，通过减小每个 Expert 的 `FFN` 维度，来增加 Expert 数量，进行更细粒度专家划分。
 - **共享专家隔离(Shared Expert)**: 用于表示 Routed Expert 中的共用知识信息，减少 Routed Expert 的知识冗余问题。
 
-`DeepSeek-V2` 架构图如下所示：
+DeepSeek-V2 架构图如下所示：
 
 ![architecture_of_DeepSeekv2](../images/deepseekv2/architecture_of_DeepSeek-V2.png)
 
@@ -40,17 +40,17 @@ categories: Transformer
 
 ### 2.1 多头潜变量注意力（MLA）：提升推理效率
 
-传统的 Transformer 模型通常采用多头注意力（MHA），但在生成（generation）过程中，其庞大的 Key-Value（KV）缓存会成为限制推理效率的瓶颈。为减少 KV 缓存占用，研究者提出了**多查询注意力**（MQA）（Shazeer, 2019）和**分组查询注意力**（GQA）（Ainslie et al., 2023）。这两种方法虽然减少了 KV 缓存需求，但在性能上仍无法与 MHA 相媲美（关于 MHA、GQA 和 MQA 的消融实验见附录 D.1）。
+传统的 Transformer 模型通常采用多头注意力（MHA），但在生成（generation）过程中，其庞大的 Key-Value（KV）缓存会成为限制推理效率的瓶颈。为减少 KV 缓存占用，研究者提出了**多查询注意力**（MQA）（Shazeer, 2019）和**分组查询注意力**（GQA）(Ainslie et al., 2023)。这两种方法虽然减少了 KV 缓存需求，但在性能上仍无法与 MHA 相媲美（关于 MHA、GQA 和 MQA 的消融实验见附录 D.1）。
 
-DeepSeek-V2 引入了一种全新的注意力机制**多头潜变量注意力**（`MLA`）。MLA 结合了**低秩键值联合压缩**（low-rank key-value joint compression,），在推理时大幅降低 KV 缓存需求，同时在性能上超越 MHA。
-> MLA 本质上是通过低秩转换的思路减少 head 的维度，即换为一个压缩的 QKV，存储的KV 的维度显著减小，而不是 GQA 方法减少 kv heads 的数量。
+DeepSeek-V2 引入了一种全新的注意力机制**多头潜变量注意力**（`MLA`）。MLA 结合了**低秩键值联合压缩**（low-rank key-value joint compression），在推理时大幅降低 KV 缓存需求，同时在性能上超越 MHA。
+> `MLA` 本质上是通过低秩转换的思路减少 `head` 的维度，即换为一个压缩的 `QKV`，存储的 `KV` 的维度显著减小，而不是 GQA 方法减少 kv heads 的数量。
 
 #### 2.1.1 Standard Multi-Head Attention
 
-先回顾下标准的**多头注意力（MHA）机制**。设 $d$ 为嵌入维度，$n_h$ 为注意力头数，$d_h$ 为单个注意力头的维度，$h_t \in R_d$ 表示第 $t$ 个 token 进入注意力层的输入向量。
+先回顾下标准的**多头注意力（MHA）机制**。设 $d$ 为嵌入维度，$n_h$ 为注意力头数，$d_h$ 为每个注意力头的维度，$h_t \in R_d$ 表示第 $t$ 个 token 进入注意力层的输入向量，$l$ 表示 decoder layers 数目。
 
-在 MHA 机制中，我们通过三个投影矩阵 $W_Q、W_K、W_V \in \mathbb{R}^{n_h d_h\times d}$ 分别计算得到查询向量、键向量和值向量（$q_t、k_t、v_t \in \mathbb{R}^{n_h d_h}$），QKV 向量的线性变换公式如下所示：
-> QKV 的线性变换的权重矩阵的第二个维度大小一定为嵌入维度 $d$。
+在 MHA 机制中，我们通过三个投影矩阵 $W_Q、W_K、W_V \in \mathbb{R}^{n_h d_h\times d}$ 分别计算得到查询向量、键向量和值向量（$q_t、k_t、v_t \in \mathbb{R}^{n_h d_h}$），`QKV` 向量的线性变换公式如下所示：
+> `QKV` 的线性变换的权重矩阵的第二个维度大小一定为嵌入维度 $d$。
 
 $$
 \mathbf{q}_t = W^Q \mathbf{h}_t, \tag{1}
@@ -83,13 +83,13 @@ $$\mathbf{u}_t = W^O [\mathbf{o}_{t,1}; \mathbf{o}_{t,2}; \dots; \mathbf{o}_{t,n
 
 其中，$q_{t,i}$, $k_{t,i}$, $v_{t,i} \in \mathbb{R}^{d_h}$ 分别表示第 $i$ 个注意力头的查询（query）、键（key）和值（value）；$W_O \in \mathbb{R}^{d \times d_h n_h}$ 表示输出投影矩阵。在推理过程中，key 和 value 需要被缓存，以加速计算，避免重复计算。
 
-标准 `MHA` 每个 `token` 的 kv 缓冲大小 = $2n_hd_h l$，单位为字节 `byte`；如果使用了 `GQA` 优化技术，每个 token 的 kv 缓冲大小变为 $2n_{kv}d_h l = 2n_hd_h l/\text{groups}$ 个元素。下标 $t$ 表示第几个 token，下标 $[1, n_h]$ 表示注意力头数，$l$ 表示 decoder layers 数目。
+标准 `MHA` 每个 `token` 的 kv 缓冲大小 = $2n_hd_h l$，单位为字节 `byte`；如果使用了 `GQA` 优化技术，每个 token 的 kv 缓冲大小变为 $2n_{kv}d_h l = 2n_hd_h l/\text{groups}$ 个元素。
 
-在模型部署时，这种庞大的 KV 缓存 成为了一个主要的瓶颈，限制了**最大批量大小**（batch size）和**序列长度**（sequence length）。
+模型部署时，在有限的 gpu 显存前提下，这种庞大的 KV 缓存成为了一个主要的瓶颈，限制了**最大批量大小**（batch size）和**序列长度**（sequence length）。
 
 #### 2.1.2 Low-Rank Key-Value Joint Compression
 
-MLA 的核心是对**键**（keys）和**值**（values）进行**低秩联合压缩**（low-rank joint compression），以减少 KV 缓存（KV cache）的占用：
+MLA 的核心是对**键**（keys）和**值**（values）进行**低秩联合压缩**（low-rank joint compression），以减少 KV 缓存（KV cache）：
 
 $$
 \mathbf{c}_t^{KV} = W^{DKV} \mathbf{h}_t,
@@ -106,14 +106,14 @@ $$
 \tag{11}
 $$
 
-`KV` 向量的生成是先投影到一个**低维**（`5120 -> 512`）的 `compressed_kv` 向量（$\mathbf{c}_t^{KV}$）再升维展开得到 $\mathbf{k}_t^{C}$ 和 $\mathbf{v}_t^{C}$。上述公式的各个变量定义：
+`KV` 向量的生成是先投影到一个**低维**（`hidden_size --> kv_lora_rank + qk_rope_head_dim`）的 `compressed_kv` 向量（$\mathbf{c}_t^{KV}$）再升维展开得到 $\mathbf{k}_t^{C}$ 和 $\mathbf{v}_t^{C}$。上述公式的各个变量定义：
 
-- $\mathbf{c}_t^{KV}$ 是 `keys` 和 `values` 的**压缩后的潜在向量**（`latent vector`）；
-- $d_c (\ll d_h n_h)$ 代表 `KV` 压缩维度（KV compression dimension）
+- $\mathbf{c}_t^{KV} \in \mathbb{R}^{d_c}$ 是 `keys` 和 `values` **压缩后的潜在向量**（`latent vector`）；
+- $d_c (\ll d_h n_h)$ 代表 `KV` 压缩维度（KV compression dimension）；
 - $W^{DKV} \in \mathbb{R}^{d_c \times d}$ 是**降维投影矩阵**（down-projection matrix）；
 - $W^{UK}, W^{UV} \in \mathbb{R}^{d_h n_h \times d_c}$ 分别是 keys 和 values 的**升维投影矩阵**（up-projection matrices）。
 
-另外，虽然不能减少 KV Cache 的占用，但是为了**减少训练时的激活内存**（activation memory），同样也对查询（queries）也进行了**低秩压缩**（low-rank compression）。同样也是先投影到一个**低维**（`5120 -> 1536`）的 `compressed_kv` 向量（$\mathbf{c}_t^{Q}$）再升维展开得到 $\mathbf{q}_t^{C}$:
+另外，虽然不能减少 KV Cache，但是为了**减少训练时的激活内存**（activation memory），同样也对查询（queries）也进行了**低秩压缩**（low-rank compression）。同样也是先投影到一个**低维**（`5120 -> 1536`）的 `compressed_kv` 向量（$\mathbf{c}_t^{Q}$）再升维展开得到 $\mathbf{q}_t^{C}$:
 
 $$
 \mathbf{c}_t^{Q} = W^{DQ} \mathbf{h}_t,
@@ -133,17 +133,17 @@ $$
 
 #### 2.1.3 Decoupled Rotary Position Embedding
 
-和 DeepSeek 67B（DeepSeek-AI, 2024）类似，作者也计划在 DeepSeek-V2 中使用 旋转位置编码（RoPE, Rotary Position Embedding）（Su et al., 2024）。但是，RoPE 与**低秩 KV 压缩（low-rank KV compression）并不兼容**。
+和 DeepSeek 671B（DeepSeek-AI, 2024）类似，作者也计划在 DeepSeek-V2 中使用旋转位置编码（RoPE, Rotary Position Embedding）（Su et al., 2024）。但是，RoPE 与**低秩 KV 压缩（low-rank KV compression）并不兼容**。
 
-具体来说，RoPE 使键（Key）和查询（Query）都具备**位置敏感性**（position sensitivity）。如果我们在**压缩后的键** $\mathbf{k}_t^{C}$ 上应用 ROPE，那么实际上我们得到的键表示会是这样的形式：
+具体来说，`RoPE` 对键（Key）和查询（Query）都具备**位置敏感性**（position sensitivity）。如果我们在**压缩后的键** $\mathbf{k}_t^{C}$ 上应用 `ROPE`:
 
 $$k_t^R = \text{ROPE}(W^{UK} \mathbf{c}_t^{KV})$$
 
-很明显式（10）中的 $W^{UK}$ 和 RoPE 旋转矩阵在计算过程中“耦合”在一起—这意味着 $W^{UK}$ 输出的结果会始终被那个依赖于具体位置的旋转矩阵所“修正”或“调制”。
+则，公式（10）中的 $W^{UK}$ 将会和一个位置敏感的 RoPE 旋转矩阵在计算过程中“耦合”在一起，这意味着 $W^{UK}$ 输出的结果会始终被那个依赖于具体位置的旋转矩阵所“修正”或“调制”。
 
-这样会导致在执行 atten weight（$QK^T$）的计算优化中，无法像原本设想的那样，把 $W^{UK}$ 吸收到 $W^Q$  中，因为 当前生成 token 相关的 RoPE 矩阵位于 $W^Q$  和 $W^{UK}$ 之间，而矩阵乘法不满足交换律（commutative law）。这直接导致在推理过程中，我们必须**重新计算**所有 prefix token 的键（keys），这将显著降低推理效率。
+这样会导致在执行 atten weight（$QK^T$）的计算优化中，**无法把 $W^{UK}$ 吸收到 $W^Q$ 中**，因为和当前生成 token 相关的 RoPE 矩阵位于 $W^Q$ 和 $W^{UK}$ 之间，而矩阵乘法不满足交换律（commutative law）。这直接导致在推理过程中，我们必须**重新计算**所有 prefix token 的键（keys），这将显著降低推理效率。
 
-为了解决这个问题，作者提出了一种**解耦 RoPE**（decoupled RoPE）的策略，通过**额外引入多头查询**（multi-head queries）$q_{t,i}^R \in \mathbb{R}^{d^R_h}$和**采用一个共享键**（shared key) $k_t^R \in \mathbb{R}^{d^R_h}$ 来**承载 RoPE 信息**。其中 $d^R_h$  代表**解耦查询和键的每头维度**（per-head dimension of the decoupled queries and key）。
+为了解决这个问题，作者提出了一种**解耦 RoPE**（decoupled RoPE）的策略，通过**额外引入多头查询**（multi-head queries）$q_{t,i}^R \in \mathbb{R}^{d^R_h}$和**采用一个共享键**（shared key) $k_t^R \in \mathbb{R}^{d^R_h}$ 来**承载 RoPE **。其中 $d^R_h$  代表**解耦查询和键的每头维度**（per-head dimension of the decoupled queries and key）。
 
 在使用**解耦 RoPE 策略**后，`MLA` 的计算过程变成如下所示：
 
