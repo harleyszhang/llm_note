@@ -143,16 +143,16 @@ class DeepseekV2MLA(nn.Module):
         self.kv_down_rmsnorm = DeepseekV2RMSNorm(self.kv_lora_rank)
         
         # MLA 相关 part2: 解压缩. # W^{WQ} 和 W^{QR} 权重是合并再一起的。
-        self.q_head_dim = self.qk_nope_head_dim  + self.qk_rope_head_dim
+        self.qk_head_dim = self.qk_nope_head_dim  + self.qk_rope_head_dim
         self.q_up_proj = nn.Linear(
             self.q_lora_rank, 
-            self.num_heads * self.q_head_dim,
+            self.num_heads * self.qk_head_dim,
             bias=False,
         )
-        # qk_nope_head_dim = q_head_dim - qk_rope_head_dim
+        
         self.kv_up_proj = nn.Linear(
             self.kv_lora_rank, 
-            self.num_heads * (self.q_head_dim - self.qk_rope_head_dim + self.v_head_dim),
+            self.num_heads * (self.qk_nope_head_dim + self.v_head_dim),
             bias=False,
         )
         
@@ -171,7 +171,7 @@ class DeepseekV2MLA(nn.Module):
             self.q_down_rmsnorm(self.q_down_proj(hidden_states))
         )
 
-        q = q.view(batch_size, q_len, self.num_heads, self.q_head_dim).transpose(1,2)
+        q = q.view(batch_size, q_len, self.num_heads, self.qk_head_dim).transpose(1,2)
         q_nope, q_rope = torch.split(
             q,
             [self.qk_nope_head_dim, self.qk_rope_head_dim],
@@ -217,7 +217,7 @@ class DeepseekV2MLA(nn.Module):
         )
         # qk^t
         scores = (
-            torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.q_head_dim)
+            torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.qk_head_dim)
         )
 
         if casual_mask is not None:
