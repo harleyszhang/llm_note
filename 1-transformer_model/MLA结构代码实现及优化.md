@@ -18,6 +18,12 @@ categories: Transformer
 
 ## 1. MLA 计算拆解
 
+`MLA` 结构的可视化图如下所示：
+
+<div align="center">
+<img src="../images/deepseekv2/architecture_of_MLA.png" width="80%" alt="architecture_of_MLA">
+</div>
+
 DeepDeekv2 的模型配置如下所示:
 
 <div align="center">
@@ -56,7 +62,7 @@ $$ q_t = [q_t^C, q_t^R] \in \mathbb{R}^{B \times L \times H \times 192}$$
 
 $$c_t^{KV} = W^{DKV} h_t \in \mathbb{R}^{B \times L \times 512}$$
 
-2，然后，和 $Q$ 向量的计算过程类似，$K$ 向量的第一部分 $k_t^C$ 是将 $c_t^{KV}$ 通过投影解压缩到 $\mathbb{R}^{H \times 128}$ 的多头向量空间上（其中 $H$ 是 `heads` 数取值 128，$128$ 对应模型配置文件中的 `qk_rope_head_dim` 参数），计算公式如下：
+2，然后，和 $Q$ 向量的计算过程类似，$K$ 向量的第一部分 $k_t^C$ 是将 $c_t^{KV}$ 通过投影解压缩到 $\mathbb{R}^{H \times 128}$ 的多头向量空间上（其中 $H$ 是 `heads` 数量，值是 `128`，$128$ 对应模型配置文件中的 `qk_rope_head_dim` 参数），计算公式如下：
 
 $$k_t^C = W^{UK}c_t^{K} \in \mathbb{R}^{B\times L\times H\times 128}$$
 
@@ -136,7 +142,7 @@ class DeepseekV2MLA(nn.Module):
         )
         self.kv_down_rmsnorm = DeepseekV2RMSNorm(self.kv_lora_rank)
         
-        # MLA 相关 part2: 解压缩
+        # MLA 相关 part2: 解压缩. # W^{WQ} 和 W^{QR} 权重是合并再一起的。
         self.q_head_dim = self.qk_nope_head_dim  + self.qk_rope_head_dim
         self.q_up_proj = nn.Linear(
             self.q_lora_rank, 
@@ -235,57 +241,71 @@ class DeepseekV2MLA(nn.Module):
 
 ### 3.1 CC (CacheCompressed）
 
-在 transformers 的最新开源版本中， MLA 算子改为缓存**压缩后的 KV Cache**，并将 RoPE 后的 `k_pe` 一并缓存入 KV Cache 中，与缓存完整的 KV Cache 相比，这将大大减少每个 token 的每层Cache 大小。
+在 transformers 库中， MLA 算子不再缓冲完整的 KV Cache，而是改为缓存**压缩后的 KV Cache**，并将 RoPE 后的 `k_pe` 一并缓存入 KV Cache 中，与缓存完整的 KV Cache 相比，这将大大减少每个 token 的每层 Cache 大小。
 
 ### 3.2 A_CC（AbsorbCacheCompressed）
 
-上述 `CacheCompressed` 的实现代码其实并不能实质减少 KV Cache 过大的问题，因为在计算 MLA 的时候，仍然需要存储解压后的完整的 `KV Cache`（中间激活），这很可能引起 OOM 崩溃。
+`CacheCompressed` 的代码并没有减少 KV Cache 过大的问题，因为在计算 MLA 的时候，仍然需要存储解压后的完整的 `KV Cache`（中间激活），这很可能引起 OOM 崩溃。
 
 DeepSeek-V2 论文中提出，可以将 KV 的解压缩矩阵吸收到 Q-projection 和 Out-projection 中，从而可以在不解压缩 KV Cache的 情况下直接计算最终的 Attention 结果。 
 
-1，**对于 K 的吸收**（吸收进 self-attention 算子中， 相当于算子合并），在 Attention Score 的计算公式中，K 向量的非 RoPE 部分的可以做如下展开：
+1，**对于 K 的吸收**（吸收进 self-attention 算子中，相当于算子合并），在 Attention Score 的计算公式中，K 向量的非 RoPE 部分的可以做如下展开：
 
 $${q_t^C}^\top k_t^C = (W^{UQ} c_t^Q)^{\top} W^{UK} c_t^{KV} = {c_t^Q}^{\top}{W^{UQ}}^{\top} W^{UK} c_t^{KV} = ({c_t^Q}^{\top}{W^{UQ}}^{\top} W^{UK}) c_t^{KV}$$
 
-即通过矩阵乘法结合律，可以改为计算 $({c_t^Q}^{\top}{W^{UQ}}^{\top} W^{UK})$，避免了解压缩出完整的 $K$ 矩阵。另外，在原始版本的解压缩的过程中，由于每个 token 的 key 都需要与 $W^{UK}$ 相乘才能得到，因此计算量较大；矩阵吸收后，$W^{UK}$ 只需要对 $q_t^C$ 这一个向量相乘，也大大减少了浮点计算量。
+即通过矩阵乘法结合律，可以改为计算 $({c_t^Q}^{\top}{W^{UQ}}^{\top} W^{UK})$，K 的“吸收”核心的优化是 $\text{W}^\text{CombinedK} = ({W^{UQ}}^{\top} W^{UK})$，而这个组合矩阵是可以预先计算出来的。对应的 Attention Score 的计算就简化为：
 
-总结：`A_CC` 相比于 CC，把原来属于单 kv 的计算量转移到 q 上了，而 q 的 seq_len=1，可减少计算量。
+$${c_t^Q}^{\top}\ \text{W}^\text{CombinedK}\ c_t^{KV}$$
 
-其中，$c_t^{KV}$ 是我们实际保存的 KV cache。
+那么做 $K$ 的吸收有什么好处呢？**避免重复解压缩出完整的 K 矩阵**：在原始版本的解压缩的过程中，由于每个 token 的 key 都需要与 $W^{UK}$ 相乘才能得到 $k_t$ 向量，然后再用 $q_t$ 去点乘这些 $k_t$，这意味着 $W^{UK}$ 要被用到很多次。
 
-2，**$V$ 的吸收**，其实现更为复杂。为了更方便表述，采用 Einstein 求和约定描述该过程：
+总结：`A_CC` 相比于 `CC`，把原来属于单 kv 的计算量转移到 q 上了，而 q 的 seq_len=1，可减少计算量。其中，$c_t^{KV}$ 是我们实际保存的 KV cache。
+
+2，**$V$ 的吸收**，其实现更为复杂。为了更方便表述，采用 `Einstein` 求和约定描述该过程。先定义一些变量：
+- b：批大小(batch)
+- l：KV 序列长度
+- q：Query 序列长度
+- h：注意力头数
+- c：输入特征维度
+- d：每头 Value 维度
+- D：最终输出维度
+
+直接生成 Value 向量（基线实现）代码：
 
 ```python
-v_t = einsum('hdc,blc->blhd', W_UV, c_t_KV) # (1) 生成值向量 v_t
-o   = einsum('bqhl,blhd->bqhd', a, v_t)     # (2) 加权求和得到 o
-u   = einsum('hdD,bhqd->bhD', W_o, o)       # (3) 投影到最终输出 u
+# (1) 生成多头 Value：v_t ∈ ℝ^{b×l×h×d}
+v_t = einsum('hdc, blc -> blhd', W_UV, c_t_KV)
 
-# 将上述三式合并，得到总的计算过程
-u   = einsum('hdc,blc,bqhl,hdD->bhD', W_UV, c_t_KV, a, W_o)
+# (2) 按注意力权重加权求和：o ∈ ℝ^{b×q×h×d}
+o   = einsum('bqhl, blhd -> bqhd', a, v_t)
 
-# 利用结合律改变计算顺序
-o_  = einsum('bhql,blc->bhqc', a, c_t_KV) # (4) 避免显式生成 v_t，减少存储 (b, l, h, d) 的开销。
-o   = einsum('bhqc,hdc->bhqd', o_, W_UV)  # (5) 延迟投影操作，减少计算量。
-u   = einsum('hdD,bhqd->bhD', W_o, o)     # (6)
+# (3) 输出投影：u ∈ ℝ^{b×h×D}
+u   = einsum('hdD, bhqd -> bhD', W_o, o)
 ```
 
-其中生成值向量 v_t：
-输入：
-- W_UV：权重矩阵，形状为 (h, d, c)，其中 h 是注意力头数，d 是值向量维度，c 是输入特征维度。
-- c_t_KV：键值上下文向量，形状为 (b, l, c)，其中 b 是批次大小，l 是序列长度。
+结合律优化（延迟投影、避免 v_t）代码：
 
-操作：
+```python
+# (4) 先把注意力权重直接乘到原始上下文，得到 o_ ∈ ℝ^{b×h×q×c}
+o_  = einsum('bqhl, blc -> bhqc', a, c_t_KV)
 
-- 将每个位置的 c 维特征通过 W_UV 投影到 d 维，生成多头值向量 v_t，形状为 (b, l, h, d)。
+# (5) 再做 Value 投影：o ∈ ℝ^{b×h×q×d}
+o   = einsum('hdc, bhqc -> bhqd', W_UV, o_)
 
-改变计算顺序的优化: **通过结合律调整计算顺序，减少中间张量的内存占用**：
-先计算加权上下文 o_:
+# (6) 最终输出：u ∈ ℝ^{b×h×D}
+u   = einsum('hdD, bhqd -> bhD', W_o, o)
+```
 
-**操作：**
-- 将注意力权重 attn_weights 直接作用于原始上下文 c_t_KV，生成中间结果 o_，形状为 (b, h, q, c)。
+> 本质上是改变计算顺序的优化: **通过结合律调整计算顺序，减少中间张量的内存占用**。
 
-**意义：**
-- 避免显式生成 v_t，减少存储 (b, l, h, d) 的开销。
+显存对比：
+- 基线需要暂存 v_t，大小为 b·l·h·d
+- 优化版只产生 o_，大小为 b·h·q·c
+- 在长序列（l ≫ q）或 d ≫ c 时能显著降低显存。
+
+计算量对比：
+- 基线的矩阵乘法规模：W_UV×c_t_KV ≈ h·d·c × b·l·c → b·l·h·d·c 乘加
+- 优化版把乘加推迟到更小的张量 `o_` 上，整体 `MACs` 更少。
 
 上述优化方法的实现和对比测试代码如下所示:
 
