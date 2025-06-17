@@ -1,4 +1,12 @@
-- [1. MLA 实现拆解](#1-mla-实现拆解)
+---
+layout: post
+title: MLA 结构代码实现及优化
+date: 2025-02-09 23:00:00
+summary: MLA 结构代码实现及优化, 不吸收和吸收矩阵版本代码实现。
+categories: Transformer
+---
+
+- [1. MLA 计算拆解](#1-mla-计算拆解)
   - [1.1 Q 向量计算](#11-q-向量计算)
   - [1.2 KV 向量计算](#12-kv-向量计算)
   - [1.3 Self-Attention 计算](#13-self-attention-计算)
@@ -8,12 +16,12 @@
   - [3.2 A\_CC（AbsorbCacheCompressed）](#32-a_ccabsorbcachecompressed)
 - [参考资料](#参考资料)
 
-## 1. MLA 实现拆解
+## 1. MLA 计算拆解
 
 DeepDeekv2 的模型配置如下所示:
 
 <div align="center">
-<img src="../images/deepseekv2/deepseekv2_config.png" width="40%" alt="deepseekv2_config">
+<img src="../images/deepseekv2/deepseekv2_config.png" width="30%" alt="deepseekv2_config">
 </div>
 
 ### 1.1 Q 向量计算
@@ -29,7 +37,7 @@ $$q_t^C = W^{UQ} c_t^Q \in \mathbb{R}^{B \times L \times H \times 128}$$
 
 3，再将其投影到 $\mathbb{R}^{H \times 64}$（对应模型配置文件中的 `qk_rope_head_dim` 参数）上，并使用 RoPE 嵌入位置信息，得到 Q 向量的第二部分: $q_t^R$。
 
-$$q_t^R = \mathrm{RoPE}(W^{QR} h_t) \in \mathbb{R}^{B \times L \times H \times 64}$$
+$$q_t^R = \mathrm{RoPE}(W^{QR} c_t^Q) \in \mathbb{R}^{B \times L \times H \times 64}$$
 
 4，最后，将这两部分进行 `concat` 拼接得到最终的 $Q$ 向量：$q_t$。
 
@@ -44,19 +52,19 @@ $$ q_t = [q_t^C, q_t^R] \in \mathbb{R}^{B \times L \times H \times 192}$$
 
 ### 1.2 KV 向量计算
 
-1，计算 $KV$ 向量时，首先，将输入向量投影到一个 $512$（**对应模型配置文件中的 `kv_lora_rank` 参数**）维的低维空间，得到 Latent $c_t^{KV}$。
+1，计算 $KV$ 向量时，首先，将输入向量投影到一个 $512$（**对应模型配置文件中的 `kv_lora_rank` 参数**）维的低维空间，得到 Latent $c_t^{KV}$：
 
 $$c_t^{KV} = W^{DKV} h_t \in \mathbb{R}^{B \times L \times 512}$$
 
-2，然后，和 $Q$ 向量的计算过程类似，再将其投影到 $\mathbb{R}^{H \times 128}$ 的多头向量空间上（其中 $H=128$ 是 `heads` 数，$128$ 对应模型配置文件中的 `qk_rope_head_dim` 参数，得到了 $K$ 向量的第一部分 $k_t^C$。
+2，然后，和 $Q$ 向量的计算过程类似，$K$ 向量的第一部分 $k_t^C$ 是将 $c_t^{KV}$ 通过投影解压缩到 $\mathbb{R}^{H \times 128}$ 的多头向量空间上（其中 $H$ 是 `heads` 数取值 128，$128$ 对应模型配置文件中的 `qk_rope_head_dim` 参数），计算公式如下：
 
 $$k_t^C = W^{UK}c_t^{K} \in \mathbb{R}^{B\times L\times H\times 128}$$
 
-3，将输入向量投影到 $64$（对应模型配置文件中的 `qk_rope_head_dim` 参数）维向量空间，并应用 RoPE 嵌入位置信息得到 $K$ 向量的第二部分： $k_t^R$。
+3，和 Q 向量不同，$K$ 向量的第二部分的 $k_t^R$ 是将输入向量投影到 $\mathbb{R}^{B \times L \times 1 \times 64}$ 单头向量空间（$64$ 对应模型配置文件中的 `qk_rope_head_dim` 参数）维向量空间，并应用 RoPE 嵌入位置信息, 计算公式如下：
 
 $$k_t^R = \mathrm{RoPE}(W^{KR} h_t) \in \mathbb{R}^{B \times L \times 1 \times 64}$$
 
-4，最后，和 $Q$ 不同的是，完整的 $K$ 是将 $k_t^R$ **广播到每个 `head` 后与 $k_t^C$ `concate` 拼接得到**：
+4，最后，和 $Q$ 不同，完整的 $K$ 是将 $k_t^R$ **广播到每个 `head` 后再与 $k_t^C$ `concate` 拼接得到**：
 
 $$k_t = \begin{bmatrix}
     k_{t,1}^C & k_t^R \\ 
@@ -77,9 +85,8 @@ $$ \mathbf{v}_t = W^{UV} c_t^{KV} \in \mathbb{R}^{B \times L \times H \times 128
 Self-Attention 的计算过程和传统的 `MHA` 一模一样。同样也是首先计算 `attention score`：
 
 <!-- {% raw %} -->
-$$p = \mathrm{softmax}\left(\frac{q_t^\top k_t + \mathrm{Mask}}{\sqrt{192}}\right) = 
-\mathrm{softmax}\left(\frac{{q_t^C}^\top k_t^C + {q_t^R}^\top k_t^R + \mathrm{Mask}}{\sqrt{128 + 64}} \right)
-\mathrm{softmax}\left(\frac{{q_t^C}^\top k_t^C + {q_t^R}^\top k_t^R + \mathrm{Mask}} {\sqrt{128 + 64}} \right)
+$$p = \mathrm{softmax}\left(\frac{q_t^\top k_t + \mathrm{Mask}}{\sqrt{192}}\right)
+= \mathrm{softmax}\left(\frac{{q_t^C}^\top k_t^C + {q_t^R}^\top k_t^R + \mathrm{Mask}} {\sqrt{128 + 64}} \right)
 \in \mathbb{R}^{B \times L \times H \times L}$$
 <!-- {% endraw %} -->
 
@@ -234,7 +241,7 @@ class DeepseekV2MLA(nn.Module):
 
 上述 `CacheCompressed` 的实现代码其实并不能实质减少 KV Cache 过大的问题，因为在计算 MLA 的时候，仍然需要存储解压后的完整的 `KV Cache`（中间激活），这很可能引起 OOM 崩溃。
 
-DeepSeek-V2 论文中提出，可以将 KV 的解压缩矩阵吸收到Q-projection 和 Out-projection 中，从而可以在不解压缩 KV Cache的 情况下直接计算最终的 Attention 结果。 
+DeepSeek-V2 论文中提出，可以将 KV 的解压缩矩阵吸收到 Q-projection 和 Out-projection 中，从而可以在不解压缩 KV Cache的 情况下直接计算最终的 Attention 结果。 
 
 1，**对于 K 的吸收**（吸收进 self-attention 算子中， 相当于算子合并），在 Attention Score 的计算公式中，K 向量的非 RoPE 部分的可以做如下展开：
 
