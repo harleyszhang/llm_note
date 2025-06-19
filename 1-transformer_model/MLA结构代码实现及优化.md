@@ -281,16 +281,19 @@ o   = einsum('bqhl, blhd -> bqhd', a, v_t)
 
 # (3) 输出投影：u ∈ ℝ^{b×h×D}
 u   = einsum('hdD, bhqd -> bhD', W_o, o)
+
+# 将上述三式合并，得到总的计算过程
+u   = einsum('hdc,blc,bqhl,hdD->bhD', W_UV, c_t_KV, attn_weights, W_o)
 ```
 
 结合律优化（延迟投影、避免 v_t）代码：
 
 ```python
 # (4) 先把注意力权重直接乘到原始上下文，得到 o_ ∈ ℝ^{b×h×q×c}
-o_  = einsum('bqhl, blc -> bhqc', a, c_t_KV)
+o_  = einsum('bqhl, blc -> bhqc', attn_weights, c_t_KV)
 
 # (5) 再做 Value 投影：o ∈ ℝ^{b×h×q×d}
-o   = einsum('hdc, bhqc -> bhqd', W_UV, o_)
+o   = einsum('bhqc, hdc->bhqd', o_, W_UV)  # (5)
 
 # (6) 最终输出：u ∈ ℝ^{b×h×D}
 u   = einsum('hdD, bhqd -> bhD', W_o, o)
@@ -390,6 +393,8 @@ validate_equivalence()
 
 ## 参考资料
 
+- [vLLM在Prefill阶段和Decode阶段对MLA的不同实现的对比分析](https://zhuanlan.zhihu.com/p/1897225385751585767)
+- [DeepSeek-V2 MLA KV Cache 真的省了吗？](https://zhuanlan.zhihu.com/p/714761319)
 - [DeepSeek-V2 论文](https://arxiv.org/pdf/2405.04434)
 - [DeepSeek-V2高性能推理优化笔记：MLA优化](https://github.com/madsys-dev/deepseekv2-profile/blob/main/workspace/blog/optimizing-mla.md)
 - [再读MLA，还有多少细节是你不知道的](https://mp.weixin.qq.com/s/E7NwwMYw14FRT6OKzuVXFA)
