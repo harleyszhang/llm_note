@@ -13,7 +13,7 @@
 - [五 框架解析](#五-框架解析)
 - [参考资料](#参考资料)
 
-LLM notes, including model inference, transformer model structure, and lightllm framework code analysis notes.
+LLM notes, including model inference, hpc programming note, transformer model structure, and vllm framework code analysis notes.
 
 ## 我的自制大模型推理框架课程介绍
 
