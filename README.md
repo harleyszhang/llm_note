@@ -29,7 +29,7 @@ LLM notes, including model inference, transformer model structure, and lightllm 
     - 基于 `PyTorch` 实现高效显存管理。​
     - 课程项目完美支持 `FlashAttentionV1、V2、V3` 与 `GQA`，以及 `PageAttention` 的具体实现。​
     - 使用 `Triton` 编写融合算子，如 KV 线性层融合等。​
-    - 适配最新的 `llama/qwen2.5/llava1.5` 模型，相较 transformers 库，在 llama3 1B 和 3B 模型上，加速比最高可达 `4` 倍。
+    - 适配最新的 `qwen3/qwen2.5/llama3/llava1.5` 模型，相较 transformers 库，在 llama3 1B 和 3B 模型上，加速比最高可达 `4` 倍。
 5. **分类总结部分面试题**：
 
 <div align="center">
@@ -86,7 +86,7 @@ LLM notes, including model inference, transformer model structure, and lightllm 
 
 - [llm 推理揭秘论文翻译](3-llm_infer/llm推理揭秘论文翻译.md)
 - [llm 综合分析论文翻译](3-llm_infer/llm综合分析论文翻译.md)
-- [llm推理服务框架总结](./llm_note/3-llm_infer/llm服务框架特性总结.md)
+- [llm推理服务框架总结](3-llm_infer/llm服务框架特性总结.md)
 
 ### 3.2 LLM 推理优化-算法层面
 
