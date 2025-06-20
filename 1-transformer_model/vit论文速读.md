@@ -1,3 +1,11 @@
+---
+layout: post
+title: vit 论文速读
+date: 2024-09-08 20:00:00
+summary: 学习 b 站李沐视频总结的 vit 论文解读笔记
+categories: Transformer
+---
+
 - [简介](#简介)
 - [ViT 模型结构](#vit-模型结构)
   - [ViT block 组成](#vit-block-组成)
@@ -17,12 +25,9 @@ META 于 2020 年发表 `DETR` 论文，紧跟着谷歌从**特征编码的角�
 
 ## ViT 模型结构
 
-<div align="center"><img src="../images/vit/vit-model-overview.png" width="60%" alt="ViT 模型结构概览">
-</div>
-
-<!-- <center>
+<div align="center">
 <img src="../images/vit/vit-model-overview.png" width="60%" alt="ViT 模型结构概览">
-</center> -->
+</div>
 
 模型概述：作者将输入的图像划分为固定大小的图像块，对**每个图像块**都进行线性嵌入，添加位置嵌入，并将生成的向量序列输入到标准的 Transformer 编码器中。为了进行分类，参考前人经验，使用标准方法，即**在序列中添加一个额外的可学习“分类令牌”**。
 
@@ -40,9 +45,62 @@ META 于 2020 年发表 `DETR` 论文，紧跟着谷歌从**特征编码的角�
 
 ### 输入切分为多个 path
 
-ViT 将输入图片分为多个 patch（`16x16`），再将每个 patch 投影为固定长度的向量送入 Transformer，后续 encoder 的操作和原始 Transformer 中完全相同。另外，对于图片分类问题，在输入序列中加入一个特殊的 token，该 token 对应的输出即为最后的预测类别。
+ViT 将输入图片分为多个 patch（`16x16`），再将每个 patch 投影为固定长度的向量送入 Transformer，后续 encoder 的操作和原始 Transformer 中完全相同。如果是对于图片分类问题，则会在输入序列中加入一个特殊的 token，该 token 对应的输出即为最后的预测类别。
 
-举个例子来理解 patch embedding 过程: 假设输入图片大小为 $224 \times224$，path 大小为 $16\times 16$，则每张图片都会生成 $(224\times224)/(16\times16) = 196$ 个 patch，类似于 transformer 模型的输入序列长度为 196。每个 patch 维度大小 = $16\times 16\times 3 = 768$，类似于每个 `token` 映射成的向量长度为 768，输入序列会加上一个特俗字符 `cls`，因此最终的输入序列维度 = $197\times 768$（一共有 197 个token）。线性投射层的维度为 $768\times N (N=768)$，因此输入通过**线性投影层**之后的维度依然为 $197\times 768$。到此，我们详细的解析了通过 `patch embedding` 将一个视觉分类问题转换为 `seq2seq` 的问题。
+举个例子来理解 patch embedding 过程: 假设输入图片大小为 $224 \times224$，patch 大小为 $16\times 16$，则：
+1. 每张图片都会生成 $(224\times224)/(16\times16) = 196$ 个 patch，类似于 transformer 模型的输入序列长度为 196；
+2. 每个 patch 维度大小 = $16\times 16\times 3 = 768$，类似于每个 `token` 映射成的向量长度为 768；
+3. 输入序列会加上一个特殊令牌 `cls`，最终经过切分 patch 后的输入图像张量形状为 = $197\times 768$（一共有 `197` 个 token）。线性投影层的维度为 $768\times N (N=768)$，因此输入通过**线性投影层**之后的维度依然为 $197\times 768$。
+
+到此，我们详细的解析了 `patch embedding` 过程，这些操作全部被写在名为 PatchEmbed 的模块中，其具体的实现如下所示：
+
+```python
+class PatchEmbed(nn.Module):
+    """
+    Image --> Patch Embedding --> Linear Proj --> Pos Embedding
+    Image size -> [224,224,3]
+    Patch size -> 16*16
+    Patch num -> (224^2)/(16^2)=196
+    Patch dim -> 16*16*3 =768
+    Patch Embedding: [224,224,3] -> [196,768]
+    Linear Proj: [196,768] -> [196,768]
+ 	Positional Embedding: [197,768] -> [196,768]
+    """
+    def __init__(self, img_size=224, patch_size=16, in_c=3, embed_dim=768, norm_layer=None):
+        """
+        Args:
+            img_size: 默认参数224
+            patch_size: 默认参数是16
+            in_c: 输入的通道数
+            embed_dim: 16*16*3 = 768
+            norm_layer: 是否使用norm层，默认为否
+        """
+        super().__init__()
+        img_size = (img_size, img_size) # -> img_size = (224,224)
+        patch_size = (patch_size, patch_size) # -> patch_size = (16,16)
+        self.img_size = img_size # -> (224,224)
+        self.patch_size = patch_size # -> (16,16)
+        self.grid_size = (img_size[0] // patch_size[0], img_size[1] // patch_size[1]) # -> grid_size = (14,14)
+        self.num_patches = self.grid_size[0] * self.grid_size[1] # -> num_patches = 196
+        # Patch+linear proj的这个操作 [224,224,3] --> [14,14,768]
+        self.proj = nn.Conv2d(in_c, embed_dim, kernel_size=patch_size, stride=patch_size)
+        # 判断是否有norm_layer层，要是没有不改变输入
+        self.norm = norm_layer(embed_dim) if norm_layer else nn.Identity()
+
+    def forward(self, x):
+        # 计算各个维度的大小
+        B, C, H, W = x.shape
+        assert H == self.img_size[0] and W == self.img_size[1], \
+            f"Input image size ({H}*{W}) doesn't match model ({self.img_size[0]}*{self.img_size[1]})."
+        
+        # flatten: [B, C, H, W] -> [B, C, HW], flatten(2)代表的是从2位置开始展开
+        # eg: [1,3,224,224] --> [1,768,14,14] -flatten->[1,768,196]
+        # transpose: [B, C, HW] -> [B, HW, C]
+        # eg: [1,768,196] -transpose-> [1,196,768]
+        x = self.proj(x).flatten(2).transpose(1, 2)
+        x = self.norm(x)
+        return x
+```
 
 ## 代码实现
 
@@ -178,5 +236,6 @@ class ViT(nn.Module):
 
 ## 参考资料
 
+- [ViT解读](https://datawhalechina.github.io/thorough-pytorch/%E7%AC%AC%E5%8D%81%E7%AB%A0/ViT%E8%A7%A3%E8%AF%BB.html)
 - [AN IMAGE IS WORTH 16X16 WORDS: TRANSFORMERS FOR IMAGE RECOGNITION AT SCALE](https://arxiv.org/pdf/2010.11929)
 - [ViT（Vision Transformer）解析](https://zhuanlan.zhihu.com/p/445122996)
