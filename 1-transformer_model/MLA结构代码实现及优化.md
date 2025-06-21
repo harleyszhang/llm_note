@@ -24,7 +24,13 @@ categories: Transformer
 <img src="../images/deepseekv2/architecture_of_MLA.png" width="80%" alt="architecture_of_MLA">
 </div>
 
-DeepDeekv2 的模型配置如下所示:
+`MHA` 和 `MLA` 的结构对比如下所示：
+
+<div align="center">
+<img src="../images/deepseekv2/MLA_MHA.jpg" width="80%" alt="MLA_MHA">
+</div>
+
+DeepDeekV2 的模型配置如下所示:
 
 <div align="center">
 <img src="../images/deepseekv2/deepseekv2_config.png" width="30%" alt="deepseekv2_config">
@@ -399,3 +405,4 @@ validate_equivalence()
 - [DeepSeek-V2高性能推理优化笔记：MLA优化](https://github.com/madsys-dev/deepseekv2-profile/blob/main/workspace/blog/optimizing-mla.md)
 - [再读MLA，还有多少细节是你不知道的](https://mp.weixin.qq.com/s/E7NwwMYw14FRT6OKzuVXFA)
 - [LLMs-Zero-to-Hero](https://bruceyuan.com/llms-zero-to-hero/the-way-of-moe-model-evolution.html#_2-%E7%89%88%E6%9C%AC2-sparsemoe-%E5%A4%A7%E6%A8%A1%E5%9E%8B%E8%AE%AD%E7%BB%83%E4%BD%BF%E7%94%A8)
+- [sglang_deepseek_model_optimizations](file:///Users/honggao/Downloads/sglang_deepseek_model_optimizations.pdf)
