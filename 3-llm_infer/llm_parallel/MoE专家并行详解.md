@@ -30,7 +30,9 @@ MoE Transformer layer 的并行方式一般如下：
 
 ### 4. MoE 通讯量分析
 
-#### 第一种分析
+#### `EP` 通讯量分析：
+
+1, 第一种分析
 
 假设 `MoE` 的输入 tensor 形状为 `[b, s, h]`（或者 [b*s, h]）, 经过 gate 分组后形状变为 `[b*s*topk, h]`。如果 token 分配完全均匀（不存咋 expert 负载不均衡），则每个 EP rank 发送/接收的 token 数量相同且为:
 
@@ -48,7 +50,7 @@ $$4\times b\times s\times h\times \text{topk}\times(\text{ep\_world\_size} - 1) 
 
 $$4\times b\times s\times\text{topk}\times h$$
 
-#### 第二种分析
+2, 第二种分析
 
 在通信开销方面，TP 采用 All-Reduce 原语进行数据交换。随着 TP size 的增大，通讯会逐渐成为瓶颈。假设每次推理一个 batch 里一共有 $S$ 个token，hidden dimension 是 $D$，那么对于 TP 每一个 MoE 层每个 GPU 需要发送 $2\cdot S\cdot D$ 大小的数据，通讯量并不会随着 TP size 的增大而降低。
 
@@ -59,6 +61,10 @@ $$4\times b\times s\times\text{topk}\times h$$
 EP 同时使得每个 GPU 可以计算不同的 input token，而不需要像 TP 一样在每个 GPU 上处理相同的 token 并聚合 activation，**EP 可以极大的扩展 batch size**，使得每个专家都能分到足够数量的 token，以解决 memory access 的 bottleneck。
 
 ### 5. SGLang 的 EP 特性
+
+###  6. MoE 论文速览
+
+#### Switch Transformers
 
 
 ### 参考资料
