@@ -28,6 +28,7 @@ MoE Transformer layer 的并行方式一般如下：
 - 同一个 TP group 中的所有 TP rank 处理相同的数据，在固定 world size 的情况下，**开启 TP 会使 DP 变为原来的 1/TP**。
 
 
+
 ### 4. MoE 通讯量分析
 
 #### `EP` 通讯量分析：
