@@ -187,7 +187,9 @@ PE(t+k)PE(t) = PE(t)PE(t-k)$$
 **3，远程衰减**
 
 随着 $k$ 的增加，位置向量的内积结果会逐渐降低，即会存在远程衰减。 如下图所示：
+
 <img src="../images/positional_encoding/product.png" width="60%" alt="PE7">
+
 > 相对位置：第 n 个 token 与第 m 个 token 的位置差是 n−m。
 
 其带来的影响是使得位置编码更倾向于捕捉局部信息，限制了远程交互的影响。这种特性对短序列有效，但对长序列可能受限，即造成 Sinusoidal 位置编码**外推性一般**。
