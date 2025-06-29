@@ -69,7 +69,6 @@ LLM notes, including model inference, hpc programming note, transformer model st
 - [llama1-3 模型结构详解](./1-transformer_model/llama1-3模型结构详解.md)
 - [vit 论文速读](./1-transformer_model/vit论文速读.md)
 - [gpt1-3 论文解读](./1-transformer_model/gpt1-3论文解读.md)
-- [RoPE 位置编码算法详解](./1-transformer_model/RoPE位置编码算法详解.md)
 - [Sinusoida 位置编码算法详解](./1-transformer_model/Sinusoida位置编码详解.md)
 - [MLA结构代码实现及优化](./1-transformer_model/MLA结构代码实现及优化.md)
 
