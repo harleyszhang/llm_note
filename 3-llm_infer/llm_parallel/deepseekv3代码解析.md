@@ -12,6 +12,8 @@
   - [1.2 MoEGate Forward 函数流程图](#12-moegate-forward-函数流程图)
   - [1.3 MoEGate 类解析及测试](#13-moegate-类解析及测试)
 - [二 DeepseekV3MoE](#二-deepseekv3moe)
+  - [2.1 moe\_infer 函数流程拆解](#21-moe_infer-函数流程拆解)
+  - [2.2 DeepseekV3MoE 核心函数流程图](#22-deepseekv3moe-核心函数流程图)
   - [2.3 DeepseekV3MoE 类解析及测试](#23-deepseekv3moe-类解析及测试)
 
 ## 一 MoEGate 门控
@@ -225,7 +227,7 @@ graph TB
     style Output fill:#c8e6c9
     style SelectNode fill:#ffebee
     style FinalSelect fill:#f3e5f5
-````
+```
 
 ### 1.3 MoEGate 类解析及测试
 
@@ -816,24 +818,476 @@ if __name__ == "__main__":
 
 ## 二 DeepseekV3MoE
 
+DeepSeek-V3MoE 结合了 `MoEGate` 门控机制和多个专家网络 Experts。
+
+核心组件：
+
+1. **MoEGate**: 门控网络，负责计算 `token` 与专家的亲和度分数，并动态路由 `tokens` 到不同的专家网络进行处理。
+2. **专家网络**: 多个 `DeepSeekV3MLP` 专家，每个专家处理特定的 `token` 子集
+3. **共享专家**: 可选的共享专家，所有token都会经过
+4. **专家并行**: 支持跨节点的专家并行计算
+
+关键参数:
+
+- `n_routed_experts`: 路由专家数量 (256)
+- `num_experts_per_tok`: 每个 `token`选择的专家数 (8)
+- `moe_intermediate_size`: 专家中间层维度 (2048)
+- `n_shared_experts`: 共享专家数量 (1)
+- `ep_size`: 专家并行大小
+
+### 2.1 moe_infer 函数流程拆解
+
+### 2.2 DeepseekV3MoE 核心函数流程图
+
+Forward 函数流程图如下所示：
+
+```mermaid
+flowchart TD
+    A["输入 hidden_states<br/>(bsz, seq_len, hidden)"] --> B["MoEGate 计算得分<br/>scores = sigmoid(W·x)"]
+    B --> C["选出 top-k 专家索引<br/>topk_idx (n,k)"]
+    B --> D["对应权重 topk_weight<br/>(n,k)"]
+    C --> E["将 token 按专家分组<br/>送入各 DeepseekV3MLP"]
+    D --> E
+    E --> F["收集并拼接专家输出<br/>outs"]
+    F --> G["按 idxs 还原顺序<br/>new_x (n,hidden)"]
+    G --> H["按 topk_weight 加权求和<br/>y_flat"]
+    H --> I["reshape 回 (bsz, seq_len, hidden)"]
+    I --> J{"存在 shared_experts?"}
+    J -- 否 --> K["输出 y"]
+    J -- 是 --> L["shared_experts(identity)"]
+    L --> M["相加后输出 y"]  
+```
+
+moe_infer 函数流程图如下所示:
+
+```mermaid
+flowchart TD
+    A["输入 hidden_states<br/>(bsz, seq_len, hidden)"] --> B["MoEGate 计算得分<br/>scores = sigmoid(W·x)"]
+    B --> C["选出 top-k 专家索引<br/>topk_idx (n,k)"]
+    B --> D["对应权重 topk_weight<br/>(n,k)"]
+    C --> E["将 token 按专家分组<br/>送入各 DeepseekV3MLP"]
+    D --> E
+    E --> F["收集并拼接专家输出<br/>outs"]
+    F --> G["按 idxs 还原顺序<br/>new_x (n,hidden)"]
+    G --> H["按 topk_weight 加权求和<br/>y_flat"]
+    H --> I["reshape 回 (bsz, seq_len, hidden)"]
+    I --> J{"存在 shared_experts?"}
+    J -- 否 --> K["输出 y"]
+    J -- 是 --> L["shared_experts(identity)"]
+    L --> M["相加后输出 y"]
+```
 
 ### 2.3 DeepseekV3MoE 类解析及测试
 
-带注释的 DeepseekV3MoE 类代码如下所示:
+DeepseekV3MoE 类的核心代码注释如下所示:
 
 ```python
+# 前向传播主流程
+def forward(self, hidden_states):
+    # 保存原始形状和输入
+    identity = hidden_states
+    orig_shape = hidden_states.shape
+    
+    # 通过门控网络获取路由决策
+    topk_idx, topk_weight = self.gate(hidden_states)
+    
+    # 重塑输入为2D
+    hidden_states = hidden_states.view(-1, hidden_states.shape[-1])
+    flat_topk_idx = topk_idx.view(-1)
+    
+    # 推理模式使用优化的moe_infer
+    if not self.training:
+        y = self.moe_infer(hidden_states, topk_idx, topk_weight).view(*orig_shape)
+    
+    # 添加共享专家输出
+    if self.config.n_shared_experts is not None:
+        y = y + self.shared_experts(identity)
+    
+    return y
 
+@torch.no_grad()
+def moe_infer(self, x, topk_ids, topk_weight):
+    """
+    推理模式下的专家计算（优化版本）
+    
+    核心优化:
+    1. 按专家分组处理token，减少内存访问
+    2. 批量计算提高GPU利用率
+    3. 避免重复计算
+    """
+    print(f"   - 推理模式专家计算开始")
+    
+    # 步骤1: 统计每个专家处理的token数量
+    cnts = topk_ids.new_zeros((topk_ids.shape[0], len(self.experts)))
+    cnts.scatter_(1, topk_ids, 1)
+    tokens_per_expert = cnts.sum(dim=0)
+    print(f"   - 每个专家处理的token数: {tokens_per_expert.tolist()}")
+    print(f"   - 活跃专家数: {(tokens_per_expert > 0).sum().item()}")
+    
+    # 步骤2: 对token按专家ID排序
+    idxs = topk_ids.view(-1).argsort()
+    sorted_tokens = x[idxs // topk_ids.shape[1]]
+    print(f"   - 排序后token形状: {sorted_tokens.shape}")
+    
+    ######################跳过专家并行代码##########################
+    # 步骤3: 按专家分组处理
+    outputs = []
+    start_idx = 0
+    
+    for i, num_tokens in enumerate(tokens_per_expert):
+        end_idx = start_idx + num_tokens
+        if num_tokens == 0:
+            continue
+            
+        # 获取当前专家
+        expert = self.experts[i]
+        tokens_for_this_expert = sorted_tokens[start_idx:end_idx]
+        
+        print(f"   - 专家{i}: 处理{num_tokens}个token")
+        
+        # 专家前向传播
+        expert_out = expert(tokens_for_this_expert)
+        outputs.append(expert_out)
+        start_idx = end_idx
+    
+    # 步骤4: 合并所有专家输出
+    if len(outputs) > 0:
+        outs = torch.cat(outputs, dim=0)
+    else:
+        outs = sorted_tokens.new_empty(0)
+    
+    print(f"   - 合并后输出形状: {outs.shape}")
+    
+    # 步骤5: 恢复原始token顺序
+    new_x = torch.empty_like(outs)
+    new_x[idxs] = outs
+    
+    # 步骤6: 加权聚合
+    final_out = (
+        new_x.view(*topk_ids.shape, -1)
+        .type(topk_weight.dtype)
+        .mul_(topk_weight.unsqueeze(dim=-1))
+        .sum(dim=1)
+        .type(new_x.dtype)
+    )
+    
+    print(f"   - 最终输出形状: {final_out.shape}")
+    return final_out
 ```
 
 测试代码如下所示:
 
 ```python
+    def visualize_moe_process(self, hidden_states, save_path="moe_process_visualization.png"):
+        """
+        可视化MoE处理过程
+        """
+        print(f"\n🎨 开始生成MoE处理过程可视化...")
+        
+        # 获取MoE处理结果
+        with torch.no_grad():
+            output = self.forward(hidden_states)
+            topk_idx, topk_weight = self.gate(hidden_states)
+        
+        # 创建图形
+        fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+        fig.suptitle('DeepSeek-V3 MoE处理过程可视化', fontsize=16, fontweight='bold')
+        
+        # 1. 专家使用分布
+        ax1 = axes[0, 0]
+        expert_usage = torch.zeros(self.config.n_routed_experts)
+        for idx in topk_idx.flatten():
+            expert_usage[idx] += 1
+        
+        bars = ax1.bar(range(self.config.n_routed_experts), expert_usage.numpy(), 
+                      alpha=0.7, color='skyblue', edgecolor='black')
+        ax1.set_title('专家使用分布')
+        ax1.set_xlabel('专家索引')
+        ax1.set_ylabel('使用次数')
+        ax1.set_xticks(range(0, self.config.n_routed_experts, 32))
+        
+        # 添加数值标签
+        for i, bar in enumerate(bars):
+            if expert_usage[i] > 0:
+                ax1.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.5,
+                        f'{int(expert_usage[i])}', ha='center', va='bottom', fontsize=8)
+        
+        # 2. 权重分布热力图
+        ax2 = axes[0, 1]
+        sns.heatmap(topk_weight[:min(20, topk_weight.shape[0])].numpy(), 
+                   ax=ax2, cmap='YlOrRd', cbar_kws={'label': '权重值'})
+        ax2.set_title('Token-专家权重热力图 (前20个token)')
+        ax2.set_xlabel('专家索引')
+        ax2.set_ylabel('Token索引')
+        
+        # 3. 输入输出对比
+        ax3 = axes[1, 0]
+        bsz, seq_len, hidden_size = hidden_states.shape
+        
+        # 选择第一个token进行可视化
+        input_token = hidden_states[0, 0].detach().numpy()
+        output_token = output[0, 0].detach().numpy()
+        
+        x_pos = np.arange(min(50, hidden_size))
+        ax3.plot(x_pos, input_token[:50], 'b-', alpha=0.7, label='输入', linewidth=2)
+        ax3.plot(x_pos, output_token[:50], 'r-', alpha=0.7, label='输出', linewidth=2)
+        ax3.set_title('Token向量对比 (前50维)')
+        ax3.set_xlabel('隐藏维度')
+        ax3.set_ylabel('数值')
+        ax3.legend()
+        ax3.grid(True, alpha=0.3)
+        
+        # 4. MoE处理流程图
+        ax4 = axes[1, 1]
+        ax4.set_xlim(0, 10)
+        ax4.set_ylim(0, 8)
+        ax4.axis('off')
+        
+        # 绘制流程图
+        steps = [
+            ('输入\nHidden States', 1, 6, 'lightblue'),
+            ('门控网络\n路由决策', 3, 6, 'lightyellow'),
+            ('专家并行\n计算', 5, 6, 'lightgreen'),
+            ('加权聚合\n输出', 7, 6, 'lightcoral'),
+            ('共享专家\n融合', 9, 6, 'lightpink')
+        ]
+        
+        for text, x, y, color in steps:
+            rect = patches.Rectangle((x-0.5, y-0.5), 1, 1, linewidth=2, 
+                                   edgecolor='black', facecolor=color, alpha=0.7)
+            ax4.add_patch(rect)
+            ax4.text(x, y, text, ha='center', va='center', fontsize=10, fontweight='bold')
+        
+        # 添加箭头
+        for i in range(len(steps)-1):
+            ax4.arrow(steps[i][1]+0.5, steps[i][2], 1, 0, head_width=0.1, 
+                     head_length=0.1, fc='black', ec='black')
+        
+        ax4.set_title('MoE处理流程')
+        
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        print(f"✅ 可视化图表已保存到: {save_path}")
+        plt.show()
 
+def create_moe_config():
+    """
+    创建MoE配置对象
+    """
+    class Config:
+        def __init__(self):
+            self.hidden_size = 7168  # 隐藏层维度
+            self.intermediate_size = 18432  # 标准MLP中间层大小
+            self.moe_intermediate_size = 2048  # MoE专家中间层大小
+            self.n_routed_experts = 256  # 路由专家数量
+            self.num_experts_per_tok = 8  # 每个token选择的专家数
+            self.n_shared_experts = 1  # 共享专家数量
+            self.norm_topk_prob = True  # 是否归一化top-k概率
+    
+    return Config()
+
+def demo_deepseekv3_moe():
+    """
+    DeepSeek-V3 MoE模块演示函数
+    """
+    print("=" * 80)
+    print("🚀 DeepSeek-V3 MoE模块演示")
+    print("=" * 80)
+    
+    # 创建配置
+    config = create_moe_config()
+    print(f"📋 配置信息:")
+    print(f"   - 隐藏层维度: {config.hidden_size}")
+    print(f"   - 路由专家数: {config.n_routed_experts}")
+    print(f"   - 每个token选择专家数: {config.num_experts_per_tok}")
+    print(f"   - 专家中间层大小: {config.moe_intermediate_size}")
+    print(f"   - 共享专家数: {config.n_shared_experts}")
+    
+    # 创建MoE模块
+    moe_module = DeepseekV3MoE(config)
+    print(f"\n🔧 MoE模块创建完成")
+    
+    # 创建示例输入
+    batch_size = 2
+    seq_len = 8
+    hidden_size = config.hidden_size
+    
+    hidden_states = torch.randn(batch_size, seq_len, hidden_size)
+    print(f"\n📥 示例输入:")
+    print(f"   - 形状: {hidden_states.shape}")
+    print(f"   - 数据类型: {hidden_states.dtype}")
+    print(f"   - 数值范围: [{hidden_states.min():.4f}, {hidden_states.max():.4f}]")
+    
+    # 设置为推理模式
+    moe_module.eval()
+    
+    # 执行前向传播
+    print(f"\n🔄 执行MoE前向传播...")
+    with torch.no_grad():
+        output = moe_module(hidden_states)
+    
+    # 分析结果
+    print(f"\n📊 MoE处理结果分析:")
+    print(f"   - 输出形状: {output.shape}")
+    print(f"   - 输出数值范围: [{output.min():.4f}, {output.max():.4f}]")
+    print(f"   - 输入输出差异: {torch.abs(output - hidden_states).mean():.6f}")
+    
+    # 统计专家使用情况
+    with torch.no_grad():
+        topk_idx, topk_weight = moe_module.gate(hidden_states)
+    
+    expert_usage = torch.zeros(config.n_routed_experts)
+    for idx in topk_idx.flatten():
+        expert_usage[idx] += 1
+    
+    print(f"\n🎯 专家使用统计:")
+    print(f"   - 被使用的专家数: {(expert_usage > 0).sum().item()}")
+    print(f"   - 使用最多的专家: {expert_usage.argmax().item()} (使用{expert_usage.max().item()}次)")
+    print(f"   - 使用最少的专家: {expert_usage.argmin().item()} (使用{expert_usage.min().item()}次)")
+    print(f"   - 平均每个专家使用次数: {expert_usage.mean():.2f}")
+    
+    # 检查负载均衡
+    print(f"\n⚖️ 负载均衡检查:")
+    total_usage = expert_usage.sum()
+    expected_usage = batch_size * seq_len * config.num_experts_per_tok
+    print(f"   - 总专家使用次数: {total_usage}")
+    print(f"   - 期望使用次数: {expected_usage}")
+    print(f"   - 负载均衡度: {1 - abs(total_usage - expected_usage) / expected_usage:.4f}")
+    
+    # 生成可视化
+    print(f"\n🎨 生成MoE处理过程可视化...")
+    moe_module.visualize_moe_process(hidden_states, save_path="deepseekv3_moe_visualization.png")
+    
+    print(f"\n✅ 演示完成!")
+    print("=" * 80)
+
+if __name__ == "__main__":
+    # 运行演示
+    demo_deepseekv3_moe() 
 ```
-
 
 测试代码运行后输出结果如下所示:
 
 ```bash
+================================================================================
+🚀 DeepSeek-V3 MoE模块演示
+================================================================================
+📋 配置信息:
+   - 隐藏层维度: 7168
+   - 路由专家数: 256
+   - 每个token选择专家数: 8
+   - 专家中间层大小: 2048
+   - 共享专家数: 1
+🚀 初始化DeepSeek-V3 MoE模块:
+   - 总专家数: 256
+   - 每个token选择专家数: 8
+   - 专家中间层大小: 2048
+   - 单GPU模式
+🔧 创建MLP专家: hidden_size=7168, intermediate_size=2048
+🔧 创建MLP专家: hidden_size=7168, intermediate_size=2048
+🔧 创建MLP专家: hidden_size=7168, intermediate_size=2048
+   ...
+   - 共享专家中间层大小: 2048
 
+🔧 MoE模块创建完成
+
+📥 示例输入:
+   - 形状: torch.Size([2, 8, 7168])
+   - 数据类型: torch.float32
+   - 数值范围: [-3.9982, 4.0675]
+
+🔄 执行MoE前向传播...
+
+🔄 DeepSeek-V3 MoE前向传播开始:
+   - 输入形状: torch.Size([2, 8, 7168])
+
+📊 步骤1: 门控网络计算路由决策
+   - 专家索引形状: torch.Size([16, 8])
+   - 专家权重形状: torch.Size([16, 8])
+   - 第一个token选择的专家: [134, 142, 138, 137, 135, 129, 127, 0]
+   - 第一个token的专家权重: [0.125, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125]
+   - 重塑后输入形状: torch.Size([16, 7168])
+
+🎯 步骤2: 推理模式专家计算
+   - 推理模式专家计算开始
+   - 每个专家处理的token数: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 2, 2, 2, 0, 1, 1, 3, 2, 3, 2, 1, 2, 2, 3, 1, 3, 1, 2, 3, 2, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 2, 1, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 1, 2, 1, 1, 2, 2, 2, 3, 1, 1, 1, 2, 2, 3, 1, 2, 1, 1, 0, 1, 2, 1, 2, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 1, 2, 2, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 0, 1, 2, 0, 2, 1, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
+   - 活跃专家数: 91
+   - 排序后token形状: torch.Size([128, 7168])
+   - 专家0: 处理1个token
+   - 专家74: 处理1个token
+   ...
+   - 专家79: 处理2个token
+   - 专家80: 处理2个token
+   - 专家81: 处理2个token
+   - 专家83: 处理1个token
+   - 专家84: 处理1个token
+   - 专家85: 处理3个token
+   - 专家86: 处理2个token
+   - 专家87: 处理3个token
+   - 专家88: 处理2个token
+   - 专家89: 处理1个token
+   ...
+   - 专家250: 处理1个token
+   - 合并后输出形状: torch.Size([128, 7168])
+   - 最终输出形状: torch.Size([16, 7168])
+
+🔗 步骤3: 添加共享专家输出
+   - 共享专家输出形状: torch.Size([2, 8, 7168])
+
+✅ MoE前向传播完成
+   - 输出形状: torch.Size([2, 8, 7168])
+
+📊 MoE处理结果分析:
+   - 输出形状: torch.Size([2, 8, 7168])
+   - 输出数值范围: [-0.5116, 0.5427]
+   - 输入输出差异: 0.805103
+
+🎯 专家使用统计:
+   - 被使用的专家数: 91
+   - 使用最多的专家: 85 (使用3.0次)
+   - 使用最少的专家: 1 (使用0.0次)
+   - 平均每个专家使用次数: 0.50
+
+⚖️ 负载均衡检查:
+   - 总专家使用次数: 128.0
+   - 期望使用次数: 128
+   - 负载均衡度: 1.0000
+
+🎨 生成MoE处理过程可视化...
+
+🎨 开始生成MoE处理过程可视化...
+
+🔄 DeepSeek-V3 MoE前向传播开始:
+   - 输入形状: torch.Size([2, 8, 7168])
+
+📊 步骤1: 门控网络计算路由决策
+   - 专家索引形状: torch.Size([16, 8])
+   - 专家权重形状: torch.Size([16, 8])
+   - 第一个token选择的专家: [134, 142, 138, 137, 135, 129, 127, 0]
+   - 第一个token的专家权重: [0.125, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125, 0.125]
+   - 重塑后输入形状: torch.Size([16, 7168])
+
+🎯 步骤2: 推理模式专家计算
+   - 推理模式专家计算开始
+   - 每个专家处理的token数: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 1, 2, 2, 2, 0, 1, 1, 3, 2, 3, 2, 1, 2, 2, 3, 1, 3, 1, 2, 3, 2, 0, 1, 1, 1, 1, 0, 0, 0, 1, 1, 2, 1, 1, 0, 0, 0, 0, 1, 0, 1, 1, 0, 0, 1, 2, 1, 1, 2, 2, 2, 3, 1, 1, 1, 2, 2, 3, 1, 2, 1, 1, 0, 1, 2, 1, 2, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0, 1, 1, 0, 1, 0, 0, 0, 1, 1, 2, 2, 1, 0, 1, 1, 0, 0, 0, 1, 1, 0, 0, 1, 2, 0, 2, 1, 1, 0, 0, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0]
+   - 活跃专家数: 91
+   - 排序后token形状: torch.Size([128, 7168])
+   - 专家0: 处理1个token
+   - 专家74: 处理1个token
+   - 专家75: 处理1个token
+   - 专家76: 处理1个token
+   ....
+   - 专家250: 处理1个token
+   - 合并后输出形状: torch.Size([128, 7168])
+   - 最终输出形状: torch.Size([16, 7168])
+
+🔗 步骤3: 添加共享专家输出
+   - 共享专家输出形状: torch.Size([2, 8, 7168])
+
+✅ MoE前向传播完成
+   - 输出形状: torch.Size([2, 8, 7168])
 ```
+
+可视化结果如下所示:
+
+![deepseekv3_moe_visualization](../../images/DeepSeekV3_Code/deepseekv3_moe_visualization.png)
