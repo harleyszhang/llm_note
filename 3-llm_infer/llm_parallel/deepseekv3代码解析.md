@@ -833,7 +833,7 @@ DeepSeek-V3MoE 结合了 `MoEGate` 门控机制和多个专家网络 Experts。
 - `num_experts_per_tok`: 每个 `token`选择的专家数 (8)
 - `moe_intermediate_size`: 专家中间层维度 (2048)
 - `n_shared_experts`: 共享专家数量 (1)
-- `ep_size`: 专家并行大小
+- `ep_size`: 专家并行大小，定义了设备组的大小（即每组包含多少设备）。如 ep_size = 2，即每组 2 个 GPU 负责所有专家。
 
 ### 2.1 moe_infer 函数流程拆解
 
