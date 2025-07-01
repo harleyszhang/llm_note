@@ -69,7 +69,7 @@ DeepSeek-V3 基础架构示意图如下图所示。延续 DeepSeek-V2 的设计�
 
 **参数说明**:
 - $K_r$: 每个 token 路由到的专家总数: $8$，对应 config.json 文件中的 `num_experts_per_tok` 字段。
-- $M$: 每个 token 最多路由到的节点数: $4$。
+- $M$: 每个 token 最多路由到的节点数: $4$。对应 config.json 文件中的 `topk_group` 字段。
 - $K_r/M$: 每个节点平均分配的专家数。
 - 节点选择分数 = Σ(节点 $i$ 上专家的最高 $K_r/M$ 亲和度分数)
 

@@ -55,7 +55,7 @@ $$4\times b\times s\times\text{topk}\times h$$
 
 在通信开销方面，TP 采用 All-Reduce 原语进行数据交换。随着 TP size 的增大，通讯会逐渐成为瓶颈。假设每次推理一个 batch 里一共有 $S$ 个token，hidden dimension 是 $D$，那么对于 TP 每一个 MoE 层每个 GPU 需要发送 $2\cdot S\cdot D$ 大小的数据，通讯量并不会随着 TP size 的增大而降低。
 
-在通信开销方面，EP 采用 All-to-all 原语进行数据交换。在 EP size增大的情况下，EP 能大幅降低计算相同数量 token 的情况下单个 GPU 的通讯开销。同样以一个 batch 一共包含 $S$ 个 token 为例，假设每个 token 需要选择 $\text{top-k}$ 的专家，且专家之间负载均衡，那么每个 GPU 在 token 分发（dispatch）和重组（combine）两个阶段各需要发送 $\frac{K\cdot S}{M}\cdot D$ 大小的数据（FP16 数据需要乘以 2）。
+在通信开销方面，EP 采用 All-to-all 原语进行数据交换。在 EP size 增大的情况下，EP 能大幅降低计算相同数量 token 的情况下单个 GPU 的通讯开销。同样以一个 batch 一共包含 $S$ 个 token 为例，假设每个 token 需要选择 $\text{top-k}$ 的专家，且专家之间负载均衡，那么每个 GPU 在 token 分发（dispatch）和重组（combine）两个阶段各需要发送 $\frac{K\cdot S}{M}\cdot D$ 大小的数据（FP16 数据需要乘以 2）。
 
 其中 $M$ 是 EP size, $S$ 是 top-k。考虑 dispatch 和 combine 两阶段的通讯，当 $\frac{K}{M}\ll 1$时，EP 的通讯开销会远低于 TP。
 
