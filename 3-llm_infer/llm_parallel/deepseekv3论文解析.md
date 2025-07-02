@@ -104,6 +104,7 @@ class MoEGate(nn.Module):
             group_scores = (
                 scores_for_choice.view(bsz * seq_len, self.n_group, -1).topk(2, dim=-1)[0].sum(dim = -1)
             )  # [n, n_group]
+            ### 选择 M (top_k_group)个 Group
             group_idx = torch.topk(
                 group_scores, k=self.topk_group, dim=-1, sorted=False
             )[
