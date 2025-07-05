@@ -47,7 +47,7 @@ DeepSeek-V3 的核心贡献包括：
 
 DeepSeek-V3 基础架构示意图如下图所示。延续 DeepSeek-V2 的设计，依然采用 MLA 和 DeepSeekMoE 架构，DeepSeek-V3 模型配置方案 DeepSeek-V2 一致。
 
-![DeepSeekV3_archetecture](../../images/DeepSeekV3/DeepSeekV3_archetecture.png)
+![DeepSeekV3_archetecture](../images/DeepSeekV3/DeepSeekV3_archetecture.png)
 
 ### 2.1 基础架构
 
@@ -151,7 +151,7 @@ class MoEGate(nn.Module):
 图 3 展示了论文的 MTP 实现方式。与 Gloeckle 等人（2024）使用独立输出头并行预测 $D$ 个额外令牌不同，论文采用顺序预测额外令牌的方式，并在每个预测深度保持完整的因果链。本节将详细介绍我们的 MTP 实现方案。
 
 
-![MTP](../../images/DeepSeekV3/MTP.png)
+![MTP](../images/DeepSeekV3/MTP.png)
 > 图 3：多 token 预测（MTP）实现示意图。
 
 省略
@@ -175,7 +175,7 @@ DeepSeek-V3 的训练由 `HAI-LLM` 框架支持，这是 DeepSeek 公司自主�
 
 #### 3.2.1 双流水与计算-通信重叠
 
-![DualPipe](../../images/DeepSeekV3/DualPipe.png)
+![DualPipe](../images/DeepSeekV3/DualPipe.png)
 > 图 4：单个前向与反向分块的重叠策略（Transformer 块边界未对齐）。橙色表示前向计算，绿色表示"输入反向计算"，蓝色表示"权重反向计算"，紫色表示流水线并行通信，红色表示同步屏障。全连接通信与流水线通信均可被完全隐藏。
 
 在 DeepSeek-V3 中，跨节点专家并行引入的通信开销导致计算与通信比低至约 1:1（跨节点的 EP 带来的通信开销居然占比 50%！）。为解决这一挑战，论文设计了名为 `DualPipe` 的创新流水线并行算法，该算法不仅通过有效重叠前向/反向计算与通信阶段来加速模型训练，同时显著减少了流水线气泡。
@@ -186,11 +186,11 @@ DualPipe 的核心思想是通过**成对的前向与反向计算块**实现计�
 
 基于高效的重叠策略，图 5 展示了完整的 DualPipe 调度方案：采用双向流水线调度机制，从流水线两端同时输入微批次数据，使得绝大部分通信操作能够实现完全重叠。 这种重叠设计还确保，随着模型规模进一步扩大，只要我们**保持恒定的计算与通信比率**，仍可在各节点间部署细粒度专家模块，同时实现近乎零的全员通信开销。
 
-![Example_DualPipe_scheduling](../../images/DeepSeekV3/Example_DualPipe_scheduling.png)
+![Example_DualPipe_scheduling](../images/DeepSeekV3/Example_DualPipe_scheduling.png)
 
 此外，即便在通信负担较轻的通用场景下，DualPipe 仍展现出效率优势。表 2 汇总了不同流水线并行方法的流水线气泡与内存使用情况。数据显示，相较于 ZB1P（Qi 等，2023b）和 1F1B（Harlap 等，2018），DualPipe 在仅增加 $\frac{1}{PP}$ 倍峰值激活内存的同时，显著降低了流水线气泡。虽然 DualPipe 需要维护两份模型参数副本，但由于训练时采用较大的 EP 尺寸，这并未显著增加内存消耗。与 Chimera（Li 和 Hoefler，2021）相比，DualPipe 仅要求流水线阶段数和微批次量能被 2 整除，而无需微批次量被流水线阶段数整除。更重要的是，DualPipe 的气泡与激活内存均不会随微批次数量增加而增长。
 
-![Table2](../../images/DeepSeekV3/Table2.jpg)
+![Table2](../images/DeepSeekV3/Table2.jpg)
 
 表 2：不同管道并行方法间管道气泡与内存使用量的对比。 $F$ 表示前向块执行时间，$B$ 表示完整反向块执行时间， $W$ 表示"权重反向"块执行时间， $F\&B$ 表示两个相互重叠的前向与反向块执行时间。
 
@@ -226,7 +226,7 @@ DualPipe 的核心思想是通过**成对的前向与反向计算块**实现计�
 
 ### 3.3 FP8 训练
 
-![The overall mixed precision framework with FP8 data format](../../images/DeepSeekV3/FP8_framework.png)
+![The overall mixed precision framework with FP8 data format](../images/DeepSeekV3/FP8_framework.png)
 > 图 6：采用 FP8 数据格式的整体混合精度框架。为清晰起见，图中仅展示了线性算子部分。
 
 虽然低精度训练前景广阔，但其应用常受限于激活值、权重和梯度中的异常值问题（Sun 等，2024；He 等；Fishman 等，2024）。为应对这一挑战并有效扩展 FP8 格式的动态范围，论文引入了一种细粒度的量化策略：采用 $1\times N_c$ 元素的 `tile-wise` 分组或 $N_c \times N_c$ 元素的 `block-wise` 分组。通过论文设计的**高精度累加过程**，相关反量化开销得以大幅降低，这是实现精确 FP8 通用矩阵乘法（GEMM）的关键所在。此外，为进一步降低混合专家训练中的内存与通信开销，论文采用 `FP8` 格式缓存并分发激活值，同时以 `BF16` 精度存储优化器状态。
