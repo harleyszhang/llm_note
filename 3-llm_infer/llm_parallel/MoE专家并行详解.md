@@ -27,8 +27,6 @@ MoE Transformer layer 的并行方式一般如下：
 - `ep_dp_world_size = 2`: MoE 层的数据并行的大小。构成 ep_dp_group 的条件不仅是 expert 相同，还需要每个 expert 接受到的的 batch 数据不同。
 - 同一个 TP group 中的所有 TP rank 处理相同的数据，在固定 world size 的情况下，**开启 TP 会使 DP 变为原来的 1/TP**。
 
-
-
 ### 4. MoE 通讯量分析
 
 #### `EP` 通讯量分析：
