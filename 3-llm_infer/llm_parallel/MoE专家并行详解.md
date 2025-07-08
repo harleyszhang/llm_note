@@ -20,9 +20,9 @@ MoE Transformer layer 的并行方式一般如下：
 - `world size`：代表将要参与训练的进程数（或者计算设备数）。
 - `rank`: 每个进程都会被分配一个 `rank`，rank 是一个介于 `0` 和 `world size-1` 之间的数字，该数字在作业中是唯一的。它作为进程标识符，并用于代替地址，将张量发送到指定的 `rank`（进程）。
 
-2, EP + DP 的并行策略：
+2, `EP + DP` 的并行策略：
 
-假设每个 MoE 层有若干个专家（统称其为一套专家），如何把这一套专家分布排列到若干 GPU 上呢？可以先定好要用几块 GPU 装下一套专家（EP: ep_world_size），然后可确认全局上共有多少套专家副本在跑（DP: ep_dp_world_size）。假设一共 8 张 GPU，则：
+假设每个 `MoE 层有若干个专家（统称其为一套专家），如何把这一套专家分布排列到若干 GPU 上呢？可以先定好要用几块 GPU 装下一套专家（EP: ep_world_size），然后可确认全局上共有多少套专家副本在跑（DP: ep_dp_world_size）。假设一共 8 张 GPU，则：
 - `ep_world_size = 4`: 表示希望用 4 块 GPU 装下一套完整的专家。ep_group = 8 / ep_world_size = 8 /4 = 2，即一共 $2$ 个专家组。我们需要在每个专家组内做 All-to-All 通信，将 token 发送去对应的专家。
 - `ep_dp_world_size = 2`: MoE 层的数据并行的大小。构成 ep_dp_group 的条件不仅是 expert 相同，还需要每个 expert 接受到的的 batch 数据不同。
 - 同一个 TP group 中的所有 TP rank 处理相同的数据，在固定 world size 的情况下，**开启 TP 会使 DP 变为原来的 1/TP**。
@@ -64,7 +64,6 @@ EP 同时使得每个 GPU 可以计算不同的 input token，而不需要像 TP
 ###  6. MoE 论文速览
 
 #### Switch Transformers
-
 
 ### 参考资料
 
