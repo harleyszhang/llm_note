@@ -81,7 +81,7 @@ $P_{max}$: 浮点操作性能上限 [操作数/秒]
 
 ### 2.1 计算 kernel 的 Roofline 性能分析
 
-矩阵乘法: $A\times B = C$，其中 $A\in \mathbb{R}^{M\times k}, B \in \mathbb{R}^{M\times N},C \in \mathbb{R}^{M\times N}$，数据类型为 `FP16`，它的 Roofline 性能瓶颈分析如下：
+矩阵乘法: $A\times B = C$，其中 $A\in \mathbb{R}^{M\times k}, B \in \mathbb{R}^{M\times N},C \in \mathbb{R}^{M\times N}$，数据类型为 `FP16`。矩阵乘法 GEMM 的最小内存访问代价 $\text{MAC} = MK + KN +MN$。矩阵乘法的 Roofline 性能瓶颈分析如下：
 
 $$\text{OI}_\text{matmul} = \frac{2MNK}{MK + KN +MN} \\
 \text{ops/bytes}_\text{A100} = \frac{312}{2.03} = 153$$
