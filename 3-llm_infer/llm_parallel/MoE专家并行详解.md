@@ -29,35 +29,7 @@ MoE Transformer layer 的并行方式一般如下：
 
 ### 4. MoE 通讯量分析
 
-#### `EP` 通讯量分析：
-
-1, 第一种分析
-
-假设 `MoE` 的输入 tensor 形状为 `[b, s, h]`（或者 [b*s, h]）, 经过 gate 分组后形状变为 `[b*s*topk, h]`。如果 token 分配完全均匀（不存咋 expert 负载不均衡），则每个 EP rank 发送/接收的 token 数量相同且为:
-
-$$b\times s\times \text{topk}\times(\text{ep\_world\_size} - 1) / \text{ep\_world\_size}$$
-
-对于 half 精度的数据，每个 EP rank 的通讯量为
-
-$$2\times b\times s\times h\times \text{topk}\times(\text{ep\_world\_size} - 1) / \text{ep\_world\_size}$$
-
-MoE 的 EP 包含 all-to-all dispatch 和 all-to-all combine，两者通讯录相同，所以 MoE 模块 EP 的总通讯量为（单位为字节）:
-
-$$4\times b\times s\times h\times \text{topk}\times(\text{ep\_world\_size} - 1) / \text{ep\_world\_size}$$
-
-上述公式也可近似为:
-
-$$4\times b\times s\times\text{topk}\times h$$
-
-2, 第二种分析
-
-在通信开销方面，TP 采用 All-Reduce 原语进行数据交换。随着 TP size 的增大，通讯会逐渐成为瓶颈。假设每次推理一个 batch 里一共有 $S$ 个token，hidden dimension 是 $D$，那么对于 TP 每一个 MoE 层每个 GPU 需要发送 $2\cdot S\cdot D$ 大小的数据，通讯量并不会随着 TP size 的增大而降低。
-
-在通信开销方面，EP 采用 All-to-all 原语进行数据交换。在 EP size 增大的情况下，EP 能大幅降低计算相同数量 token 的情况下单个 GPU 的通讯开销。同样以一个 batch 一共包含 $S$ 个 token 为例，假设每个 token 需要选择 $\text{top-k}$ 的专家，且专家之间负载均衡，那么每个 GPU 在 token 分发（dispatch）和重组（combine）两个阶段各需要发送 $\frac{K\cdot S}{M}\cdot D$ 大小的数据（FP16 数据需要乘以 2）。
-
-其中 $M$ 是 EP size, $S$ 是 top-k。考虑 dispatch 和 combine 两阶段的通讯，当 $\frac{K}{M}\ll 1$时，EP 的通讯开销会远低于 TP。
-
-EP 同时使得每个 GPU 可以计算不同的 input token，而不需要像 TP 一样在每个 GPU 上处理相同的 token 并聚合 activation，**EP 可以极大的扩展 batch size**，使得每个专家都能分到足够数量的 token，以解决 memory access 的 bottleneck。
+#### EP 通讯量分析
 
 ### 5. SGLang 的 EP 特性
 
