@@ -814,7 +814,7 @@ if __name__ == "__main__":
 
 节点数为8，代码生成的可视化图表如下图所示:
 
-![moe_routing_visualization](../../images/DeepSeekV3_Code/moe_routing_visualization.png)
+![moe_routing_visualization](../images/DeepSeekV3_Code/moe_routing_visualization.png)
 
 ## 二 DeepseekV3MoE
 
@@ -1290,4 +1290,4 @@ if __name__ == "__main__":
 
 可视化结果如下所示:
 
-![deepseekv3_moe_visualization](../../images/DeepSeekV3_Code/deepseekv3_moe_visualization.png)
+![deepseekv3_moe_visualization](../images/DeepSeekV3_Code/deepseekv3_moe_visualization.png)
