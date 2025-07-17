@@ -19,7 +19,7 @@
 理论分析：prefill 过程计算受限，decode 过程内存受限（用了 kv cache 优化）。
 
 <div align="center">
-<img src="../images/performance_bottleneck_analysis/llm_profiler.png" width="80%" alt="llm_profiler 理论分析">
+<img src="../images/performance_bottleneck_analysis/llm_profiler.png" width="100%" alt="llm_profiler 理论分析">
 </div>
 
 #### 1.1.3. 性能数据结果
@@ -45,7 +45,7 @@
 - 在 V100 上（目前只有 10 并发数据），prefill 平均延时随着 GPU 数量的增加而降低；而在 A100/A40上，prefill 平均延时随着 GPU 数量的增加并没有呈现单调降低的规律（prefill 延时不稳定）。
   
 <div align="center">
-<img src="../images/performance_bottleneck_analysis/result.png" width="80%" alt="result">
+<img src="../images/performance_bottleneck_analysis/result.png" width="100%" alt="result">
 </div>
 
 2，不同硬件资源条件下，`prefill` 阶段和 `decode` 阶段各算子的执行时间占比分析：
@@ -55,25 +55,25 @@
  - decode 阶段 A40 显卡 all_reduce 时间耗时最多（PCIE 通信速度慢？）。
   
 <div align="center">
-<img src="../images/performance_bottleneck_analysis/result2.png" width="80%" alt="result2">
+<img src="../images/performance_bottleneck_analysis/result2.png" width="100%" alt="result2">
 </div>
 
 3，如果将各算子按照下方左图的方法分类，则在 A100*8 情形下各类算子的占比情况如下方右图所示。
 
 <div align="center">
-<img src="../images/performance_bottleneck_analysis/result3.png" width="80%" alt="result3">
+<img src="../images/performance_bottleneck_analysis/result3.png" width="100%" alt="result3">
 </div>
 
 4，对比不同型号 GPU 的卡间通信算子 all_reduce 的耗时情况：在 prefill 阶段，A100 的 all_reduce 总耗时要普遍高于 A40；而在 decode 阶段，A40 的 all_reduce 总耗时要普遍高于 A100。
 
 <div align="center">
-<img src="../images/performance_bottleneck_analysis/result4.png" width="80%" alt="result4">
+<img src="../images/performance_bottleneck_analysis/result4.png" width="100%" alt="result4">
 </div>
 
 5，实际平均推理组 batch 的 batch_size 大小是远小于它能支持的理论最大 batch_size，实际推理时 batch_size 是动态变化的。以 8 卡 A100 为例，2k 上下文长度的理论最大 batch_size = 110，实际平均推理 batch_size = 25， 25 << 110。另外，**LLM 推理服务框架 TGI 调度策略影响 lightllm 推理后端的 batch_size ，而 batch_size 影响推理 latency**。
 
 <div align="center">
-<img src="../images/performance_bottleneck_analysis/result5.png" width="80%" alt="result5">
+<img src="../images/performance_bottleneck_analysis/result5.png" width="100%" alt="result5">
 </div>
 
 总结：**通信瓶颈，模型大小，算力瓶颈**三者约束了最优的模型 LLM 部署解决方案，通信瓶颈包括卡内访存和卡间互联带宽，且通信和算力瓶颈跟聊天文档的输入输出长度强相关。
