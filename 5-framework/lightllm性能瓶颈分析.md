@@ -31,7 +31,7 @@ categories: LLM_Infer
 2，A40 机器的简单拓扑互联结构图，卡间互联通信速度对比，注意 A40 机器的 NVLINK 是阉割版的！理论值为 112.5 GB/s。
 
 <div align="center">
-<img src="../images/lightllm_analysis/A40_Topology.png" width="60%" alt="A40_Topology">
+<img src="../images/lightllm_analysis/A40_Topology.png" width="80%" alt="A40_Topology">
 </div>
 
 3，备注：集群不稳定的两束证据，尤其是 decode 阶段的 all_duce 通信时间，这个问题很重要！！！如果集群不解决，我们集群的性能数据都得重复测好几次，且结果不稳定。
@@ -78,7 +78,7 @@ categories: LLM_Infer
 ### 2.2、推理性能分析结果
 
 <div align="center">
-<img src="../images/lightllm_analysis/4a100_4a40.png" width="60%" alt="4a100_4a40">
+<img src="../images/lightllm_analysis/4a100_4a40.png" width="80%" alt="4a100_4a40">
 </div>
 
 结果分析：在推理层，无论是 prefill 阶段还是 decode 阶段，4 卡 A100 的推理性能都优于 4 卡 A40 的性能。这是符合预期的，因为 A100 在算力、显存带宽、卡间通信方面都优于 A40。另外，4 卡 A100 的 prefill 阶段性能 2 倍于 A40，但是在 decode 阶段性能提升只有 15%，这是否意味着在 Decode 阶段可利用算力更低的 A40 降低成本。
@@ -105,13 +105,13 @@ categories: LLM_Infer
 ### 3.2、推理性能分析结果
 
 <div align="center">
-<img src="../images/lightllm_analysis/4a40_8a40.png" width="60%" alt="4a40_8a40">
+<img src="../images/lightllm_analysis/4a40_8a40.png" width="80%" alt="4a40_8a40">
 </div>
 
 ### 3.3、算子性能分析结果
 
 <div align="center">
-<img src="../images/lightllm_analysis/op_perf2.png" width="60%" alt="算子性能分析结果">
+<img src="../images/lightllm_analysis/op_perf2.png" width="80%" alt="算子性能分析结果">
 </div>
 
 **结果分析**:
@@ -127,13 +127,13 @@ categories: LLM_Infer
 ### 4.1、推理性能分析结果
 
 <div align="center">
-<img src="../images/lightllm_analysis/4a100_8a100.png" width="60%" alt="4a100_8a100">
+<img src="../images/lightllm_analysis/4a100_8a100.png" width="80%" alt="4a100_8a100">
 </div>
 
 ### 4.2、算子性能分析结果
 
 <div align="center">
-<img src="../images/lightllm_analysis/op_perf3.png" width="60%" alt="算子性能分析结果">
+<img src="../images/lightllm_analysis/op_perf3.png" width="80%" alt="算子性能分析结果">
 </div>
 
 **结果分析**：
@@ -159,13 +159,13 @@ categories: LLM_Infer
 ### 5.1、推理性能分析结果
 
 <div align="center">
-<img src="../images/lightllm_analysis/2a40_pcie_nvlink.png" width="60%" alt="2a40_pcie_nvlink">
+<img src="../images/lightllm_analysis/2a40_pcie_nvlink.png" width="80%" alt="2a40_pcie_nvlink">
 </div>
 
 ### 5.2、算子性能分析结果
 
 <div align="center">
-<img src="../images/lightllm_analysis/op_perf4.png" width="60%" alt="算子性能分析结果">
+<img src="../images/lightllm_analysis/op_perf4.png" width="80%" alt="算子性能分析结果">
 </div>
 
 **结果分析**：
