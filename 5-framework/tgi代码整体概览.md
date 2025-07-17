@@ -149,7 +149,7 @@ let min_size = if waiting_tokens >= max_waiting_tokens {
 随着后期并发数目的增加，推理 decode 过程的 batch_size 越来越大（偶尔减小），prefill 过程的 batch_size 越来越小，后期趋向于稳定在 1 。
 
 <div align="center">
-<img src="../../Library/Application%20Support/typora-user-images/image-20240112122341879.png" width="60%" alt="image-20240112122341879">
+<img src="../images/performance_bottleneck_analysis/result5.png" width="80%" alt="result5">
 </div>
 
 ```bash
