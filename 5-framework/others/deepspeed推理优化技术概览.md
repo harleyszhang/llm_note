@@ -36,7 +36,7 @@
 第一个策略确保不同的线程块在传输数据时不会遇到在流多处理器（SM）之间传递数据的情况。这是因为除了使用主内存外，`SM` 之间没有直接的通信，因为内存访问的不确定行为增加了块同步开销。第二个策略的原因是，除非在模型并行的 GPU 之间减少了部分结果，否则无法继续执行。
 
 <div align="center">
-<img src="../../images/ds_inference/inference-kernel-fusion.png" width="60%" alt="推理核融合">
+<img src="../../images/ds_inference/inference-kernel-fusion.png" width="100%" alt="推理核融合">
 </div>
 
 图 1：具有 Megatron 式模型并行化 all-reduce 组件的 Transformer Layer。该图用虚线说明了融合在一起的层的部分（线的宽度表示融合深度）
@@ -76,5 +76,5 @@
 图3 显示了对应于三个 Transformer 网络（GPT-2、Turing-NLG 和 GPT-3）的三种模型大小每个 GPU 的推理吞吐量。当使用与基准模型相同的 FP16 精度时，DeepSpeed 推理将每个 GPU 的吞吐量提高了 2 到 4 倍。通过启用量化，我们进一步提升了吞吐量。
 
 <div align="center">
-<img src="../../images/ds_inference/inference-throughput.png" width="60%" alt="推理吞吐量">
+<img src="../../images/ds_inference/inference-throughput.png" width="100%" alt="推理吞吐量">
 </div>
