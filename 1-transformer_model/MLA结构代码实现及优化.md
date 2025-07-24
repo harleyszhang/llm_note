@@ -247,7 +247,7 @@ class DeepseekV2MLA(nn.Module):
 
 ### 3.1 CC (CacheCompressed）
 
-在 transformers 库中， MLA 算子不再缓冲完整的 KV Cache，而是改为缓存**压缩后的 KV Cache**（即 `compressed_kv`)，与缓存完整的 KV Cache 相比，这将大大减少每个 token 的每层 Cache 大小。
+在 transformers 库的 deepseekv3 代码实现中， MLA 算子不缓冲完整的 KV Cache，而是改为缓存**压缩后的 KV Cache**（即 `compressed_kv`)，与缓存完整的 KV Cache 相比，这将大大减少每个 token 的每层 Cache 大小。
 
 ### 3.2 A_CC（AbsorbCacheCompressed）
 
