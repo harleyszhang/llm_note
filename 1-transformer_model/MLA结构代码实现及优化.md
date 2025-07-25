@@ -55,7 +55,6 @@ $$q_t^R = \mathrm{RoPE}(W^{QR} c_t^Q) \in \mathbb{R}^{B \times L \times H \times
 
 $$ q_t = [q_t^C, q_t^R] \in \mathbb{R}^{B \times L \times H \times 192}$$
 
-
 其中：
 - $B$: `batch_size` 批量大小；
 - $L$: `seq_len` 序列长度；
