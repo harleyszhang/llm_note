@@ -39,7 +39,7 @@ DeepDeekV2 的模型配置如下所示:
 ### 1.1 Q 向量计算
 > 大部分参考 [DeepSeek-V2高性能推理优化笔记：MLA优化](https://github.com/madsys-dev/deepseekv2-profile/blob/main/workspace/blog/optimizing-mla.md)，部分细节做了修改和优化， MLA 结构图以及这章节的公式更多的是给出 MLA 过程和细节，实际的代码实现没有一一对应。
 
-1，在 DeepSeek-V2 中，Q 向量也采用了低秩压缩的方式。首先，将输入向量投影到一个 `1536`（**对应模型配置文件中的 `q_lora_rank` 参数**）维的低维空间，得到 Latent $c_t^Q$。
+1，在 `DeepSeek-V2` 中，Q 向量也采用了低秩压缩的方式。首先，将输入向量投影到一个 `1536`（**对应模型配置文件中的 `q_lora_rank` 参数**）维的低维空间，得到 Latent $c_t^Q$。
 
 $$c_t^Q = W^{DQ} h_t \in \mathbb{R}^{B \times L \times 1536}$$
 
