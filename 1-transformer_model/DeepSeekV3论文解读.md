@@ -36,7 +36,7 @@ DeepSeek-V3，是一个强大的混合专家（MoE）语言模型，总参数量
 
 ## 引言
 
-DeepSeek-V3 在 DeepSeek-V2 提出的多头潜在注意力机制（MLA）和 DeepSeekMoE 架构基础上，引入了两项创新策略以进一步提升模型能力：
+DeepSeek-V3 在 DeepSeek-V2 提出的多头潜在注意力机制（`MLA`）和 `DeepSeekMoE` 架构基础上，引入了两项创新策略以进一步提升模型能力：
 - 首创**无辅助损失的负载均衡策略**（Wang 等，2024a），旨在最小化传统负载均衡方法对模型性能的负面影响；
 - 采用多令牌预测（multi-token prediction `MTP`）训练目标，经实证可显著提升模型在评估基准上的综合表现。
 
