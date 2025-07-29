@@ -561,7 +561,7 @@ class MoEGate(nn.Module):
         plt.show()
 ```
 
-测试代码的 MoE 配置是基于论文中的配置：
+测试代码的 Deepseekv3 MoE 配置总结如下：
 
 | 参数 | 值 | 说明 |
 |------|-----|------|
@@ -856,25 +856,6 @@ flowchart TD
     J -- 否 --> K["输出 y"]
     J -- 是 --> L["shared_experts(identity)"]
     L --> M["相加后输出 y"]  
-```
-
-moe_infer 函数流程图如下所示:
-
-```mermaid
-flowchart TD
-    A["输入 hidden_states<br/>(bsz, seq_len, hidden)"] --> B["MoEGate 计算得分<br/>scores = sigmoid(W·x)"]
-    B --> C["选出 top-k 专家索引<br/>topk_idx (n,k)"]
-    B --> D["对应权重 topk_weight<br/>(n,k)"]
-    C --> E["将 token 按专家分组<br/>送入各 DeepseekV3MLP"]
-    D --> E
-    E --> F["收集并拼接专家输出<br/>outs"]
-    F --> G["按 idxs 还原顺序<br/>new_x (n,hidden)"]
-    G --> H["按 topk_weight 加权求和<br/>y_flat"]
-    H --> I["reshape 回 (bsz, seq_len, hidden)"]
-    I --> J{"存在 shared_experts?"}
-    J -- 否 --> K["输出 y"]
-    J -- 是 --> L["shared_experts(identity)"]
-    L --> M["相加后输出 y"]
 ```
 
 ### 2.3 DeepseekV3MoE 类解析及测试
