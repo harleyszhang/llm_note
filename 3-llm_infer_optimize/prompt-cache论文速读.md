@@ -47,7 +47,6 @@ Prompt Cache 和之前全自回归生成、KV 缓存方法之间的区别如下�
     <module name="Context">...</module>
     <module name="Examples">...</module>
 </schema>
-
 ```
 
 直接看一个例子，假设用户输入的提示词是这样，

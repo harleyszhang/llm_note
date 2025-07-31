@@ -28,7 +28,7 @@ PagedAttention 算法的原理可以参考我前面写的文章[vllm优化技术
 > 这种 kv cache 内存管理分配的算法（思想）是可以应用到其他 llm 推理服务框架中。
 
 <div align="center">
-<img src="../../images/vllm_pagedattention/llm_memory_waste.png" width="60%" alt="llm_memory_waste">
+<img src="../images/vllm_pagedattention/llm_memory_waste.png" width="60%" alt="llm_memory_waste">
 </div>
 
 ## 一 PagedAttention 内核
@@ -93,7 +93,7 @@ PagedAttention 本质上是集合了 kv cache 动态管理技术的优化版 `fl
 > flashattention 两种算法实现集成在一个内核里，这还是很考验作者工程功底的！
 
 <div align="center">
-<img src="../../images/vllm_pagedattention/paged_attention_v1_v2_kernel.png" width="60%" alt="paged_attention_v1_v2_kernel">
+<img src="../images/vllm_pagedattention/paged_attention_v1_v2_kernel.png" width="60%" alt="paged_attention_v1_v2_kernel">
 </div>
 
 PagedAttention 内核的实现函数和常规 Attention 的实现相比最明显的就是多了 `blocks` 相关参数，以及 k_cache 的尺寸变成了 `[num_blocks, num_kv_heads, head_size/x, block_size, x]`，很明显了多了 `num_blocks` 和 `block_size` 维度（v_cache 变量也是），用于表示一个 seq 用多少个 blocks 存储，以及每个 `block` 存储多少个 `tokens`。
@@ -124,7 +124,7 @@ __global__ void paged_attention_v1_kernel(
 先阅读 `paged_attention_v1_kernel()` 内核的调用（包装）函数 `paged_attention_v1_launcher()` 的 内容来看 kernel 的配置如何。
 
 <div align="center">
-<img src="../../images/vllm_pagedattention/grid_block_definition.png" width="55%" alt="paged_attention_v1_kernel 配置">
+<img src="../images/vllm_pagedattention/grid_block_definition.png" width="55%" alt="paged_attention_v1_kernel 配置">
 </div>
 
 可以看出 kernel 的 `grid` 和 `block` 配置如下所示，即分别定义了二维 grid 和一维 block 配置，其中每个 `BLOCKS_X` 处理一个 head，每个 `BLOCKS_Y` 处理一个 `seq`，每个 thread 处理最后一个维度  `hidden_size`  的计算。
@@ -305,7 +305,7 @@ for (int block_idx = start_block_idx + warp_idx; block_idx < end_block_idx; bloc
 这里的算法分析重点在于分析如何创建 block table、实现逻辑 table 和物理 table 的映射，以及如何针对每个 `seq` 动态分配相应数量的 `block` 用于存储 kv cache。
 
 <div align="center">
-<img src="../../images/vllm_pagedattention/Manage_KV_Cache.png" width="75%" alt="Manage_KV_Cache">
+<img src="../images/vllm_pagedattention/Manage_KV_Cache.png" width="75%" alt="Manage_KV_Cache">
 </div>
 
 这块代码的实现是在 vllm 的请求调度层模块里，**请求调度模块**的作用是将服务接收到的请求进行状态管理，包括入队出队操作，并且将请求解析成推理引擎的输入，由 `Worker` 模块完成模型推理。
@@ -350,7 +350,7 @@ def __init__(
 值得注意的是，BlockManager（和调度器）实际上只负责管理页表（即管理逻辑块和每个 `seq` 到物理块的映射关系），实际的物理块中的数据不由它管理。这个实际上和 os 中的页表也差不多，BlockManager中的一个物理块就相当于页表中的一个PTE，而不是真实存放数据的物理块，实际进行内存分配的是 CacheEngine。
 
 <div align="center">
-<img src="../../images/vllm_pagedattention/BlockManager_CacheManager.png" width="70%" alt="BlockManager_CacheManager">
+<img src="../images/vllm_pagedattention/BlockManager_CacheManager.png" width="70%" alt="BlockManager_CacheManager">
 </div>
 
 ### 2.1 Block 管理相关类
@@ -826,7 +826,7 @@ SelfAttnBlockSpaceManager 类用于管理注意力机制中 KV（Key-Value）缓
 `__init__()` 的部分代码如下所示:
 
 <div align="center">
-<img src="../../images/vllm_pagedattention/block_tables.png" width="60%" alt="block_tables">
+<img src="../images/vllm_pagedattention/block_tables.png" width="60%" alt="block_tables">
 </div>
 
 `SelfAttnBlockSpaceManager` 类中内存块分配相关有 `allocate` 和 `_allocate_sequence` 函数，分别用于为给定的序列组分配所需的内存块和为单个序列分配块表。
@@ -895,19 +895,19 @@ block_tables: Optional[torch.Tensor]
 另外 `vllm/attention/backends/utils.py` 文件中提供了一些函数用于计算“槽映射”（slot mapping），并将序列中的 `token` 索引映射到内存块中的槽索引。
 
 <div align="center">
-<img src="../../images/vllm_pagedattention/compute_slot_mapping_python.png" width="60%" alt="allocate_kv_cache">
+<img src="../images/vllm_pagedattention/compute_slot_mapping_python.png" width="60%" alt="allocate_kv_cache">
 </div>
 
 主函数 `compute_slot_mapping`，根据是否进行性能分析、是否需要填充以及使用哪种实现方式（Python 或 NumPy），计算序列的槽映射。
 
 <div align="center">
-<img src="../../images/vllm_pagedattention/compute_slot_mapping.png" width="60%" alt="compute_slot_mapping">
+<img src="../images/vllm_pagedattention/compute_slot_mapping.png" width="60%" alt="compute_slot_mapping">
 </div>
 
 在模型 forward 过程中调用 `flash_attention` 做注意力分值计算时会按照 `slot_mapping` 指引位置将本层的 `kv cache` 存储到 `vllm` 初始化过程中分配的全零张量中，这在 `cuda` 函数中实现。
 
 <div align="center">
-<img src="../../images/vllm_pagedattention/reshape_and_cache_flash.png" width="60%" alt="reshape_and_cache_flash">
+<img src="../images/vllm_pagedattention/reshape_and_cache_flash.png" width="60%" alt="reshape_and_cache_flash">
 </div>
 
 `FlashAttentionMetadata` 数据类的定义如下：
@@ -940,7 +940,7 @@ class FlashAttentionMetadata:
 代码通过循环遍历 self.num_attention_layers，**为每个层分配独立的 KV 缓存张量**，确保每层的 kv 张量能够被单独存储和访问，避免不同层之间的干扰。`num_gpu_blocks` 会通过 `model_executor.determine_num_available_blocks` 函数获取当前模型在指定设备上的每个 `layer` 的最大可用物理 `blocks` 数目。
 
 <div align="center">
-<img src="../../images/vllm_pagedattention/allocate_kv_cache.png" width="65%" alt="_allocate_kv_cache">
+<img src="../images/vllm_pagedattention/allocate_kv_cache.png" width="65%" alt="_allocate_kv_cache">
 </div>
 
 绝大部分后端的 `kv_cache_shape` 形状都是 `[2, num_blocks, block_size, num_kv_heads, head_size]`。
@@ -960,7 +960,7 @@ class PagedAttention:
 其中 `block_size` 由 llm 服务启动参数设定，而 `num_gpu_blocks` 既可以在服务启动的时候通过预热自动跑出来，也可通过服务启动参数 `num_gpu_blocks_override` 由用户自行设定并覆盖 `num_gpu_blocks`。
 
 <div align="center">
-<img src="../../images/vllm_pagedattention/initialize_kv_caches.png" width="65%" alt="llm_memory_waste">
+<img src="../images/vllm_pagedattention/initialize_kv_caches.png" width="65%" alt="llm_memory_waste">
 </div>
 
 #### 2.3.1 num_gpu_blocks 获取-determine_num_available_blocks 函数

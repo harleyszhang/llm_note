@@ -204,11 +204,11 @@ $$TopK(y) = (v, z) : v_i = y_{z_i}, v_i \geq y_j, ∀i ∈ [1, K], ∀j /∈ z$$
 对于大批次情况（见图 1），所有三种算法在向量大小 V = 1000 之前表现相似。NVIDIA Visual Profiler 显示在此时，L1 和 L2 缓存抖动开始导致所有三种算法都受到 DRAM 带宽的限制。当这种情况发生时，在线和朴素算法的速度比 Safe 算法更快，在 V = 4000 时达到了约 1.3 倍的提升（参见图中的条形图，显示了在线 Softmax 相较于 Safe Softmax 的性能提升）。这与内存访问次数减少 1.33 倍相当接近。
 > 在向量大小小于 1000 时，GPU 的 SRAM 能放下输入数据，因为 SRAM 速度极快，所以此时算法不受内存带宽限制，三种 softmax 速度差不多；但当向量大小小大于 1000 时，SRAM 空间不够，数据存取与 HBM，此时所有三种算法都受到 DRAM 带宽的限制。
 
-<img src="../../images/online-softmax/figure1.png" width="50%" alt="figure1">
+<img src="../images/online-softmax/figure1.png" width="50%" alt="figure1">
 
 在小批次情况下，所有算法的绝对性能都较低，见图 2（图 2 的柱子普遍低于 图 1）。基准测试为每个向量运行一个线程块；因此在小批次情况下（10 个向量）网格中仅有 10 个线程块。这不足以充分利用 GPU，导致计算和内存子系统未被完全使用，各种延迟暴露出来。同样在批量推理的情况下，所有三种算法在 V = 1000 之前表现相似。之后朴素和在线算法的表现优于 Safe 算法，约为 1.15 倍。
 
-<img src="../../images/online-softmax/figure2.png" width="50%" alt="figure2">
+<img src="../images/online-softmax/figure2.png" width="50%" alt="figure2">
 
 ## 5. 结论和讨论
 

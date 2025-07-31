@@ -159,7 +159,7 @@ class GPUModelRunnerBase():
 - 图执行： 在推理过程中，执行已实例化的 CUDA 图，提高执行效率。
 
 <div align="center">
-<img src="../../images/cuda_graph/CUDAGraphRunner_class.png" width="60%" alt="CUDAGraphRunner class">
+<img src="../images/cuda_graph/CUDAGraphRunner_class.png" width="60%" alt="CUDAGraphRunner class">
 </div>
 
 其中关键的 `capture` 函数看起来代码很多，但核心逻辑就是执行捕获 `graph` 和定义输入输出 `placeholder` 的操作，具体的精简版代码如下所示：
