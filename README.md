@@ -176,3 +176,5 @@ Star History Chart：
 - [NVIDIA CUDA Knowledge Base](https://github.com/rshipley160/learn-cuda/wiki)
 - [cuda_programming](https://github.com/CoffeeBeforeArch/cuda_programming/tree/master)
 - [GitHub Repo for CUDA Course on FreeCodeCamp](https://github.com/Infatoshi/cuda-course/tree/master)
+- [《人工智能系统》](https://github.com/microsoft/AI-System/tree/main/Textbook)
+- [Neural Network Intelligence](https://nni.readthedocs.io/zh/stable/compression/overview.html)

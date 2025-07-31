@@ -34,7 +34,7 @@ Transformer 模型目前已经成为自然语言处理和图像分类等领域�
 在这篇论文中，本文提出一个新原则-**让注意力算法具备 IO 感知性** IO-aware [1]，即考虑对不同速度的内存的读取和写入操作（GPU 芯片上的快速 SRAM 和相对较慢的 GPU 高带宽内存）。**在现代 GPU 中，计算速度已经超过了内存读写速度 [61, 62, 63]，而 Transformers 中的大多数操作都受到内存访问的限制[43]。**
 
 <div align="center">
-<img src="../../images/flash_attention/figure1.png" width="60%" alt="figure">
+<img src="../images/flash_attention/figure1.png" width="60%" alt="figure">
 </div>
 
 对于类似于内存受限操作的任务，IO 感知算法非常重要，因为数据的读取和写入会占用运行时的大部分时间，比如数据库连接[71]、图像处理[70]、数值线性代数[4]等等[40, 85]。然而，通常用于深度学习的常见 Python 接口，如 PyTorch 和 Tensorflow，不允许对内存访问进行精细控制。
@@ -88,7 +88,7 @@ $$\text{S = QK}^\text{T} \in \mathbb{R}^{N\times N},\quad \text{P = softmax(S)} 
 这个问题在应用于注意力矩阵的其他逐元素操作时会加剧，例如应用于 S 的掩码 mask 或应用于 P 的丢弃 dropout 操作。因此，已经有很多尝试将多个逐元素操作融合在一起，比如将掩码与 softmax 融合在一起[77]。
 
 <div align="center">
-<img src="../../images/flash_attention/standard_attention_imple.png" width="60%" alt="标准 attention算法">
+<img src="../images/flash_attention/standard_attention_imple.png" width="60%" alt="标准 attention算法">
 </div>
 > 3.2 节会对比标准注意力和 FlashAttention 的 HBM 访问代价和 FLOPs 的差别。
 
@@ -98,7 +98,7 @@ $$\text{S = QK}^\text{T} \in \mathbb{R}^{N\times N},\quad \text{P = softmax(S)} 
 3. 将 $P, V$ 矩阵以块的形式从 HBM 中加载到 SRAM 中，计算 $O=PV$, 将 $O$ 写入到 HBM 中。
 
 <div align="center">
-<img src="../../images/flash_attention/standard_attention_mac.png" width="60%" alt="self-attention 与 HBM 的交互">
+<img src="../images/flash_attention/standard_attention_mac.png" width="60%" alt="self-attention 与 HBM 的交互">
 </div>
 
 self-attention 算子涉及到的和 HBM 数据传输过程如上图所示，很明显需要从HBM 中读取 5次，写入 HBM 3 次，`HBM` 访存量 $MAC = 3N^2 + 4Nd$，很明显标准注意力的 HBM 随序列长度增加呈二次方增长。
@@ -154,7 +154,7 @@ $1: 设置块大小\;B_c = \left\lceil \frac{M}{4d} \right\rceil ,  B_r = \min \
 16: 返回\; O$
 
 <div align="center">
-<img src="../../images/flash_attention/flash_attention_algorithm1.png" width="60%" alt="flash attention 算法步骤">
+<img src="../images/flash_attention/flash_attention_algorithm1.png" width="60%" alt="flash attention 算法步骤">
 </div>
 
 算法 1 第 12 行的公式的推导证明在附录 C 中。
@@ -245,7 +245,7 @@ $$O_{r,c} = SubSum_{r,c,L}$$
 本节分析了 `FlashAttention` 的 `IO` 复杂度，结果显示，与标准注意力相比 HBM 访问次数显著减少。另外，还给出了一个下界，证明没有精确的注意力算法可以在所有 SRAM 大小上渐近地改善 HBM 访问次数。详细公式推导证明在附录 C 中。
 
 <div align="center">
-<img src="../../images/flash_attention/figure2.png" width="60%" alt="figure2">
+<img src="../images/flash_attention/figure2.png" width="60%" alt="figure2">
 </div>
 > 左图：在 A100 GPU 上，标准注意力和 FlashAttention 针对 GPT-2 medium（序列长度 1024，头维度 64，16 个头，批量大小 64）的前向 + 反向运行时间。HBM 访问次数是影响运行时间的主要因素。中图：在 A100 GPU 上，FlashAttention（序列长度 1024，头维度 64，16 个头，批量大小 64）的前向运行时间。HBM 访问次数越少，运行时间越快，但只有在某一临界点之前。右图：块稀疏 FlashAttention（序列长度 4K）的运行时间比 FlashAttention 更快，速度提升与稀疏性成比例。
 
@@ -301,7 +301,7 @@ S\bigodot 1_{\tilde{M}} = S_{kl} \quad \tilde{M}_{kl} = 1 \\ \nonumber
 最后，在 Long-range Arena（`LRA`）基准上比较使用 standard attention 和 flashattention 模型的准确率、吞吐量和训练时间。每个任务的序列长度在 1024 到 4096 之间变化，并遵循 Tay 等人[80] 和 Xiong 等人[90] 的实现和实验设置。
 
 <div align="center">
-<img src="../../images/flash_attention/table3.png" width="60%" alt="table3">
+<img src="../images/flash_attention/table3.png" width="60%" alt="table3">
 </div>
 
 **表 3 显示，与标准注意力相比，FlashAttention 的速度提升高达 2.4 倍。块稀疏 FlashAttention 的速度比本文测试过的所有近似注意力方法都要快**。
@@ -311,7 +311,7 @@ S\bigodot 1_{\tilde{M}} = S_{kl} \quad \tilde{M}_{kl} = 1 \\ \nonumber
 使用 FlashAttention 且上下文长度为 4K 的 GPT-2 模型仍然比上下文长度为 1K 的 Megatron GPT-2 快 30%（**加速比=4.7/3.6=1.3**），并且 `perplexity` 提高了 0.7。
 
 <div align="center">
-<img src="../../images/flash_attention/table4.png" width="60%" alt="table4">
+<img src="../images/flash_attention/table4.png" width="60%" alt="table4">
 </div>
 
 ### 4.3 注意力基准测试
@@ -323,7 +323,7 @@ S\bigodot 1_{\tilde{M}} = S_{kl} \quad \tilde{M}_{kl} = 1 \\ \nonumber
 **运行时**：图 3（左）报告了 FlashAttention 和块稀疏 FlashAttention 在前向 + 反向传播中的运行时（单位：毫秒），并与精确、近似和稀疏注意力的基线进行了比较（精确数值见附录 E）。**FlashAttention 运行时间随序列长度呈二次增长**，但 FlashAttention 的运行速度明显快于精确注意力基线，比 PyTorch 实现快多达 3 倍。另外，虽然许多近似/稀疏注意力机制的运行时随序列长度呈线性增长，但 FlashAttention 在**短序列上**还是比近似和稀疏注意力快，因为其内存访问次数更少；近似注意力的运行时在序列长度为 512 到 1024 之间才开始与 FlashAttention 持平。另一方面，块稀疏 FlashAttention 在所有序列长度上都比本文已知的精确、稀疏和近似注意力的所有实现更快。
 
 <div align="center">
-<img src="../../images/flash_attention/benchmarking_attention.png" width="60%" alt="benchmarking_attention">
+<img src="../images/flash_attention/benchmarking_attention.png" width="60%" alt="benchmarking_attention">
 </div>
 
 **内存占用**：图 3（右）显示了 FlashAttention 和块稀疏 FlashAttention 与各种精确、近似和稀疏注意力基线相比的内存占用。**FlashAttention 和块稀疏 FlashAttention 的内存占用相同，随序列长度呈线性增长**。FlashAttention 的内存效率最多比精确注意力基线高 20 倍，并且比近似注意力基线更具内存效率。除 Linformer 之外的所有算法在 A100 GPU 上在序列长度达到 64K 之前都耗尽了内存，而 FlashAttention 仍然比 Linformer 高效 2 倍。
@@ -433,7 +433,7 @@ $1: 初始化伪随机数生成器状态\; \mathcal{R} ，并保存到 HBM 中. 
 18.	\text{end for} \\
 19.	返回\; O, \ell, m, \mathcal{R}$
 
-<img src="../../images/flash_attention/full_flash_attention_pipeline.png" width="75%" alt="完整的 FlashAttention 前向传播算法">
+<img src="../images/flash_attention/full_flash_attention_pipeline.png" width="75%" alt="完整的 FlashAttention 前向传播算法">
 
 ### B.3 FlashAttention: 反向传播
 
@@ -441,14 +441,14 @@ $1: 初始化伪随机数生成器状态\; \mathcal{R} ，并保存到 HBM 中. 
 
 首先看下标准注意力层的反向传播算法流程。
 
-<img src="../../images/flash_attention/standard_attention_bp_algo.png" width="75%" alt="Standard Attention Backward Pass">
+<img src="../images/flash_attention/standard_attention_bp_algo.png" width="75%" alt="Standard Attention Backward Pass">
 
 FlashAttention 的反向传播做点两点改进：
 1. 不保存从前向传播中大小为 $O(N^2)$ 的 `dropout` 掩码，但可以保存前向传播中的伪随机数生成器状态 $R$，并在反向传播中重新生成 dropout 掩码，这样我们就只需要 $O(N)$ 的额外内存。
 2. 在计算 $\text{softmax}$ 梯度时，我们使用公式 (4) 计算 $D_i = P_i^\top dP_i$，而不在大小为 $N$ 的 $P_i$ 和 $dP_i$ 上进行归约（它们可能无法放入 SRAM）。相反，我们可以将其重写为 $D_i = dO_i^\top O_i$，并计算大小为 $N$ 的向量之间的点积。
 
 完整的 FlashAttention 反向传播算法见算法 4。从概念上讲，它其实是附录 B.2 中推导的分块版本。
-<img src="../../images/flash_attention/flashattention_bp.png" width="75%" alt="algorigthm4 FlashAttention Backward Pass">
+<img src="../images/flash_attention/flashattention_bp.png" width="75%" alt="algorigthm4 FlashAttention Backward Pass">
 
 可以看出与前向传播类似，反向传播执行 $O(N^2)$ 的 `FLOPs`，并且只需要 $O(N)$ 的额外内存，除了输入和输出、输入和输出梯度之外。另外，FlashAttention 反向传播的 IO 复杂度，类似于前向传播（定理 2）。
 > 这里的额外内存是指除了输入输出之外的内存占用，一般指临时存储的中间结果、数值稳定性相关的存储和 dropout、掩码等操作的额外内存。
@@ -485,7 +485,7 @@ O^{(j)} = P_{:,j} V_{:,j} \in \mathbb{R}^{N \times d}.$$
 $$m^{(j+1)} = \text{rowmax}(S_{:, j:j+1}) \in \mathbb{R}^{N}$$
 
 <div align="center">
-<img src="../../images/flash_attention/Proofs_O.png" width="60%" alt="Proofs_O">
+<img src="../images/flash_attention/Proofs_O.png" width="60%" alt="Proofs_O">
 </div>
 
 **【证明定理2-分析标准 attention 和 flashattention 的 IO 复杂度】**

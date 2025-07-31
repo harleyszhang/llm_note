@@ -61,10 +61,10 @@ DeepSpeed MoE 支持五种不同形式的并行，并同时利用 GPU 和 CPU �
 2. **负载均衡损失 (Load Balancing Loss)**：由于存在 token 丢弃的风险，我们不希望路由器把所有 tokens 都发送给少数几个“热门”专家。因此，需要一个辅助的损失函数来鼓励路由器尽可能均匀地将 tokens 分配给所有专家。
 
 <div align="center">
-<img src="../../images/switch_transformer/description.webp" width="60%" alt="webp">
+<img src="../images/switch_transformer/description.webp" width="60%" alt="webp">
 </div>
 
-![load_balancing_loss](../../images/switch_transformer/load_balancing_loss.webp)
+![load_balancing_loss](../images/switch_transformer/load_balancing_loss.webp)
 
 负载均衡损失优化的完整公式如上图所示。
 
@@ -126,7 +126,7 @@ $$P_i = \frac{1}{T} \sum_{x \in B} p_i(x)$$
 
 llm 并行推理时：数据并行 + 模型并行（张量并行），GPU 数目 = dp_size * tp_size。
 
-![moe_parall](../../images/switch_transformer/moe_parall.webp)
+![moe_parall](../images/switch_transformer/moe_parall.webp)
 
 ### 3.1 数据并行 + 张量并行
 

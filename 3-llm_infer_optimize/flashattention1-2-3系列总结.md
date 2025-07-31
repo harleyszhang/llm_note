@@ -32,7 +32,7 @@ y_i = \frac{e^{x_i}}{d_N} $$
 
 Naive Softmax 算法主要包括两个步骤，其算法实现步骤和 `FLOPs` 分析如下：
 
-<img src="../../images/flash_attention1-3/native-softmax.png" width="65%" alt="native softmax">
+<img src="../images/flash_attention1-3/native-softmax.png" width="65%" alt="native softmax">
 
 1. **计算归一化项 $dn$**：先对矩阵每个元素都需要进行指数运算，涉及 `FLOPs` 为 $N^2$（逐元素操作），假设是**对每一行进行 `Softmax`**，每一行有 $N$ 个元素，需要进行 $N - 1$ 次加法，矩阵总共有 $N$ 行，因此需要 $s\times(N - 1)$ 次加法，最后计算归一化项 $d_N$ 的 `FLOPs` 为 $2N^2N$
 2. **计算 softmax 输出**：分为两步进行每个元素都需要除以所在行的总和，总共 $N^2$ 个元素，`FLOPs` 为 $N^2$。
@@ -74,7 +74,7 @@ softmax_i &= \frac{e^{x_i - m_N}}{d_N} \\
 
 `Safe Softmax` 涉及三个步骤，其算法实现步骤和 `FLOPs` 分析如下：
 
-<img src="../../images/flash_attention1-3/safe-softmax.png" width="65%" alt="safe softmax">
+<img src="../images/flash_attention1-3/safe-softmax.png" width="65%" alt="safe softmax">
 
 1. **对每行求最大值**：遍历每行元素，做 $N-1$ 次比较，得到每行元素的最大值，总共 $N$ 行，因此该操作涉及 `FLOPs` 为 $N(N-1)$
 2. **计算指数并求和得到归一化项 $d_N$**：将每个元素减去最大值后，再计算指数，这个过程是**逐元素操作**，`FLOPs` 为 $N^2 + N^2$。对每行进行求和，每行进行 $N - 1$ 次加法，整个矩阵共 $N\times(N - 1)$ 次加法。
@@ -135,7 +135,7 @@ softmax\ x_i = \frac{e^{x_i - m_V}}{d_V} \tag{4}$$
 
 这里 $m_j$ 和 $d_j$, 可以在一个 for 循环中同时实现，或者说在一个 kernel 中计算完成；$m_N$ 和 $d_N$ 是全局的最大值和归一化项。其算法实现过程如下所示：
 
-<img src="../../images/flash_attention1-3/online-softmax.png" width="65%" alt="online softmax">
+<img src="../images/flash_attention1-3/online-softmax.png" width="65%" alt="online softmax">
 
 如果想继续优化，则**使用分块技术计算归一化常数**，假设 $x = [x_1,x_2], y = [x_3, x_4]$，$m_{xy} = \text{max}(m_x, m_y)$定义分块计算: 
 
@@ -247,7 +247,7 @@ block online softmax 与 PyTorch softmax 结果一致!
 $$\text{S = QK}^\text{T} \in \mathbb{R}^{N\times N},\quad \text{P = softmax(S)} \in \mathbb{R}^{N\times N},\quad \text{O = PV}\in \mathbb{R}^{N\times d}$$
 
 <div align="center">
-<img src="../../images/flash_attention/standard_attention_imple.png" width="60%" alt="标准 attention算法">
+<img src="../images/flash_attention/standard_attention_imple.png" width="60%" alt="标准 attention算法">
 </div>
 
 标准的 `Attention` 运算大致可以描述为以下三个步骤：
@@ -256,7 +256,7 @@ $$\text{S = QK}^\text{T} \in \mathbb{R}^{N\times N},\quad \text{P = softmax(S)} 
 3. 将 $P, V$ 矩阵以块的形式从 HBM 中加载到 SRAM 中，计算 $O=PV$, 将 $O$ 写入到 HBM 中。
 
 <div align="center">
-<img src="../../images/flash_attention/standard_attention_mac.png" width="60%" alt="self-attention 与 HBM 的交互">
+<img src="../images/flash_attention/standard_attention_mac.png" width="60%" alt="self-attention 与 HBM 的交互">
 </div>
 
 self-attention 算子涉及到的和 HBM 数据传输过程如上图所示，很明显需要从HBM 中读取 5次，写入 HBM 3 次，`HBM` 访存量 $MAC = 4N^2 + 3Nd$，很明显标准注意力的 HBM 访问代价(`MAC`)随序列长度增加呈二次方增长。
@@ -264,7 +264,7 @@ self-attention 算子涉及到的和 HBM 数据传输过程如上图所示，很
 而 `self-attention` 的计算量为 $4N^2d$，标准注意力算子的操作强度 = $\frac{4N^2d}{4N^2 + 3Nd}$。公式可看出，标准注意力算子是一个很明显的内存受限型算子。一个实际模型的 self-attention 算子的内存访问代价和计算量分析如下图所示，从下图也可以看出 `self-attention` 算子操作强度近乎为 1，明显是内存受限的。
 
 <div align="center">
-<img src="../../images/transformer_params_flops/attention_oi.png" width="80%" alt="attention_oi">
+<img src="../images/transformer_params_flops/attention_oi.png" width="80%" alt="attention_oi">
 </div>
 
 ### 2.2 Roofline
@@ -273,7 +273,7 @@ self-attention 算子涉及到的和 HBM 数据传输过程如上图所示，很
 
 Roofline 模型的有两个关键指标：**操作强度和性能上限**。操作强度定义：每字节内存数据传输所对应的操作次数，即每字节 flops，单位一般为 GFlops/sec。`Roofline` 模型将**浮点运算性能、操作强度和内存性能整合在一个二维图中**。浮点运算的峰值性能可以通过硬件规格或微基准测试得出。
 
-<img src="../../images/roofline_paper/roofline_model_graph_on_amdx2x4.png" width="70%" alt="Roofline Model for (a) AMD Opteron X2 on left and (b) Opteron X2 vs. Opteron X4 on right.">
+<img src="../images/roofline_paper/roofline_model_graph_on_amdx2x4.png" width="70%" alt="Roofline Model for (a) AMD Opteron X2 on left and (b) Opteron X2 vs. Opteron X4 on right.">
 
 > 图表采用对数-对数刻度，Y 轴为可实现的浮点性能，X 轴为操作强度，范围从每 1/4 `Flops/DRAM 字节`到 16 `Flops/DRAM 字节`。Operational Intensity, OI， 也称算术强度 Arithmetic Intensity。
 
@@ -383,7 +383,7 @@ O'_{r,c, i} &= \sum_{j=1}^i \frac{e^{S_{r, j} - M_{r, i}}}{D'_{r, i}} * V[j, c] 
 
 <!-- 可以看到 $O_{r, c, i}'$ 仅仅和 $O_{r, c, i-1}'$ 以及 $S_{r, i}$、$M_{r, i-1}$、$D_{r, i-1}'$ 有关，不需要“规约”操作。这些变量都是可以在同一个 `for` 循环中计算得到的，即我们可以像 `online softmax` 那样在一个 $[i, N]$ 的循环中完成计算： -->
 
-![compute-s-m-d](../../images/flash_attention/computre-S-M-D.png)
+![compute-s-m-d](../images/flash_attention/computre-S-M-D.png)
 
 $$\begin{aligned}
 S_{r, i} &= \sum^{Dim}_{j=1}Q[r, j]K[j, i]\\
@@ -618,7 +618,7 @@ $$
 $$
 
 <div align="center">
-<img src="../../images/flash_attention/flash_attention_algorithm1.png" width="60%" alt="flash attention 算法步骤">
+<img src="../images/flash_attention/flash_attention_algorithm1.png" width="60%" alt="flash attention 算法步骤">
 </div>
 
 上面的是纯 python 代码，下面我们继续优化，利用 triton 框架写出极度优化的  FlashAttention-1 内核代码。
@@ -825,7 +825,7 @@ FlashAttention-2 的缺陷是对训练提速较多，对推理加速不大：主
 Flash-Decoding 在前作对 `batch size` 和 `query length` 并行的基础上增加了一个新的并行化维度：`keys/values` 的序列长度，代价是最后一个小的归约步骤。
 
 <div align="center">
-<img src="../../images/flashattention-3/parallelization_kv.gif" width="60%" alt="flashattention_kv">
+<img src="../images/flashattention-3/parallelization_kv.gif" width="60%" alt="flashattention_kv">
 </div>
 
 Flash-Decoding 的工作流程分为三个步骤：
