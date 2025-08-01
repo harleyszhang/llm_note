@@ -17,12 +17,12 @@ categories: LLM_Parallel
 - [二 Broadcast 原理和实践](#二-broadcast-原理和实践)
 - [三 Reduce \& AllReduce](#三-reduce--allreduce)
 - [四 Gather \& AllGather \& AllReduce](#四-gather--allgather--allreduce)
-    - [Gather \& AllGather 原理和时间](#gather--allgather-原理和时间)
+    - [4.1 Gather \& AllGather 原理和实践](#41-gather--allgather-原理和实践)
   - [4.2 All-Gather 和 All-Reduce](#42-all-gather-和-all-reduce)
 - [五 Scatter \& ReduceScatter](#五-scatter--reducescatter)
 - [六 Ring AllReduce](#六-ring-allreduce)
   - [6.1 AllReduce 通信量分析](#61-allreduce-通信量分析)
-  - [6.2 Barrier](#62-barrier)
+  - [6.2 Barrier 概述](#62-barrier-概述)
 - [七 Alltoall](#七-alltoall)
   - [7.1 Scatter 和 Gather示例代码](#71-scatter-和-gather示例代码)
   - [8.2 Alltoall 可视化和示例](#82-alltoall-可视化和示例)
@@ -350,7 +350,7 @@ After reduce on rank 0: tensor([3., 3., 3., 3., 3.], device='cuda:0')
 
 ## 四 Gather & AllGather & AllReduce
 
-#### Gather & AllGather 原理和时间
+#### 4.1 Gather & AllGather 原理和实践
 
 Gather 和 AllGather 操作本质上与 Broadcast 类似，都是在各个节点之间分发数据且不改变数据本身。但不同的是，Broadcast 是从某一个节点向所有节点广播同一个数据，而 Gather 和 AllGather 的场景中，每个节点都有一份独立的数据块：
 
@@ -518,9 +518,11 @@ mpiexec -np 4 --allow-run-as-root python mpi4py_allreduce.py
 
 ## 五 Scatter & ReduceScatter
 
-顾名思义，Scatter 操作的作用是将一个节点上的数据拆分并分发给所有其他节点，每个节点接收到数据的一部分。这和 Broadcast 不同，Broadcast 是将同一份完整数据复制发送给每个节点，不进行切片。而 Scatter 可以看作是 Gather 操作的反过程。
+`Scatter` 操作的作用是**将一个节点上的数据切片并分发给所有其他节点**，每个节点接收到数据的一部分。这和 Broadcast 不同，Broadcast 是将同一份完整数据复制发送给每个节点，不进行切片。而 Scatter 可以看作是 Gather 操作的反过程。
 
-ReduceScatter 模式稍微复杂一些。与 AllReduce 类似，它会对所有节点上的数据应用某种运算。但与 AllReduce 将完整输出张量发送给每个节点不同的是，**ReduceScatter 会将输出张量切片，并分别发送给各个节点**。下面的图展示了这些操作之间的区别：
+`ReduceScatter` 和 AllReduce 类似，都会对所有节点上的数据执行某种操作（如求和）。但不同的是：
+- 在 AllReduce 中，每个节点最终会接收到完整的归约结果；
+- 而在 ReduceScatter 中，每个节点只接收归约结果的一部分切片。
 
 <center>
 <img src="../images/collective_comm/a0_scatter_reducescatter.png" width="80%" alt="ffn_structrue">
@@ -638,7 +640,7 @@ Ring AllReduce 是一种专为分布式系统可扩展性设计的高效 AllRedu
 
 因此，每个 GPU 总共需要传输的数据量是：$2 \times (N - 1) \times \frac{K}{N}$，当 GPU 数量 N 较大时，这一公式近似为：$2 \times K$。也就是说，每个 GPU 在整个 Ring AllReduce 过程中，总共传输了大约两倍于模型参数数量的数据。
 
-### 6.2 Barrier
+### 6.2 Barrier 概述
 
 Barrier（同步屏障） 是一种用于协调所有节点的简单同步机制。它会阻塞程序执行，直到所有节点都到达这一点为止，之后所有节点才能继续执行后续计算。
 
