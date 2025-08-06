@@ -8,7 +8,7 @@ categories: LLM_Infer
 
 简单来讲，大模型推理一般会经历 4 个流程：Tokenizer -> Model.forward -> Sampler -> DeTokenizer，但对于集成了各种优化技术的 vllm 框架来说，大模型推理服务流程是非常复杂的
 
-先看下 vLLM 代码整体架构：
+先看下 `vLLM` 代码整体架构：
 
 ![vllm_architecture](../images/vllm_infer/vllm_architecture.png)
 ￼
