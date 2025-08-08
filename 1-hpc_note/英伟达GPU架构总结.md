@@ -71,7 +71,7 @@ categories: Hpc
 
 以 GTX 1660 为例(Memory Clock = 2001 MHz, Effective Mem.Clock = 8 Gbps, Memory Bus Width = 192 bit)：
 
-显存带宽：8004bits * 192/8 = 192 096 Bytes = 192 GB/s
+显存带宽：8004bits * 192/8 = 192 096 Bytes = `192 GB/s`
 
 ##  一，NVIDIA GPU 架构发展史
 
