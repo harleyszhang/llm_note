@@ -75,7 +75,7 @@ categories: Hpc
 
 ##  一，NVIDIA GPU 架构发展史
 
-英伟达 GPU 架构简要发展史如下图所示。
+英伟达 `GPU` 架构简要发展史如下图所示。
 
 <div align="center">
 <img src="../images/nvidia_gpu/architecture_develop.png" width="60%" alt="architecture_develop">
