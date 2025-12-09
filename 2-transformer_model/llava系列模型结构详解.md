@@ -301,7 +301,7 @@ LlavaLlama 类继承自 PyTorch 的基础模块类 nn.Module，并在初始化 `
 from transformers import AutoModel, LlavaConfig
 ```
 
-LlavaLlama 类继承自 PyTorch 的基础模块类 nn.Module，并在初始化 `__init__` 函数中接收一个 `LlavaConfig` 类型的配置对象，该对象包含了模型各个组件的详细参数设置。LlavaConfig 从 transformers 库导入。
+`LlavaLlama` 类继承自 PyTorch 的基础模块类 `nn.Module`，并在初始化 `__init__` 函数中接收一个 `LlavaConfig` 类型的配置对象，该对象包含了模型各个组件的详细参数设置。`LlavaConfig` 从 `transformers` 库导入。
 
 ```python
 from transformers import AutoModel, LlavaConfig
