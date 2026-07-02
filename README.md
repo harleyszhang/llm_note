@@ -58,7 +58,7 @@ LLM notes, including model inference, hpc programming note, transformer model st
 感兴趣的同学可以扫码联系课程购买，这个课程是我和[《自制深度学习推理框架》作者](https://space.bilibili.com/1822828582)一起合力打造的，内容也会持续更新优化。
 
 <div align="center">
-<img src="./images/read_me/fu_qcode.jpg" width="20%" alt="transformer_block_mp">
+<img src="./images/read_me/z_qocdejpg" width="20%" alt="transformer_block_mp">
 </div>
 
 ## 一 transformer 模型
