@@ -10,14 +10,14 @@
 
 4，`Scatter` 是数据的 1 对多的分发，它将一张 `XPU/GPU`` 卡上的数据进行分片再分发到其他所有的 `XPU/GPU` 卡上，他的反向操作对应 `Gather`，其应用场景有：
 
-- ReduceScatter 组合里的 Scatter 操作；
+- `ReduceScatter` 组合里的 `Scatter` 操作；
 - 模型并行里初始化时将模型 Scatter 到不同的 XPU 上；
 
 <img src="https://wuchangping.oss-cn-hangzhou.aliyuncs.com/aitraining/3/image-scatter.png" alt="image-20220404193446314" style="zoom:150%;" />
 
 5，`Gather` 是数据的多对 1 的收集，它将多张 XPU 卡上的数据收集到 1 张 XPU 卡上，他的反向操作对应 Scatter，其应用场景有：
 
-- ReduceScatter 组合里的 Scatter 操作；
+- `ReduceScatter` 组合里的 `Scatter` 操作；
 
 6，`AllGather` 属于多对多的通信原语，具有多个数据发送者，多个数据接收者，可以在集群内把多个节点的数据收集到一个主节点上（Gather），再把这个收集到的数据分发到其他节点上（broadcast），即收集集群内所有的数据到所有的节点上。可以看做 Gather + Broadcast 的操作组合，它的反向操作对应 ReduceScatter，其最应用场景有：
 
@@ -26,8 +26,8 @@
 
 7，`Reduce` 是数据的多对 1 的规约运算，它将所有 XPU 卡上的数据，规约（比如 SUM 求和）到 1 张XPU卡上，其应用场景有：
 
-- AllReduce 里的 broadcast + reduce 组合里的 reduce 操作；
-- ReduceScatter 组合里的 reduce 操作；
+- `AllReduce` 里的 broadcast + reduce 组合里的 reduce 操作；
+- `ReduceScatter` 组合里的 reduce 操作；
 - 分布式训练 parameter server 参数服务器结构里的 master节点 broadcast 数据到 worker 节点，再从worker 节点 reduce 数据回 master 节点里的 reduce 操作；
 
 8，**ReduceScatter** 是数据的多对多的 reduce + scatter 运算，它将所有的 XPU 卡上的数据先规约（比如 SUM 求和）到 1 张 XPU 卡上，再进行 scatter。如下图所示，先 reduce 操作 XPU 0-3 的数据 reduce 为 A(A0+A1+A2+A3) + B(B0 + B1 +B2 + B3) + C(C0 + C1 + C2 + C3) + D(D0 + D1 + D2 + D3 ) 到一张 XPU 上，再进行分片 scatter 到集群内所有的 XPU 卡上。
