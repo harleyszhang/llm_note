@@ -164,7 +164,7 @@ CUDA 内核开发笔记：
 
 Star History Chart：
 
-[![Star History Chart](https://api.star-history.com/svg?repos=HarleysZhang/llm_note)](https://api.star-history.com/svg?repos=HarleysZhang/llm_note)\
+[![Star History Chart](https://star-history.dera.page/svg?repos=HarleysZhang/llm_note)](https://star-history.dera.page/#HarleysZhang/llm_note&type=date)\
 
 ## 参考资料
 
